@@ -98,7 +98,7 @@ def collect_finetuning_results():
     return pd.DataFrame(results)
 
 def create_scaling_law_plots(df):
-    """Create scaling law plots for different configurations."""
+    """Create 4 separate scaling law plots for specific overlap and active_dim_2 combinations."""
     if df.empty:
         print("No data available for scaling law plots")
         return
@@ -109,80 +109,64 @@ def create_scaling_law_plots(df):
         print("No scaling data available")
         return
     
-    # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle('Scaling Laws: Validation Loss vs Training Set Size', fontsize=16)
+    # Define the 4 specific combinations to plot
+    combinations = [
+        {'overlap_bool': 'yes', 'active_dim_2': 5, 'title': 'Overlap=Yes, Active Dim 2=5'},
+        {'overlap_bool': 'yes', 'active_dim_2': 40, 'title': 'Overlap=Yes, Active Dim 2=40'},
+        {'overlap_bool': 'no', 'active_dim_2': 5, 'title': 'Overlap=No, Active Dim 2=5'},
+        {'overlap_bool': 'no', 'active_dim_2': 40, 'title': 'Overlap=No, Active Dim 2=40'}
+    ]
     
-    # Plot 1: All configurations on one plot
-    ax1 = axes[0, 0]
-    for (init_method, active_dim_2, overlap_bool, lmda), group in scaling_df.groupby(['init_method', 'active_dim_2', 'overlap_bool', 'lmda']):
-        label = f"{init_method}, dim2={active_dim_2}, overlap={overlap_bool}, λ={lmda}"
-        ax1.loglog(group['n_train2'], group['final_val_mse'], 'o-', label=label, linewidth=2, markersize=6)
-    
-    ax1.set_xlabel('Training Set Size (n_train2)')
-    ax1.set_ylabel('Final Validation MSE')
-    ax1.set_title('All Configurations')
-    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
-    ax1.grid(True, alpha=0.3)
-    
-    # Plot 2: By initialization method
-    ax2 = axes[0, 1]
-    for init_method in scaling_df['init_method'].unique():
-        method_data = scaling_df[scaling_df['init_method'] == init_method]
-        # Average across other dimensions
-        avg_data = method_data.groupby('n_train2')['final_val_mse'].mean()
-        ax2.loglog(avg_data.index, avg_data.values, 'o-', label=f'{init_method} init', linewidth=2, markersize=8)
-    
-    ax2.set_xlabel('Training Set Size (n_train2)')
-    ax2.set_ylabel('Final Validation MSE (Averaged)')
-    ax2.set_title('By Initialization Method')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-    
-    # Plot 3: By overlap setting
-    ax3 = axes[1, 0]
-    for overlap_bool in scaling_df['overlap_bool'].unique():
-        overlap_data = scaling_df[scaling_df['overlap_bool'] == overlap_bool]
-        # Average across other dimensions
-        avg_data = overlap_data.groupby('n_train2')['final_val_mse'].mean()
-        ax3.loglog(avg_data.index, avg_data.values, 'o-', label=f'overlap={overlap_bool}', linewidth=2, markersize=8)
-    
-    ax3.set_xlabel('Training Set Size (n_train2)')
-    ax3.set_ylabel('Final Validation MSE (Averaged)')
-    ax3.set_title('By Overlap Setting')
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
-    
-    # Plot 4: By active_dim_2
-    ax4 = axes[1, 1]
-    for active_dim_2 in scaling_df['active_dim_2'].unique():
-        dim_data = scaling_df[scaling_df['active_dim_2'] == active_dim_2]
-        # Average across other dimensions
-        avg_data = dim_data.groupby('n_train2')['final_val_mse'].mean()
-        ax4.loglog(avg_data.index, avg_data.values, 'o-', label=f'active_dim_2={active_dim_2}', linewidth=2, markersize=8)
-    
-    ax4.set_xlabel('Training Set Size (n_train2)')
-    ax4.set_ylabel('Final Validation MSE (Averaged)')
-    ax4.set_title('By Active Dimension 2')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    
-    # Save plots
     output_dir = "figures"
     os.makedirs(output_dir, exist_ok=True)
     
-    plot_path = os.path.join(output_dir, "comprehensive_scaling_laws.png")
-    pdf_path = os.path.join(output_dir, "comprehensive_scaling_laws.pdf")
+    for i, combo in enumerate(combinations):
+        # Filter data for this specific combination
+        combo_data = scaling_df[
+            (scaling_df['overlap_bool'] == combo['overlap_bool']) & 
+            (scaling_df['active_dim_2'] == combo['active_dim_2'])
+        ].copy()
+        
+        if combo_data.empty:
+            print(f"No data available for {combo['title']}")
+            continue
+        
+        # Create figure for this combination
+        plt.figure(figsize=(10, 8))
+        
+        # Plot separate lines for each experimental setup (init_method, lmda combinations)
+        for (init_method, lmda), group in combo_data.groupby(['init_method', 'lmda']):
+            # Sort by n_train2 for proper line plotting
+            group_sorted = group.sort_values('n_train2')
+            
+            # Create label for this experimental setup
+            label = f"{init_method} init, λ={lmda}"
+            
+            # Plot the line
+            plt.loglog(group_sorted['n_train2'], group_sorted['final_val_mse'], 
+                      'o-', label=label, linewidth=2, markersize=8)
+        
+        plt.xlabel('Training Set Size (n_train2)', fontsize=12)
+        plt.ylabel('Final Validation MSE', fontsize=12)
+        plt.title(f'Scaling Law: {combo["title"]}', fontsize=14, fontweight='bold')
+        plt.legend(fontsize=10)
+        plt.grid(True, alpha=0.3)
+        
+        # Save individual plot
+        filename_base = f"scaling_law_overlap_{combo['overlap_bool']}_dim2_{combo['active_dim_2']}"
+        plot_path = os.path.join(output_dir, f"{filename_base}.png")
+        pdf_path = os.path.join(output_dir, f"{filename_base}.pdf")
+        
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.savefig(pdf_path, bbox_inches='tight')
+        
+        print(f"Plot {i+1} saved:")
+        print(f"  {plot_path}")
+        print(f"  {pdf_path}")
+        
+        plt.close()  # Close the figure to free memory
     
-    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-    plt.savefig(pdf_path, bbox_inches='tight')
-    
-    print(f"Scaling law plots saved to:")
-    print(f"  {plot_path}")
-    print(f"  {pdf_path}")
-    
+    print(f"\nAll 4 scaling law plots saved to {output_dir}/")
     # plt.show()  # Commented out for headless server
 
 def create_performance_comparison_plots(df):
