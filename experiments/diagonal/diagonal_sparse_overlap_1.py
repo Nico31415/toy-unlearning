@@ -27,7 +27,6 @@ argparse_array = ArgparseArray(
     n_train2 = [2** i for i in range(5, 11)],
     # n_train2=64,  # Fixed training size for this experiment
     aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
-    overlap_bool=(lambda overlap_bool, **kwargs: overlap_bool),
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     lr=1e-1,
     lmda=(lambda lmda, **kwargs: f"{lmda:.10f}"),
@@ -40,8 +39,8 @@ argparse_array = ArgparseArray(
     aux_load_model=[True],
     aux_linear_readout=[False],
     # Construct save path to include all relevant parameters
-    save_path=(lambda init_method, n_train2, active_dim_2, overlap_bool, lmda, load_model, linear_readout, seed, **kwargs: 
-               f'data/diagonal/sparse_overlap2/init_method={init_method}--seed={seed}--n_train2={n_train2}--active_dim_2={active_dim_2}--load_model={load_model}--linear_readout={linear_readout}--one_task=True--overlap_bool={overlap_bool}--lmda={lmda}--c=1e-05/'),
+    save_path=(lambda **kwargs: 
+               f'data/diagonal/sparse_overlap2/init_method={kwargs["init_method"]}--seed={kwargs["seed"]}--n_train2={kwargs["n_train2"]}--active_dim_2={kwargs["active_dim_2"]}--load_model={kwargs["load_model"]}--linear_readout={kwargs["linear_readout"]}--one_task=True--overlap={0 if kwargs.get("overlap_bool", "yes") == "no" else kwargs["active_dim_2"]}--lmda={kwargs["lmda"]}--c=1e-05/'),
     save_weights=True
 )
 
