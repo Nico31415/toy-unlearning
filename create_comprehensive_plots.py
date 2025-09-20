@@ -46,7 +46,7 @@ def parse_experiment_params(dirname):
     init_method_match = re.search(r'init_method=(\w+)', dirname)
     active_dim_2_match = re.search(r'active_dim_2=(\d+)', dirname)
     overlap_bool_match = re.search(r'overlap_bool=(\w+)', dirname)
-    lmda_match = re.search(r'lmda=([\d\.\-e]+)', dirname)
+    lmda_match = re.search(r'lmda=([\d\.\-e]+?)(?:--|$)', dirname)
     
     params = {}
     if n_train2_match:
@@ -73,19 +73,25 @@ def collect_finetuning_results():
     
     for dirname in os.listdir(base_dir):
         if 'init_method=' in dirname and 'n_train2=' in dirname:
-            params = parse_experiment_params(dirname)
-            if len(params) >= 4:  # Need at least init_method, active_dim_2, overlap_bool, lmda
-                experiment_dir = os.path.join(base_dir, dirname)
-                final_val_mse = extract_final_val_mse(experiment_dir)
-                
-                if final_val_mse is not None:
-                    result = params.copy()
-                    result['final_val_mse'] = final_val_mse
-                    result['experiment_dir'] = experiment_dir
-                    results.append(result)
-                    print(f"Found: {params['init_method']}, active_dim_2={params['active_dim_2']}, "
-                          f"overlap_bool={params['overlap_bool']}, lmda={params['lmda']}, "
-                          f"val_mse={final_val_mse:.6f}")
+            print(f"Processing directory: {dirname}")
+            try:
+                params = parse_experiment_params(dirname)
+                print(f"Parsed params: {params}")
+                if len(params) >= 4:  # Need at least init_method, active_dim_2, overlap_bool, lmda
+                    experiment_dir = os.path.join(base_dir, dirname)
+                    final_val_mse = extract_final_val_mse(experiment_dir)
+                    
+                    if final_val_mse is not None:
+                        result = params.copy()
+                        result['final_val_mse'] = final_val_mse
+                        result['experiment_dir'] = experiment_dir
+                        results.append(result)
+                        print(f"Found: {params['init_method']}, active_dim_2={params['active_dim_2']}, "
+                              f"overlap_bool={params['overlap_bool']}, lmda={params['lmda']}, "
+                              f"val_mse={final_val_mse:.6f}")
+            except Exception as e:
+                print(f"Error processing {dirname}: {e}")
+                continue
     
     return pd.DataFrame(results)
 
