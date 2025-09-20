@@ -16,6 +16,8 @@ Plots include:
 import os
 import re
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for headless server
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
@@ -181,7 +183,7 @@ def create_scaling_law_plots(df):
     print(f"  {plot_path}")
     print(f"  {pdf_path}")
     
-    plt.show()
+    # plt.show()  # Commented out for headless server
 
 def create_performance_comparison_plots(df):
     """Create performance comparison plots across different configurations."""
@@ -249,7 +251,7 @@ def create_performance_comparison_plots(df):
     print(f"  {plot_path}")
     print(f"  {pdf_path}")
     
-    plt.show()
+    # plt.show()  # Commented out for headless server
 
 def create_summary_table(df):
     """Create a summary table of all results."""
