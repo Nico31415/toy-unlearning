@@ -7,7 +7,7 @@ from functions.array_training import ArgparseArray, name_instance
 
 c_init = 10**-5
 scaling_init = 1e-3
-lmdas_init = [0, -c_init]  # [0, -1e-5] to match pretraining
+lmdas_init = [0, -0.00001]  # [0, -1e-5] to match pretraining
 
 argparse_array = ArgparseArray(
     seed=[0],  # Fixed seed to match pretraining
@@ -28,7 +28,7 @@ argparse_array = ArgparseArray(
     overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     lr=1e-1,
-    lmda=(lambda lmda, **kwargs: float(f"{lmda:.10f}")),
+    lmda=(lambda lmda, **kwargs: lmda),
     c=(lambda c, **kwargs: c),
     aux_lmda=lmdas_init,
     aux_c=[c_init],
