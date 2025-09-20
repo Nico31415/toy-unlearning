@@ -17,13 +17,33 @@ import pandas as pd
 
 import functions.networks as nt
 
+def get_parameters(c, lmda):
+    # if np.any(lmda == 0):
+    #     raise ValueError("λ must be nonzero.")
+    if np.any(c**2 < lmda**2):
+        raise ValueError("Require c² ≥ λ² for real outputs.")
+    v = np.sqrt((c + lmda) / 2)
+    u = np.sqrt((c - lmda) / 2)
+    return v, v, u, u  # v⁺, v⁻, u⁺, u⁻
+
 class DiagonalNet(nn.Module):
-    def __init__(self, inp_dim, scaling=1.):
+    def __init__(self, inp_dim, scaling=1., lmda=0., c=0.001, init_method='complex'):
         super().__init__()
-        self.w_pos = nn.Parameter(scaling*torch.ones(inp_dim))
-        self.v_pos = nn.Parameter(scaling*torch.ones(inp_dim))
-        self.v_neg = nn.Parameter(scaling*torch.ones(inp_dim))
-        self.w_neg = nn.Parameter(scaling*torch.ones(inp_dim))
+        if init_method == 'simple':
+            # Simple initialization - all parameters start at the same value
+            self.w_pos = nn.Parameter(scaling*torch.ones(inp_dim))
+            self.v_pos = nn.Parameter(scaling*torch.ones(inp_dim))
+            self.v_neg = nn.Parameter(scaling*torch.ones(inp_dim))
+            self.w_neg = nn.Parameter(scaling*torch.ones(inp_dim))
+        elif init_method == 'complex':
+            # Complex initialization
+            w_pos, w_neg, v_pos, v_neg = get_parameters(c, lmda)
+            self.w_pos = nn.Parameter(w_pos*torch.ones(inp_dim))
+            self.v_pos = nn.Parameter(v_pos*torch.ones(inp_dim))
+            self.v_neg = nn.Parameter(v_neg*torch.ones(inp_dim))
+            self.w_neg = nn.Parameter(w_neg*torch.ones(inp_dim))
+        else:
+            raise ValueError(f"Unknown initialization method: {init_method}")
     
     def beta(self):
         return self.w_pos*self.v_pos-self.w_neg*self.v_neg
@@ -54,8 +74,9 @@ def train(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0
         loss = loss.item()
         if (i%test_every_n_epochs==0):
             with torch.no_grad():
+                val_loss = F.mse_loss(model(val_x), val_y).item()
                 new_df = pd.DataFrame({
-                    'loss': [F.mse_loss(model(val_x), val_y).item()]
+                    'loss': [val_loss]
                 })
                 new_df['epoch'] = i
                 test_preds.append(new_df)
@@ -66,6 +87,8 @@ def train(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0
                         'epoch': [i, i]
                     })
                 )
+                # Print training progress
+                print(f"Epoch {i:6d}: Train MSE = {loss:.6f}, Val MSE = {val_loss:.6f}")
         if loss < threshold:
             break
         if lr_tuning and ((loss > 100) | np.isnan(loss)):
@@ -73,8 +96,9 @@ def train(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0
             print(f'Decreasing learning rate to {lr}')
             return train(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold)
     with torch.no_grad():
+        final_val_loss = F.mse_loss(model(val_x), val_y).item()
         new_df = pd.DataFrame({
-            'loss': [F.mse_loss(model(val_x), val_y).item()]
+            'loss': [final_val_loss]
         })
         new_df['epoch'] = i
         test_preds.append(new_df)
@@ -85,6 +109,10 @@ def train(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0
                 'epoch': [i, i]
             })
         )
+        # Print final training results
+        print(f"\nTraining completed at epoch {i}")
+        print(f"Final Train MSE = {loss:.6f}")
+        print(f"Final Val MSE = {final_val_loss:.6f}")
     losses = pd.DataFrame({
         'epoch': np.arange(len(losses)),
         'loss': torch.stack(losses).numpy()
@@ -121,7 +149,7 @@ def main(args):
     val_x = val_x/torch.sqrt(torch.mean(val_x**2, dim=-1, keepdims=True))
     y = teacher(x, *param)
     val_y = teacher(val_x, *param)
-    net = DiagonalNet(args.inp_dim, scaling=args.scaling)
+    net = DiagonalNet(args.inp_dim, scaling=args.scaling, lmda=args.lmda, c=args.c, init_method=args.init_method)
     df, net, norm_df = train(net, (x, y), (val_x, val_y), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold)
     df.to_feather(os.path.join(args.save_folder, 'df.feather'))
     norm_df.to_feather(os.path.join(args.save_folder, 'norm_df.feather'))
@@ -144,6 +172,9 @@ def get_parser():
     parser.add_argument('--lr', type=float, default=1e20)
     parser.add_argument('--epochs', type=int, default=int(1e5))
     parser.add_argument('--scaling', type=float, default=1.)
+    parser.add_argument('--lmda', type=float, default=0.)
+    parser.add_argument('--c', type=float, default=0.001)
+    parser.add_argument('--init_method', type=str, default='complex', choices=['simple', 'complex'])
     return parser
 
 if __name__ == '__main__':

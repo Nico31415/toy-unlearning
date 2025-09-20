@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 import functions.networks as nt
+import matplotlib.pyplot as plt
 
 class DiagonalNet(nn.Module):
     def __init__(self, inp_dim, scaling=1., linear_readout=False):
@@ -158,14 +159,16 @@ def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1
         loss = loss.item()
         if (i%test_every_n_epochs==0):
             with torch.no_grad():
+                val_loss = F.mse_loss(model(val_x), val_y).item()
                 new_df = pd.DataFrame({
                     'loss': [
-                        F.mse_loss(model(val_x), val_y).item()
+                        val_loss
                     ],
                     'split': ['val']
                 })
                 new_df['epoch'] = i
                 test_preds.append(new_df)
+                print(f"Epoch {i:6d}: Train MSE = {loss:.6f}, Val MSE = {val_loss:.6f}")
         if loss < threshold:
             break
         if lr_tuning and ((loss > 100) | np.isnan(loss)):
@@ -173,14 +176,19 @@ def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1
             print(f'Decreasing learning rate to {lr}')
             return train_one_task(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, beta_1=beta_1)
     with torch.no_grad():
+        final_val_loss = F.mse_loss(model(val_x), val_y).item()
         new_df = pd.DataFrame({
             'loss': [
-                F.mse_loss(model(val_x), val_y).item()
+                final_val_loss
             ],
             'split': ['val']
         })
         new_df['epoch'] = i
         test_preds.append(new_df)
+    
+    print(f"\nTraining completed at epoch {i}")
+    print(f"Final Train MSE = {loss:.6f}")
+    print(f"Final Val MSE = {final_val_loss:.6f}")
     losses = pd.DataFrame({
         'epoch': np.arange(len(losses)),
         'loss': torch.stack(losses).numpy()
@@ -232,10 +240,223 @@ def select_output(outp, task):
     task_oh = F.one_hot(task, outp.shape[1])
     return (outp*task_oh).sum(dim=-1)
 
+def plot_ground_truth_comparison(pretrain_gt, finetune_gt_task1, finetune_gt_task2, save_path, args):
+    """Plot comparison between pretraining and finetuning ground truth betas"""
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig.suptitle(f'Ground Truth Beta Comparison (Seed={args.seed}, active_dim_1={args.active_dim_1}, active_dim_2={args.active_dim_2}, overlap={args.overlap})', fontsize=14)
+    
+    # Convert to numpy for plotting
+    pretrain_np = pretrain_gt.numpy()
+    finetune_task1_np = finetune_gt_task1.numpy()
+    finetune_task2_np = finetune_gt_task2.numpy()
+    
+    # Plot 1: Full parameter vectors - Pretrain vs Finetune Task 1 (active_dim_1)
+    axes[0, 0].plot(pretrain_np, 'b-', label='Pretrain GT', alpha=0.7, linewidth=1)
+    axes[0, 0].plot(finetune_task1_np, 'r-', label='Finetune Task 1 GT (active_dim_1)', alpha=0.7, linewidth=1)
+    axes[0, 0].set_title('Pretrain vs Finetune Task 1 (active_dim_1)')
+    axes[0, 0].set_xlabel('Parameter Index')
+    axes[0, 0].set_ylabel('Parameter Value')
+    axes[0, 0].legend()
+    axes[0, 0].grid(True, alpha=0.3)
+    
+    # Plot 2: Full parameter vectors - Pretrain vs Finetune Task 2 (active_dim_2)
+    axes[0, 1].plot(pretrain_np, 'b-', label='Pretrain GT', alpha=0.7, linewidth=1)
+    axes[0, 1].plot(finetune_task2_np, 'g-', label='Finetune Task 2 GT (active_dim_2)', alpha=0.7, linewidth=1)
+    axes[0, 1].set_title('Pretrain vs Finetune Task 2 (active_dim_2)')
+    axes[0, 1].set_xlabel('Parameter Index')
+    axes[0, 1].set_ylabel('Parameter Value')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    # Plot 3: Finetune Task 1 vs Task 2
+    axes[0, 2].plot(finetune_task1_np, 'r-', label='Finetune Task 1 GT (active_dim_1)', alpha=0.7, linewidth=1)
+    axes[0, 2].plot(finetune_task2_np, 'g-', label='Finetune Task 2 GT (active_dim_2)', alpha=0.7, linewidth=1)
+    axes[0, 2].set_title('Finetune Task 1 vs Task 2')
+    axes[0, 2].set_xlabel('Parameter Index')
+    axes[0, 2].set_ylabel('Parameter Value')
+    axes[0, 2].legend()
+    axes[0, 2].grid(True, alpha=0.3)
+    
+    # Plot 4: Scatter plot - Pretrain vs Finetune Task 1
+    axes[1, 0].scatter(pretrain_np, finetune_task1_np, alpha=0.6, s=10)
+    axes[1, 0].plot([pretrain_np.min(), pretrain_np.max()], [pretrain_np.min(), pretrain_np.max()], 'k--', alpha=0.5, label='Perfect Match')
+    axes[1, 0].set_title('Pretrain vs Finetune Task 1 (active_dim_1)')
+    axes[1, 0].set_xlabel('Pretrain GT')
+    axes[1, 0].set_ylabel('Finetune Task 1 GT (active_dim_1)')
+    axes[1, 0].legend()
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Plot 5: Scatter plot - Pretrain vs Finetune Task 2
+    axes[1, 1].scatter(pretrain_np, finetune_task2_np, alpha=0.6, s=10)
+    axes[1, 1].plot([pretrain_np.min(), pretrain_np.max()], [pretrain_np.min(), pretrain_np.max()], 'k--', alpha=0.5, label='Perfect Match')
+    axes[1, 1].set_title('Pretrain vs Finetune Task 2 (active_dim_2)')
+    axes[1, 1].set_xlabel('Pretrain GT')
+    axes[1, 1].set_ylabel('Finetune Task 2 GT (active_dim_2)')
+    axes[1, 1].legend()
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    # Plot 6: Scatter plot - Finetune Task 1 vs Task 2
+    axes[1, 2].scatter(finetune_task1_np, finetune_task2_np, alpha=0.6, s=10)
+    axes[1, 2].plot([finetune_task1_np.min(), finetune_task1_np.max()], [finetune_task1_np.min(), finetune_task1_np.max()], 'k--', alpha=0.5, label='Perfect Match')
+    axes[1, 2].set_title('Finetune Task 1 vs Task 2')
+    axes[1, 2].set_xlabel('Finetune Task 1 GT (active_dim_1)')
+    axes[1, 2].set_ylabel('Finetune Task 2 GT (active_dim_2)')
+    axes[1, 2].legend()
+    axes[1, 2].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_path = os.path.join(save_path, 'ground_truth_comparison.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"Ground truth comparison plot saved to: {plot_path}")
+    
+    # Also save as PDF for better quality
+    plot_pdf_path = os.path.join(save_path, 'ground_truth_comparison.pdf')
+    plt.savefig(plot_pdf_path, bbox_inches='tight')
+    print(f"Ground truth comparison plot (PDF) saved to: {plot_pdf_path}")
+    
+    plt.close()
+    
+    # Print correlation analysis
+    corr_pretrain_finetune = torch.corrcoef(torch.stack([pretrain_gt, finetune_gt_task2]))[0, 1].item()
+    
+    # Calculate similarity as dot product divided by magnitude of pretraining ground truth
+    def similarity_to_pretrain(pretrain_gt, other_gt):
+        return torch.dot(pretrain_gt, other_gt) / torch.norm(pretrain_gt)
+    
+    sim_pretrain_finetune = similarity_to_pretrain(pretrain_gt, finetune_gt_task2).item()
+    
+    print(f"\nGround Truth Correlations:")
+    print(f"  Pretrain vs Finetune: {corr_pretrain_finetune:.6f}")
+    
+    print(f"\nGround Truth Similarity (dot product / ||pretrain||):")
+    print(f"  Pretrain vs Finetune: {sim_pretrain_finetune:.6f}")
+    
+    # Print overlap analysis
+    pretrain_nonzero = set(torch.nonzero(pretrain_gt).flatten().tolist())
+    finetune_nonzero = set(torch.nonzero(finetune_gt_task2).flatten().tolist())
+    
+    overlap_pretrain_finetune = len(pretrain_nonzero.intersection(finetune_nonzero))
+    
+    print(f"\nGround Truth Overlap Analysis:")
+    print(f"  Pretrain vs Finetune: {overlap_pretrain_finetune}/{len(pretrain_nonzero)} ({overlap_pretrain_finetune/len(pretrain_nonzero)*100:.1f}%)")
+    print(f"  Finetune is subset of Pretrain: {finetune_nonzero.issubset(pretrain_nonzero)}")
+
+def plot_learned_vs_ground_truth(learned_beta, finetune_ground_truth, save_path, args):
+    """Plot comparison between learned and ground truth betas for finetuning task"""
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    fig.suptitle(f'Learned vs Ground Truth (Seed={args.seed}, active_dim_1={args.active_dim_1}, active_dim_2={args.active_dim_2}, overlap={args.overlap})', fontsize=14)
+    
+    # Convert to numpy for plotting
+    learned_np = learned_beta.numpy()
+    finetune_gt_np = finetune_ground_truth.numpy()
+    
+    # Plot 1: Full parameter vectors - Learned vs Finetuning Ground Truth
+    axes[0, 0].plot(learned_np, 'b-', label='Learned', alpha=0.7, linewidth=1)
+    axes[0, 0].plot(finetune_gt_np, 'r-', label='Finetuning Ground Truth', alpha=0.7, linewidth=1)
+    axes[0, 0].set_title('Learned vs Finetuning Ground Truth')
+    axes[0, 0].set_xlabel('Parameter Index')
+    axes[0, 0].set_ylabel('Parameter Value')
+    axes[0, 0].legend()
+    axes[0, 0].grid(True, alpha=0.3)
+    
+    # Plot 2: Scatter plot - Learned vs Finetuning Ground Truth
+    axes[0, 1].scatter(finetune_gt_np, learned_np, alpha=0.6, s=10)
+    axes[0, 1].plot([finetune_gt_np.min(), finetune_gt_np.max()], [finetune_gt_np.min(), finetune_gt_np.max()], 'k--', alpha=0.5, label='Perfect Match')
+    axes[0, 1].set_title('Learned vs Finetuning Ground Truth')
+    axes[0, 1].set_xlabel('Finetuning Ground Truth')
+    axes[0, 1].set_ylabel('Learned')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    # Plot 3: Top elements comparison
+    learned_indices = np.argsort(np.abs(learned_np))[-20:][::-1]
+    finetune_indices = np.argsort(np.abs(finetune_gt_np))[-20:][::-1]
+    
+    x_pos = np.arange(20)
+    axes[1, 0].bar(x_pos - 0.2, learned_np[learned_indices], 0.4, label='Learned', alpha=0.7)
+    axes[1, 0].bar(x_pos + 0.2, finetune_gt_np[finetune_indices], 0.4, label='Finetuning GT', alpha=0.7)
+    axes[1, 0].set_title('Top 20 Elements Comparison')
+    axes[1, 0].set_xlabel('Rank')
+    axes[1, 0].set_ylabel('Parameter Value')
+    axes[1, 0].legend()
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Plot 4: Absolute values comparison
+    axes[1, 1].semilogy(np.sort(np.abs(learned_np))[::-1], 'b-', label='Learned', alpha=0.7)
+    axes[1, 1].semilogy(np.sort(np.abs(finetune_gt_np))[::-1], 'r-', label='Finetuning GT', alpha=0.7)
+    axes[1, 1].set_title('Sorted Absolute Values (Log Scale)')
+    axes[1, 1].set_xlabel('Rank')
+    axes[1, 1].set_ylabel('Absolute Parameter Value')
+    axes[1, 1].legend()
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_path = os.path.join(save_path, 'learned_vs_ground_truth.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"Learned vs ground truth plot saved to: {plot_path}")
+    
+    # Also save as PDF for better quality
+    plot_pdf_path = os.path.join(save_path, 'learned_vs_ground_truth.pdf')
+    plt.savefig(plot_pdf_path, bbox_inches='tight')
+    print(f"Learned vs ground truth plot (PDF) saved to: {plot_pdf_path}")
+    
+    plt.close()
+    
+    # Print correlation analysis
+    corr_learned_finetune = torch.corrcoef(torch.stack([learned_beta, finetune_ground_truth]))[0, 1].item()
+    
+    # Calculate similarity as dot product divided by magnitude of finetuning ground truth
+    def similarity_to_finetune(finetune_gt, learned):
+        return torch.dot(finetune_gt, learned) / torch.norm(finetune_gt)
+    
+    sim_learned_finetune = similarity_to_finetune(finetune_ground_truth, learned_beta).item()
+    
+    print(f"\nLearned vs Finetuning Ground Truth Correlations:")
+    print(f"  Learned vs Finetuning: {corr_learned_finetune:.6f}")
+    
+    print(f"\nLearned vs Finetuning Ground Truth Similarity (dot product / ||finetune||):")
+    print(f"  Learned vs Finetuning: {sim_learned_finetune:.6f}")
+    
+    # Print overlap analysis
+    learned_nonzero = set(torch.nonzero(learned_beta).flatten().tolist())
+    finetune_nonzero = set(torch.nonzero(finetune_ground_truth).flatten().tolist())
+    
+    overlap_learned_finetune = len(learned_nonzero.intersection(finetune_nonzero))
+    
+    print(f"\nLearned vs Finetuning Ground Truth Overlap Analysis:")
+    print(f"  Learned vs Finetuning: {overlap_learned_finetune}/{len(finetune_nonzero)} ({overlap_learned_finetune/len(finetune_nonzero)*100:.1f}%)")
+    
+    # Print statistical analysis
+    print(f"\nLearned vs Finetuning Ground Truth Statistics:")
+    print(f"  Learned - Non-zero elements: {len(learned_nonzero)}")
+    print(f"  Learned - L2 norm: {torch.norm(learned_beta).item():.6f}")
+    print(f"  Learned - L1 norm: {torch.norm(learned_beta, p=1).item():.6f}")
+    print(f"  Finetuning GT - Non-zero elements: {len(finetune_nonzero)}")
+    print(f"  Finetuning GT - L2 norm: {torch.norm(finetune_ground_truth).item():.6f}")
+    print(f"  Finetuning GT - L1 norm: {torch.norm(finetune_ground_truth, p=1).item():.6f}")
+
 def main(args):
     Path(os.path.dirname(args.save_path)).mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
+    
+    # Create the finetuning tasks - this will create both pretraining and finetuning teachers
+    # with proper overlap relationship
     param1, param2 = sample_two_teachers(args.inp_dim, args.active_dim_1, args.active_dim_2, overlap=args.overlap)
+    
+    # Extract pretraining ground truth from param1 (first teacher)
+    W_pretrain, V_pretrain = param1
+    pretrain_ground_truth = torch.zeros(args.inp_dim)
+    for i in range(args.active_dim_1):
+        active_pos = torch.argmax(W_pretrain[i,:]).item()
+        pretrain_ground_truth[active_pos] = V_pretrain[i]
     x1 = circular_sample((args.n_train1, args.inp_dim))
     x2 = circular_sample((args.n_train2, args.inp_dim))
     val_x = circular_sample((10000, args.inp_dim))
@@ -279,7 +500,33 @@ def main(args):
     if args.save_weights:
         print('Saving weights')
         print(os.path.join(args.save_path, 'weights_df.feather'))
-        df_weights.to_feather(os.path.join(args.save_path, 'weights_df.feather')) 
+        df_weights.to_feather(os.path.join(args.save_path, 'weights_df.feather'))
+    
+    # Generate ground truth comparison plots
+    print(f"\nGenerating ground truth comparison plots...")
+    
+    # Get finetuning ground truth betas
+    finetune_gt_task1 = true_beta[:, 0]  # First task
+    finetune_gt_task2 = true_beta[:, 1]  # Second task
+    
+    # Verify that pretraining ground truth matches Task 1 (they should be identical)
+    pretrain_task1_match = torch.allclose(pretrain_ground_truth, finetune_gt_task1, atol=1e-6)
+    print(f"Pretraining ground truth matches Task 1: {pretrain_task1_match}")
+    if not pretrain_task1_match:
+        print("WARNING: Pretraining and Task 1 ground truths don't match!")
+        print(f"Max difference: {torch.max(torch.abs(pretrain_ground_truth - finetune_gt_task1)).item():.8f}")
+    
+    # Generate comparison plots
+    plot_ground_truth_comparison(pretrain_ground_truth, finetune_gt_task1, finetune_gt_task2, args.save_path, args)
+    
+    # Generate learned vs ground truth plots
+    print(f"\nGenerating learned vs ground truth plots...")
+    
+    # Get the learned beta from the trained model
+    learned_beta = model.beta().detach()
+    
+    # For single task finetuning, compare learned beta with finetuning ground truth
+    plot_learned_vs_ground_truth(learned_beta, finetune_gt_task2, args.save_path, args) 
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -303,6 +550,9 @@ def get_parser():
     parser.add_argument('--one_task', action='store_true')
     parser.add_argument('--save_weights', action='store_true')
     parser.add_argument('--w_scaling', type=float, default=1.)
+    parser.add_argument('--lmda', type=float, default=0.)
+    parser.add_argument('--c', type=float, default=0.001)
+    parser.add_argument('--init_method', type=str, default='complex', choices=['simple', 'complex'])
     return parser
 
 if __name__ == '__main__':
