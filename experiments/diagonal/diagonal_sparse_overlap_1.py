@@ -25,10 +25,10 @@ argparse_array = ArgparseArray(
     linear_readout=[False],
     n_train1=1024,
     n_train2=64,  # Fixed training size for this experiment
-    overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
+    aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     lr=1e-1,
-    lmda=(lambda lmda, **kwargs: lmda),
+    lmda=(lambda lmda, **kwargs: f"{lmda:.10f}"),
     c=(lambda c, **kwargs: c),
     aux_lmda=lmdas_init,
     aux_c=[c_init],
