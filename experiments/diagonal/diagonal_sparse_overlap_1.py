@@ -24,6 +24,7 @@ argparse_array = ArgparseArray(
     one_task=[True],
     linear_readout=[False],
     n_train1=1024,
+    n_train2 = [2** i for i in range(5, 11)],
     n_train2=64,  # Fixed training size for this experiment
     aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
