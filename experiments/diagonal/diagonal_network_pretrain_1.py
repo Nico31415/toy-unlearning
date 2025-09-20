@@ -118,10 +118,10 @@ def plot_beta_comparison(ground_truth, learned, save_path, args_dict):
 
 c_init = 10**-5
 scaling_init = 1e-3
-lmdas_init = [0]
+lmdas_init = [0, -c_init]  # [0, -1e-5] for different lambda values
 
 argparse_array = ArgparseArray(
-    seed=[0],  # Fixed seed for both cases
+    seed=[0],  # Fixed seed for all cases
     inp_dim=[1000],
     active_dim=[40],
     n_train=1024,
@@ -132,7 +132,7 @@ argparse_array = ArgparseArray(
     lr=0.01,
     lmda=lmdas_init,
     no_tuning=[False],
-    init_method=['simple', 'complex'],  # This creates 2 array IDs: 0=simple, 1=complex
+    init_method=['simple', 'complex'],  # This creates 4 array IDs: 0=simple+lmda=0, 1=complex+lmda=0, 2=simple+lmda=-c, 3=complex+lmda=-c
     save_folder=name_instance('init_method', 'lmda', 'c', 'scaling', 'seed', 'n_train', 'active_dim', base_folder='data/diagonal/pretrain')
 )
 
