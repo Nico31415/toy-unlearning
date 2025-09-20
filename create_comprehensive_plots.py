@@ -48,6 +48,7 @@ def parse_experiment_params(dirname):
     init_method_match = re.search(r'init_method=(\w+)', dirname)
     active_dim_2_match = re.search(r'active_dim_2=(\d+)', dirname)
     overlap_bool_match = re.search(r'overlap_bool=(\w+)', dirname)
+    overlap_match = re.search(r'overlap=(\d+)', dirname)
     lmda_match = re.search(r'lmda=([\d\.\-e]+?)(?:--|$)', dirname)
     
     params = {}
@@ -57,8 +58,15 @@ def parse_experiment_params(dirname):
         params['init_method'] = init_method_match.group(1)
     if active_dim_2_match:
         params['active_dim_2'] = int(active_dim_2_match.group(1))
+    
+    # Handle both overlap_bool and overlap formats
     if overlap_bool_match:
         params['overlap_bool'] = overlap_bool_match.group(1)
+    elif overlap_match:
+        # Convert overlap value to overlap_bool
+        overlap_value = int(overlap_match.group(1))
+        params['overlap_bool'] = 'no' if overlap_value == 0 else 'yes'
+    
     if lmda_match:
         params['lmda'] = float(lmda_match.group(1))
     

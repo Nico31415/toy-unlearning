@@ -38,9 +38,9 @@ argparse_array = ArgparseArray(
     # Add load_model and linear_readout values
     aux_load_model=[True],
     aux_linear_readout=[False],
-    # Construct save path to include all relevant parameters
-    save_path=(lambda **kwargs: 
-               f'data/diagonal/sparse_overlap2/init_method={kwargs["init_method"]}--seed={kwargs["seed"]}--n_train2={kwargs["n_train2"]}--active_dim_2={kwargs["active_dim_2"]}--load_model={kwargs["load_model"]}--linear_readout={kwargs["linear_readout"]}--one_task=True--overlap={0 if kwargs.get("overlap_bool", "yes") == "no" else kwargs["active_dim_2"]}--lmda={kwargs["lmda"]}--c=1e-05/'),
+    # Use name_instance for cleaner save path
+    save_path=name_instance('init_method', 'seed', 'n_train2', 'active_dim_2', 'load_model', 'linear_readout', 'one_task', 'overlap_bool', 'lmda', 'c', 'scaling',
+                            base_folder='data/diagonal/sparse_overlap2'),
     save_weights=True
 )
 
