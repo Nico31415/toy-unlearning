@@ -50,6 +50,8 @@ def parse_experiment_params(dirname):
     overlap_bool_match = re.search(r'overlap_bool=(\w+)', dirname)
     overlap_match = re.search(r'overlap=(\d+)', dirname)
     lmda_match = re.search(r'lmda=([\d\.\-e]+?)(?:--|$)', dirname)
+    c_match = re.search(r'c=([\d\.\-e]+?)(?:--|$)', dirname)
+    scaling_match = re.search(r'scaling=([\d\.\-e]+?)(?:--|$)', dirname)
     
     params = {}
     if n_train2_match:
@@ -69,12 +71,16 @@ def parse_experiment_params(dirname):
     
     if lmda_match:
         params['lmda'] = float(lmda_match.group(1))
+    if c_match:
+        params['c'] = float(c_match.group(1))
+    if scaling_match:
+        params['scaling'] = float(scaling_match.group(1))
     
     return params
 
 def collect_finetuning_results():
     """Collect results from all finetuning experiments."""
-    base_dir = "data/diagonal/sparse_overlap2"
+    base_dir = "data/data/diagonal/sparse_overlap2"
     results = []
     
     if not os.path.exists(base_dir):
@@ -117,7 +123,7 @@ def create_scaling_law_plots(df):
         print("No scaling data available")
         return
     
-    # Define the 4 specific combinations to plot
+    # Define the 4 specific combinations to plot (both active_dim_2=5 and active_dim_2=40 available)
     combinations = [
         {'overlap_bool': 'yes', 'active_dim_2': 5, 'title': 'Overlap=Yes, Active Dim 2=5'},
         {'overlap_bool': 'yes', 'active_dim_2': 40, 'title': 'Overlap=Yes, Active Dim 2=40'},
@@ -147,8 +153,21 @@ def create_scaling_law_plots(df):
             # Sort by n_train2 for proper line plotting
             group_sorted = group.sort_values('n_train2')
             
-            # Create label for this experimental setup
-            label = f"{init_method} init, λ={lmda}"
+            # Create label for this experimental setup based on init_method
+            if init_method == 'simple':
+                # For simple init, show scaling value if available, otherwise show λ
+                if 'scaling' in group_sorted.columns and not group_sorted['scaling'].isna().all():
+                    scaling_val = group_sorted['scaling'].iloc[0]
+                    label = f"{init_method} init, scaling={scaling_val}"
+                else:
+                    label = f"{init_method} init, λ={lmda}"
+            else:  # complex init
+                # For complex init, show both λ and c values
+                if 'c' in group_sorted.columns and not group_sorted['c'].isna().all():
+                    c_val = group_sorted['c'].iloc[0]
+                    label = f"{init_method} init, λ={lmda}, c={c_val}"
+                else:
+                    label = f"{init_method} init, λ={lmda}"
             
             # Plot the line
             plt.loglog(group_sorted['n_train2'], group_sorted['final_val_mse'], 
