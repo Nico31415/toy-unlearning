@@ -175,12 +175,12 @@ argparse_array = ArgparseArray(
     threshold=1e-10,
     epochs=int(1e6),
     lr=0.01,
-    lmda=(lambda lmda_2, **kwargs: f"{lmda_2:.10f}"),
-    aux_lmda_2=lmdas_init,
-    # aux_lmda=[0],
+    lmda=(lambda lmda_val, **kwargs: f"{lmda_val:.10f}"),  # Function to pass lambda values with proper formatting
+    aux_lmda_val=lmdas_init,  # The lambda values to iterate over
     init_method=['complex'],
     # init_method=['simple', 'complex'],  # This creates 4 array IDs: 0=simple+lmda=0, 1=complex+lmda=0, 2=simple+lmda=-c, 3=complex+lmda=-c
-    save_folder=name_instance('init_method', 'lmda', 'c', 'seed', 'n_train', 'active_dim', base_folder='data/diagonal/pretrain')
+    save_folder=(lambda **kwargs: 
+                 f"data/diagonal/pretrain/seed={kwargs['seed']}--active_dim={kwargs['active_dim']}--c={kwargs['c']}--lmda={kwargs['lmda_val']}--init_method={kwargs['init_method']}/")
 )
 
 def main(args):
