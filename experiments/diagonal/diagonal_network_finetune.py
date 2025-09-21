@@ -14,6 +14,9 @@ from torch.distributions.normal import Normal
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+import csv
+import os
+from datetime import datetime
 
 import functions.networks as nt
 import matplotlib.pyplot as plt
@@ -345,6 +348,71 @@ def plot_ground_truth_comparison(pretrain_gt, finetune_gt_task1, finetune_gt_tas
     print(f"  Pretrain vs Finetune: {overlap_pretrain_finetune}/{len(pretrain_nonzero)} ({overlap_pretrain_finetune/len(pretrain_nonzero)*100:.1f}%)")
     print(f"  Finetune is subset of Pretrain: {finetune_nonzero.issubset(pretrain_nonzero)}")
 
+def log_experiment_results(args, final_val_loss, final_train_loss, final_epoch):
+    """Log experiment results to a CSV file for easy analysis"""
+    
+    # Define the CSV file path
+    csv_file = 'experiment_results.csv'
+    
+    # Create the results directory if it doesn't exist
+    results_dir = 'experiment_results'
+    os.makedirs(results_dir, exist_ok=True)
+    csv_path = os.path.join(results_dir, csv_file)
+    
+    # Define the fieldnames for the CSV
+    fieldnames = [
+        'timestamp', 'seed', 'active_dim_1', 'active_dim_2', 'model_scaling', 
+        'scaling', 'n_train1', 'n_train2', 'lr', 'threshold', 'epochs',
+        'overlap', 'linear_readout', 'one_task', 'load_model', 'init_method',
+        'lmda', 'c', 'final_train_loss', 'final_val_loss', 'final_epoch',
+        'save_path'
+    ]
+    
+    # Prepare the row data
+    row_data = {
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'seed': getattr(args, 'seed', 'N/A'),
+        'active_dim_1': getattr(args, 'active_dim_1', 'N/A'),
+        'active_dim_2': getattr(args, 'active_dim_2', 'N/A'),
+        'model_scaling': getattr(args, 'model_scaling', 'N/A'),
+        'scaling': getattr(args, 'scaling', 'N/A'),
+        'n_train1': getattr(args, 'n_train1', 'N/A'),
+        'n_train2': getattr(args, 'n_train2', 'N/A'),
+        'lr': getattr(args, 'lr', 'N/A'),
+        'threshold': getattr(args, 'threshold', 'N/A'),
+        'epochs': getattr(args, 'epochs', 'N/A'),
+        'overlap': getattr(args, 'overlap', 'N/A'),
+        'linear_readout': getattr(args, 'linear_readout', 'N/A'),
+        'one_task': getattr(args, 'one_task', 'N/A'),
+        'load_model': getattr(args, 'load_model', 'N/A'),
+        'init_method': getattr(args, 'init_method', 'N/A'),
+        'lmda': getattr(args, 'lmda', 'N/A'),
+        'c': getattr(args, 'c', 'N/A'),
+        'final_train_loss': final_train_loss,
+        'final_val_loss': final_val_loss,
+        'final_epoch': final_epoch,
+        'save_path': getattr(args, 'save_path', 'N/A')
+    }
+    
+    # Check if file exists to determine if we need to write headers
+    file_exists = os.path.exists(csv_path)
+    
+    # Write to CSV
+    with open(csv_path, 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        # Write header if file is new
+        if not file_exists:
+            writer.writeheader()
+        
+        # Write the data row
+        writer.writerow(row_data)
+    
+    print(f"\nExperiment results logged to: {csv_path}")
+    print(f"Final Train Loss: {final_train_loss:.6f}")
+    print(f"Final Val Loss: {final_val_loss:.6f}")
+    print(f"Final Epoch: {final_epoch}")
+
 def plot_learned_vs_ground_truth(learned_beta, finetune_ground_truth, save_path, args):
     """Plot comparison between learned and ground truth betas for finetuning task"""
     
@@ -467,8 +535,16 @@ def main(args):
     task = torch.tensor([0]*args.n_train1+[1]*args.n_train2)
     val_y1 = teacher(val_x, *param1)
     val_y2 = teacher(val_x, *param2)
-    net = DiagonalNet(args.inp_dim, scaling=args.model_scaling, linear_readout=args.linear_readout)
+    net = DiagonalNet(args.inp_dim, scaling=1.0, linear_readout=args.linear_readout)  # Use default scaling
     net.load_state_dict(torch.load(args.model_path))
+    
+    # Apply model_scaling to the loaded pretrained weights
+    with torch.no_grad():
+        net.w_pos.data *= args.model_scaling
+        net.v_pos.data *= args.model_scaling
+        net.w_neg.data *= args.model_scaling
+        net.v_neg.data *= args.model_scaling
+    
     pretrained_beta = net.beta().detach().clone()
     if not args.load_model:
         if args.one_task:
@@ -501,6 +577,14 @@ def main(args):
         print('Saving weights')
         print(os.path.join(args.save_path, 'weights_df.feather'))
         df_weights.to_feather(os.path.join(args.save_path, 'weights_df.feather'))
+    
+    # Extract final losses for logging
+    final_train_loss = df[df['split'] == 'train']['loss'].iloc[-1]
+    final_val_loss = df[df['split'] == 'val']['loss'].iloc[-1]
+    final_epoch = df[df['split'] == 'train']['epoch'].iloc[-1]
+    
+    # Log experiment results to CSV
+    log_experiment_results(args, final_val_loss, final_train_loss, final_epoch)
     
     # Generate ground truth comparison plots
     print(f"\nGenerating ground truth comparison plots...")
