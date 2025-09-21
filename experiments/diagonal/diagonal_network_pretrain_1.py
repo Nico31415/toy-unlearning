@@ -121,7 +121,7 @@ scaling_init = 1.0
 lmdas_init = [0, -0.00001]  # [0, -1e-5] for different lambda values
 
 argparse_array = ArgparseArray(
-    seed=[0],  # Fixed seed for all cases
+    seed=[i for i in range(6)],  # Fixed seed for all cases
     inp_dim=[1000],
     active_dim=[40],
     n_train=1024,
