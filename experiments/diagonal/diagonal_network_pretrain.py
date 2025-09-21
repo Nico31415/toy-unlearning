@@ -140,6 +140,27 @@ def sample_teacher(inp_dim, active_dim):
     return (W, V)
 
 def main(args):
+    # Print experiment settings
+    print("="*80)
+    print("EXPERIMENT SETTINGS")
+    print("="*80)
+    print(f"Seed: {args.seed}")
+    print(f"Input dimension: {args.inp_dim}")
+    print(f"Active dimension: {args.active_dim}")
+    print(f"Training samples: {args.n_train}")
+    print(f"Learning rate: {args.lr}")
+    print(f"Max epochs: {args.epochs}")
+    print(f"Convergence threshold: {args.threshold}")
+    print(f"Scaling: {args.scaling}")
+    print(f"Lambda (λ): {args.lmda}")
+    print(f"C parameter: {args.c}")
+    print(f"Initialization method: {args.init_method}")
+    print(f"Learning rate tuning: {not args.no_tuning}")
+    print(f"Save folder: {args.save_folder}")
+    print("="*80)
+    print("Starting training...")
+    print("="*80)
+    
     Path(args.save_folder).mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
     param = sample_teacher(args.inp_dim, args.active_dim)
