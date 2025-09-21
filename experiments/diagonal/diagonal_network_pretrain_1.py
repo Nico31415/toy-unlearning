@@ -116,6 +116,51 @@ def plot_beta_comparison(ground_truth, learned, save_path, args_dict):
     
     plt.close()
 
+def plot_loss_curves(df, save_path, args_dict):
+    """Plot training and validation loss curves"""
+    
+    # Create figure
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    
+    # Separate training and validation data
+    train_data = df[df['split'] == 'train']
+    val_data = df[df['split'] == 'val']
+    
+    # Plot training loss
+    ax.plot(train_data['epoch'], train_data['loss'], 'b-', label='Training Loss', alpha=0.8, linewidth=1.5)
+    
+    # Plot validation loss
+    ax.plot(val_data['epoch'], val_data['loss'], 'r-', label='Validation Loss', alpha=0.8, linewidth=1.5)
+    
+    # Customize plot
+    ax.set_xlabel('Epoch', fontsize=12)
+    ax.set_ylabel('MSE Loss', fontsize=12)
+    ax.set_title(f'Training and Validation Loss Curves\n(Seed={args_dict["seed"]}, n_train={args_dict["n_train"]}, active_dim={args_dict["active_dim"]}, λ={args_dict["lmda"]:.2e})', fontsize=12)
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+    ax.set_yscale('log')  # Use log scale for better visualization
+    
+    # Add final loss values as text
+    final_train_loss = train_data['loss'].iloc[-1]
+    final_val_loss = val_data['loss'].iloc[-1]
+    ax.text(0.02, 0.98, f'Final Train Loss: {final_train_loss:.2e}\nFinal Val Loss: {final_val_loss:.2e}', 
+            transform=ax.transAxes, verticalalignment='top', fontsize=10,
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_path = os.path.join(save_path, 'loss_curves.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"Loss curves plot saved to: {plot_path}")
+    
+    # Also save as PDF for better quality
+    plot_pdf_path = os.path.join(save_path, 'loss_curves.pdf')
+    plt.savefig(plot_pdf_path, bbox_inches='tight')
+    print(f"Loss curves plot (PDF) saved to: {plot_pdf_path}")
+    
+    plt.close()
+
 c_init = 10**-5
 scaling_init = 1.0
 lmdas_init = [0, -0.00001]  # [0, -1e-5] for different lambda values
@@ -165,6 +210,10 @@ def main(args):
             print(f"Final Training MSE: {final_train_loss:.6f}")
             print(f"Final Validation MSE: {final_val_loss:.6f}")
             print(f"="*60)
+            
+            # Plot and save loss curves
+            print(f"\nGenerating loss curves plot...")
+            plot_loss_curves(df, args_dict['save_folder'], args_dict)
         
         # Reconstruct ground truth beta using same random seed
         torch.manual_seed(args_dict['seed'])
