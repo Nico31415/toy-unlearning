@@ -34,7 +34,7 @@ argparse_array = ArgparseArray(
     #aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     lr=1e-3,  # Reduced learning rate to see model_scaling effects
-    lmda=(lambda lmda_2, **kwargs: f"{lmda:.10f}"),
+    lmda=(lambda lmda_2, **kwargs: f"{lmda_2:.10f}"),
     c=(lambda c, **kwargs: c),
     aux_lmda_2=lmdas_init,
     aux_c=[c_init],
