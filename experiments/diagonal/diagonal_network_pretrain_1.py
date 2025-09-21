@@ -130,8 +130,8 @@ argparse_array = ArgparseArray(
     threshold=1e-10,
     epochs=int(1e6),
     lr=0.01,
-    lmda=(lambda lmda, **kwargs: f"{lmda:.10f}"),
-    aux_lmda=lmdas_init,
+    lmda=(lambda lmda_2, **kwargs: f"{lmda:.10f}"),
+    aux_lmda_2=lmdas_init,
     # aux_lmda=[0],
     init_method=['complex'],
     # init_method=['simple', 'complex'],  # This creates 4 array IDs: 0=simple+lmda=0, 1=complex+lmda=0, 2=simple+lmda=-c, 3=complex+lmda=-c
