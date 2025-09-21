@@ -13,7 +13,7 @@ argparse_array = ArgparseArray(
     seed=[0],  # Fixed seed to match pretraining
     active_dim_1=40,
     active_dim_2=[5, 40],  # Test both small and large finetuning tasks
-    scaling=scaling_init,
+    scaling=[1e-3, 1.0],
     model_scaling=scaling_init,
     inp_dim=1000,
     # Map to the correct pretrained model based on init_method and lmda
