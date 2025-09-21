@@ -7,13 +7,16 @@ from functions.array_training import ArgparseArray, name_instance
 
 c_init = 10**-5
 scaling_init = 1e-3
-lmdas_init = [0, -0.00001]  # [0, -1e-5] to match pretraining
+# lmdas_init = [0, -0.00001]  # [0, -1e-5] to match pretraining
+lmdas_init = [0]
+
 
 argparse_array = ArgparseArray(
     seed=[0],  # Fixed seed to match pretraining
     active_dim_1=40,
     active_dim_2=[5, 40],  # Test both small and large finetuning tasks
-    scaling=[1e-3, 1.0],
+    scaling = [1.0],
+    # scaling=[1e-3, 1.0],
     model_scaling=scaling_init,
     inp_dim=1000,
     # Map to the correct pretrained model based on init_method and lmda
@@ -24,7 +27,7 @@ argparse_array = ArgparseArray(
     one_task=[True],
     linear_readout=(lambda linear_readout, **kwargs: linear_readout),
     n_train1=1024,
-    n_train2 = [2** i for i in range(5, 11)],
+    n_train2 = [2** i for i in range(4, 10)],
     # n_train2=64,  # Fixed training size for this experiment
     aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
@@ -34,7 +37,8 @@ argparse_array = ArgparseArray(
     aux_lmda=lmdas_init,
     aux_c=[c_init],
     # Add init_method parameter
-    init_method=['simple', 'complex'],
+    # init_method=['simple', 'complex'],
+    init_method=['simple'],
     # Add load_model and linear_readout values
     aux_load_model=[True],
     aux_linear_readout=[False],
