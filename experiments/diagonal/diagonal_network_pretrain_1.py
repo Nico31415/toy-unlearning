@@ -131,7 +131,8 @@ argparse_array = ArgparseArray(
     epochs=int(1e6),
     lr=0.01,
     lmda=(lambda lmda, **kwargs: f"{lmda:.10f}"),
-    aux_lmda=lmdas_init,
+    # aux_lmda=lmdas_init,
+    aux_lmda=[0],
     init_method=['simple'],
     # init_method=['simple', 'complex'],  # This creates 4 array IDs: 0=simple+lmda=0, 1=complex+lmda=0, 2=simple+lmda=-c, 3=complex+lmda=-c
     save_folder=name_instance('init_method', 'lmda', 'c', 'scaling', 'seed', 'n_train', 'active_dim', base_folder='data/diagonal/pretrain')
