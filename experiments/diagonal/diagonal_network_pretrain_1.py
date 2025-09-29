@@ -2,11 +2,10 @@ import argparse
 import sys
 import os
 import torch
-import pandas as pd
 import numpy as np
 import math
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
+import itertools
 
 sys.path.append('')
 
@@ -53,6 +52,11 @@ def sample_teacher(inp_dim, active_dim):
 
 def plot_beta_comparison(ground_truth, learned, save_path, args_dict):
     """Plot comparison between ground truth and learned beta parameters"""
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as e:
+        print(f"matplotlib not available; skipping beta comparison plot. Reason: {e}")
+        return
     
     # Create figure with subplots
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
@@ -118,6 +122,11 @@ def plot_beta_comparison(ground_truth, learned, save_path, args_dict):
 
 def plot_loss_curves(df, save_path, args_dict):
     """Plot training and validation loss curves"""
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as e:
+        print(f"matplotlib not available; skipping loss curves plot. Reason: {e}")
+        return
     
     # Create figure
     fig, ax = plt.subplots(1, 1, figsize=(10, 6))
@@ -184,8 +193,27 @@ argparse_array = ArgparseArray(
 )
 
 def main(args):
+    # Validate array_id against available combinations
+    try:
+        total_array_ids = len(list(itertools.product(*argparse_array.array_args.values())))
+    except Exception:
+        total_array_ids = None
+    if total_array_ids is not None and (args.array_id < 0 or args.array_id >= total_array_ids):
+        print(f"Invalid array_id {args.array_id}. Valid range is 0..{total_array_ids-1}.")
+        return
+
     # Get the arguments dictionary for this array_id
     args_dict = argparse_array.get_args(args.array_id)
+    # Ensure numeric lambda for downstream math/formatting
+    if 'lmda' in args_dict and isinstance(args_dict['lmda'], str):
+        try:
+            args_dict['lmda'] = float(args_dict['lmda'])
+        except Exception:
+            # fallback to aux value if available
+            if 'aux_lmda_val' in args_dict:
+                args_dict['lmda'] = float(args_dict['aux_lmda_val'])
+            else:
+                raise
     
     # Run training first
     argparse_array.call_script('experiments/diagonal/diagonal_network_pretrain.py', args.array_id)
@@ -201,7 +229,12 @@ def main(args):
         # Get final MSE loss from saved results
         df_path = os.path.join(args_dict['save_folder'], 'df.feather')
         if os.path.exists(df_path):
-            df = pd.read_feather(df_path)
+            try:
+                import pandas as pd
+                df = pd.read_feather(df_path)
+            except Exception as e:
+                print(f"pandas not available or failed to read feather; skipping detailed loss analysis. Reason: {e}")
+                df = None
             final_train_loss = df[df['split'] == 'train']['loss'].iloc[-1]
             final_val_loss = df[df['split'] == 'val']['loss'].iloc[-1]
             print(f"\n" + "="*60)
@@ -213,7 +246,8 @@ def main(args):
             
             # Plot and save loss curves
             print(f"\nGenerating loss curves plot...")
-            plot_loss_curves(df, args_dict['save_folder'], args_dict)
+            if df is not None:
+                plot_loss_curves(df, args_dict['save_folder'], args_dict)
         
         # Reconstruct ground truth beta using same random seed
         torch.manual_seed(args_dict['seed'])

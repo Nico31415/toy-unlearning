@@ -17,10 +17,10 @@ argparse_array = ArgparseArray(
     active_dim_2=[5, 40],  # Test both small and large finetuning tasks
 
     scaling=1e-3,
-    model_scaling=1e-3
+    model_scaling=1e-3,
     inp_dim=1000,
-    # Map to the correct pretrained model based on init_method and lmda
-    model_path=(lambda init_method, seed, lmda, c, **kwargs: f'data/diagonal/pretrain/seed={seed}--active_dim=40--c={c}--scaling={scaling_init}--lmda={lmda}--init_method={init_method}/model.pt'),
+    # Map to the correct pretrained model based on init_method and lmda (matches pretrain path schema)
+    model_path=(lambda init_method, seed, lmda, c, **kwargs: f'data/diagonal/pretrain/seed={seed}--active_dim=40--c={c}--lmda={lmda}--init_method={init_method}/model.pt'),
     threshold=1e-6,  # Less aggressive early stopping to see model_scaling effects
     epochs=int(1e6),
     load_model=(lambda load_model, **kwargs: load_model),
@@ -34,24 +34,31 @@ argparse_array = ArgparseArray(
     #aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     lr=1e-3,  # Reduced learning rate to see model_scaling effects
-    lmda=(lambda lmda_2, **kwargs: f"{lmda_2:.10f}"),
+    lmda=(lambda lmda, **kwargs: f"{lmda:.10f}"),
     c=(lambda c, **kwargs: c),
-    aux_lmda_2=lmdas_init,
+    # Mark as auxiliary so it's not forwarded to the finetune script
+    aux_lmda=lmdas_init,
     aux_c=[c_init],
     # Add init_method parameter
     # init_method=['simple', 'complex'],
-    init_method=['complex'],
+    init_method=['complex'], 
     # Add load_model and linear_readout values
     aux_load_model=[True],
     aux_linear_readout=[False],
     # Use name_instance for cleaner save path
     save_path=name_instance('init_method', 'seed', 'n_train2', 'active_dim_2', 'load_model', 'linear_readout', 'one_task', 'overlap_bool', 'lmda', 'c', 'model_scaling',
-                            base_folder='data/diagonal/sparse_overlap3'),
+                            base_folder='data/diagonal/sparse_overlap'),
     save_weights=True
 )
 
 def main(args):
-    argparse_array.call_script('experiments/diagonal/diagonal_network_finetune.py', args.array_id)
+    import sys as _sys
+    # Print resolved experiment parameters before running
+    resolved_args = argparse_array.get_args(args.array_id)
+    print('Finetune experiment parameters:')
+    for key in sorted(resolved_args.keys()):
+        print(f"  {key}: {resolved_args[key]}")
+    argparse_array.call_script('experiments/diagonal/diagonal_network_finetune.py', args.array_id, python_cmd=_sys.executable)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
