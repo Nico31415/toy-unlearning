@@ -173,6 +173,7 @@ def plot_loss_curves(df, save_path, args_dict):
 c_init = 10**-5
 scaling_init = 1e-3
 lmdas_init = [0, -0.00001]  # [0, -1e-5] for different lambda values
+# lmdas_init = [0]
 
 argparse_array = ArgparseArray(
     seed=[i for i in range(6)],  # Fixed seed for all cases

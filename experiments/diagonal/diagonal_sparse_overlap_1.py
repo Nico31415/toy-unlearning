@@ -7,14 +7,15 @@ from functions.array_training import ArgparseArray, name_instance
 
 c_init = 10**-5
 scaling_init = 1e-3
-lmdas_init = [0, -0.00001]  # [0, -1e-5] to match pretraining
-# lmdas_init = [0, ]
+# lmdas_init = [0, -0.00001]  # [0, -1e-5] to match pretraining
+lmdas_init = [0]
 
 
 argparse_array = ArgparseArray(
-    seed=[i for i in range(6)],  # Fixed seed to match pretraining
+    seed=[i for i in range(1)],  # Fixed seed to match pretraining
     active_dim_1=40,
-    active_dim_2=[5, 40],  # Test both small and large finetuning tasks
+    # active_dim_2=[5, 40],  # Test both small and large finetuning tasks
+    active_dim_2 = [40],
 
     scaling=1e-3,
     model_scaling=1e-3,
@@ -28,9 +29,10 @@ argparse_array = ArgparseArray(
     linear_readout=(lambda linear_readout, **kwargs: linear_readout),
     n_train1=1024,
     #n_train2 = [2** i for i in range(4, 10)],
-    n_train2 = [2** i for i in range(4, 10)],
+    # n_train2 = [2** i for i in range(4, 10)],
+    n_train2 = [512],
     # n_train2=64,  # Fixed training size for this experiment
-    aux_overlap_bool =['yes'],
+    aux_overlap_bool =['yes', 'no'],
     #aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
     overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     lr=1e-3,  # Reduced learning rate to see model_scaling effects

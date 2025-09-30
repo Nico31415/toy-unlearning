@@ -348,6 +348,60 @@ def plot_ground_truth_comparison(pretrain_gt, finetune_gt_task1, finetune_gt_tas
     print(f"  Pretrain vs Finetune: {overlap_pretrain_finetune}/{len(pretrain_nonzero)} ({overlap_pretrain_finetune/len(pretrain_nonzero)*100:.1f}%)")
     print(f"  Finetune is subset of Pretrain: {finetune_nonzero.issubset(pretrain_nonzero)}")
 
+def plot_pretrain_and_finetune_simple(pretrain_gt, finetune_gt, save_path, args):
+	"""Plot pretraining and finetuning ground truths on the same axes vs index."""
+	try:
+		import matplotlib.pyplot as plt
+	except Exception as e:
+		print(f"matplotlib not available; skipping simple ground truth plot. Reason: {e}")
+		return
+
+	fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+	ax.plot(pretrain_gt.numpy(), label='Pretraining ground truth', linewidth=1.5)
+	ax.plot(finetune_gt.numpy(), label='Finetuning ground truth', linewidth=1.5)
+	ax.set_xlabel('Index')
+	ax.set_ylabel('Value')
+	title = f"Pretrain vs Finetune Ground Truth (seed={getattr(args, 'seed', 'NA')}, adim1={getattr(args, 'active_dim_1', 'NA')}, adim2={getattr(args, 'active_dim_2', 'NA')}, overlap={getattr(args, 'overlap', 'NA')})"
+	ax.set_title(title)
+	ax.legend()
+	ax.grid(True, alpha=0.3)
+	plt.tight_layout()
+
+	# Save figure
+	out_png = os.path.join(save_path, 'pretrain_vs_finetune_ground_truth.png')
+	plt.savefig(out_png, dpi=300, bbox_inches='tight')
+	print(f"Simple ground truth plot saved to: {out_png}")
+	out_pdf = os.path.join(save_path, 'pretrain_vs_finetune_ground_truth.pdf')
+	plt.savefig(out_pdf, bbox_inches='tight')
+	plt.close()
+
+def plot_pretrain_vs_learned(pretrain_gt, learned_beta, save_path, args):
+	"""Plot pretraining ground truth and learned (post-finetune) beta on same axes."""
+	try:
+		import matplotlib.pyplot as plt
+	except Exception as e:
+		print(f"matplotlib not available; skipping pretrain vs learned plot. Reason: {e}")
+		return
+
+	fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+	ax.plot(pretrain_gt.numpy(), label='Pretraining ground truth', linewidth=1.5)
+	ax.plot(learned_beta.numpy(), label='Learned beta after finetune', linewidth=1.5)
+	ax.set_xlabel('Index')
+	ax.set_ylabel('Value')
+	title = f"Pretrain GT vs Learned Beta (seed={getattr(args, 'seed', 'NA')}, adim1={getattr(args, 'active_dim_1', 'NA')}, adim2={getattr(args, 'active_dim_2', 'NA')}, overlap={getattr(args, 'overlap', 'NA')})"
+	ax.set_title(title)
+	ax.legend()
+	ax.grid(True, alpha=0.3)
+	plt.tight_layout()
+
+	# Save figure
+	out_png = os.path.join(save_path, 'pretrain_ground_truth_vs_learned_beta.png')
+	plt.savefig(out_png, dpi=300, bbox_inches='tight')
+	print(f"Pretrain vs learned beta plot saved to: {out_png}")
+	out_pdf = os.path.join(save_path, 'pretrain_ground_truth_vs_learned_beta.pdf')
+	plt.savefig(out_pdf, bbox_inches='tight')
+	plt.close()
+
 def log_experiment_results(args, final_val_loss, final_train_loss, final_epoch):
     """Log experiment results to a CSV file for easy analysis"""
     
@@ -602,6 +656,8 @@ def main(args):
     
     # Generate comparison plots
     plot_ground_truth_comparison(pretrain_ground_truth, finetune_gt_task1, finetune_gt_task2, args.save_path, args)
+    # Also generate the simple overlay plot requested
+    plot_pretrain_and_finetune_simple(pretrain_ground_truth, finetune_gt_task2, args.save_path, args)
     
     # Generate learned vs ground truth plots
     print(f"\nGenerating learned vs ground truth plots...")
@@ -610,7 +666,10 @@ def main(args):
     learned_beta = model.beta().detach()
     
     # For single task finetuning, compare learned beta with finetuning ground truth
-    plot_learned_vs_ground_truth(learned_beta, finetune_gt_task2, args.save_path, args) 
+    plot_learned_vs_ground_truth(learned_beta, finetune_gt_task2, args.save_path, args)
+
+    # Additionally, compare pretraining ground truth against learned beta
+    plot_pretrain_vs_learned(pretrain_ground_truth, learned_beta, args.save_path, args)
 
 def get_parser():
     parser = argparse.ArgumentParser()
