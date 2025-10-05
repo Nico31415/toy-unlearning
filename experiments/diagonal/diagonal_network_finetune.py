@@ -589,6 +589,19 @@ def main(args):
     task = torch.tensor([0]*args.n_train1+[1]*args.n_train2)
     val_y1 = teacher(val_x, *param1)
     val_y2 = teacher(val_x, *param2)
+    # If requested, plot ground truths before any finetuning and exit
+    if getattr(args, 'plot_ground_truth_only', False):
+        true_beta = torch.stack([
+            param1[0].T@(param1[1]),
+            param2[0].T@(param2[1])
+        ], dim=1)
+        finetune_gt_task1 = true_beta[:, 0]
+        finetune_gt_task2 = true_beta[:, 1]
+        plot_ground_truth_comparison(pretrain_ground_truth, finetune_gt_task1, finetune_gt_task2, args.save_path, args)
+        plot_pretrain_and_finetune_simple(pretrain_ground_truth, finetune_gt_task2, args.save_path, args)
+        print("Plotted ground truths (pretraining vs finetuning) before training. Exiting as requested.")
+        return
+
     net = DiagonalNet(args.inp_dim, scaling=1.0, linear_readout=args.linear_readout)  # Use default scaling
     net.load_state_dict(torch.load(args.model_path))
     
@@ -605,11 +618,15 @@ def main(args):
             net = DiagonalNet(args.inp_dim, scaling=args.scaling, linear_readout=args.linear_readout)
         else:
             net = MTDiagonalNet(args.inp_dim, outp_dim=2, scaling=args.scaling, linear_readout=args.linear_readout)
-    if args.one_task:
+    # Only (re-)initialize parameters when we're NOT loading a pretrained model
+    if args.one_task and (not args.load_model):
         nn.init.constant_(net.v_pos, args.scaling)
         nn.init.constant_(net.v_neg, args.scaling)
         net.w_pos = nn.Parameter(args.w_scaling*net.w_pos)
         net.w_neg = nn.Parameter(args.w_scaling*net.w_neg)
+
+    # Choose training routine based on one_task flag (independent of load_model)
+    if args.one_task:
         df, norm_df, model, df_weights = train_one_task(net, (x2, y2), (val_x, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, beta_1=pretrained_beta)
     else:
         df, norm_df, model, df_weights = train_two_tasks(net, (x, y, task), (val_x, val_y1, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, pretrained_beta=pretrained_beta)
@@ -696,6 +713,7 @@ def get_parser():
     parser.add_argument('--lmda', type=float, default=0.)
     parser.add_argument('--c', type=float, default=0.001)
     parser.add_argument('--init_method', type=str, default='complex', choices=['simple', 'complex'])
+    parser.add_argument('--plot_ground_truth_only', action='store_true')
     return parser
 
 if __name__ == '__main__':

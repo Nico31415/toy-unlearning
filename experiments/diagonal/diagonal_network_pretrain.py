@@ -35,6 +35,8 @@ class DiagonalNet(nn.Module):
             self.v_pos = nn.Parameter(scaling*torch.ones(inp_dim))
             self.v_neg = nn.Parameter(scaling*torch.ones(inp_dim))
             self.w_neg = nn.Parameter(scaling*torch.ones(inp_dim))
+            print('lmda for simple initialization:', (self.w_pos**2 - self.v_pos**2)[0].item())
+            print('c for simple initialization:', (self.w_pos*self.w_neg + self.v_pos*self.v_neg)[0].item())
         elif init_method == 'complex':
             # Complex initialization
             w_pos, w_neg, v_pos, v_neg = get_parameters(c, lmda)
@@ -193,6 +195,7 @@ def get_parser():
     parser.add_argument('--lr', type=float, default=1e20)
     parser.add_argument('--epochs', type=int, default=int(1e5))
     parser.add_argument('--scaling', type=float, default=1.)
+    parser.add_argument('--w_scaling', type=float, default=1.)
     parser.add_argument('--lmda', type=float, default=0.)
     parser.add_argument('--c', type=float, default=0.001)
     parser.add_argument('--init_method', type=str, default='complex', choices=['simple', 'complex'])

@@ -27,10 +27,10 @@ argparse_array = ArgparseArray(
     load_model=(lambda load_model, **kwargs: load_model),
     one_task=[True],
     linear_readout=(lambda linear_readout, **kwargs: linear_readout),
-    n_train1=1024,
+    n_train1=[1024],
     #n_train2 = [2** i for i in range(4, 10)],
     # n_train2 = [2** i for i in range(4, 10)],
-    n_train2 = [512],
+    n_train2 = [32, 64],
     # n_train2=64,  # Fixed training size for this experiment
     aux_overlap_bool =['yes', 'no'],
     #aux_overlap_bool=['yes', 'no'],  # Test both overlap and no overlap
@@ -43,7 +43,7 @@ argparse_array = ArgparseArray(
     aux_c=[c_init],
     # Add init_method parameter
     # init_method=['simple', 'complex'],
-    init_method=['complex'], 
+    init_method=['simple'], 
     # Add load_model and linear_readout values
     aux_load_model=[True],
     aux_linear_readout=[False],
