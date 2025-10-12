@@ -239,6 +239,7 @@ def get_parser():
     parser.add_argument('--scaling', type=float, default=1.)
     parser.add_argument('--w_scaling', type=float, default=1.)
     parser.add_argument('--lmda', type=float, default=0.)
+    # parser.add_argument('--lmda_frac', type=float, default=0.)
     parser.add_argument('--c', type=float, default=0.001)
     parser.add_argument('--init_method', type=str, default='complex', choices=['simple', 'complex'])
     return parser

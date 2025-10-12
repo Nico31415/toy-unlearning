@@ -170,29 +170,69 @@ def plot_loss_curves(df, save_path, args_dict):
     
     plt.close()
 
-c_init = 10**-5
-scaling_init = 1e-3
-lmdas_init = [0, -0.00001, -0.0000085]  # [0, -1e-5] for different lambda values
-# lmdas_init = [0]
 
+cs_init = [10**-5, 10**-3, 10**-1]
+scaling_init = 1e-3
+lmdas_init_fraction = [1, 0.9, 0, -0.5, -0.75, -0.85, -1]
 
 argparse_array = ArgparseArray(
-    seed=[i for i in range(1)],  # Fixed seed for all cases
+    seed=[i for i in range(1)],
     inp_dim=[1000],
     active_dim=[40],
     n_train=1024,
-    c=[c_init],
+
+    # c is a normal (non-aux) iterable -> included in final args
+    c=cs_init,
     scaling=[scaling_init],
     threshold=1e-10,
     epochs=int(1e6),
     lr=0.5,
-    aux_lmda_val=lmdas_init,  # The lambda values to iterate over
-    lmda=(lambda lmda_val, **kwargs: f"{lmda_val:.10f}"),  # Function to pass lambda values with proper formatting
+
+    # fraction spreads the grid but is NOT included in final args
+    aux_lmda_frac=lmdas_init_fraction,
+
+    # ---- Callables MUST use stripped names ----
+    lmda=(lambda c, lmda_frac, **kwargs: f"{c * lmda_frac:.10f}"),
+
     init_method=['complex'],
-    # init_method=['simple', 'complex'],  # This creates 4 array IDs: 0=simple+lmda=0, 1=complex+lmda=0, 2=simple+lmda=-c, 3=complex+lmda=-c
-    save_folder=(lambda **kwargs: 
-                 f"data/diagonal/pretrain/seed={kwargs['seed']}--active_dim={kwargs['active_dim']}--c={kwargs['c']}--lmda={kwargs['lmda_val']}--init_method={kwargs['init_method']}/")
+
+    save_folder=(lambda c, lmda_frac, **kwargs:
+        f"data/diagonal/pretrain/"
+        f"seed={kwargs['seed']}--active_dim={kwargs['active_dim']}"
+        f"--c={c:.1e}"
+        f"--lmda={c * lmda_frac:.10f}"
+        f"--init_method={kwargs['init_method']}/"
+    )
 )
+
+
+
+
+# cs_init = [10**-5, 10**-3, 10**-1]
+# scaling_init = 1e-3
+# lmdas_init_fraction = [1, 0.9, 0, -0.5, -0.75, -0.85, -1]
+# # lmdas_init = [c_init * l for l in lmdas_init_fraction]  # [0, -1e-5] for different lambda values
+# # lmdas_init = [0]
+
+
+# argparse_array = ArgparseArray(
+#     seed=[i for i in range(1)],  # Fixed seed for all cases
+#     inp_dim=[1000],
+#     active_dim=[40],
+#     n_train=1024,
+#     aux_c=cs_init,
+#     scaling=[scaling_init],
+#     threshold=1e-10,
+#     epochs=int(1e6),
+#     lr=0.5,
+#     aux_lmda_frac =lmdas_init_fraction,  # The lambda values to iterate over
+#     # lmda_val = lmdas_init_fraction * c
+#     lmda=(lambda lmda_frac, c, **kwargs: f"{lmda_frac * c:.10f}"),  # Function to pass lambda values with proper formatting
+#     init_method=['complex'],
+#     # init_method=['simple', 'complex'],  # This creates 4 array IDs: 0=simple+lmda=0, 1=complex+lmda=0, 2=simple+lmda=-c, 3=complex+lmda=-c
+#     save_folder=(lambda **kwargs: 
+#                  f"data/diagonal/pretrain/seed={kwargs['seed']}--active_dim={kwargs['active_dim']}--c={kwargs['c']}--lmda={kwargs['lmda_val']}--init_method={kwargs['init_method']}/")
+# )
 
 def main(args):
     # Validate array_id against available combinations
