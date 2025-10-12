@@ -172,11 +172,12 @@ def plot_loss_curves(df, save_path, args_dict):
 
 c_init = 10**-5
 scaling_init = 1e-3
-lmdas_init = [0, -0.00001]  # [0, -1e-5] for different lambda values
+lmdas_init = [0, -0.00001, -0.0000085]  # [0, -1e-5] for different lambda values
 # lmdas_init = [0]
 
+
 argparse_array = ArgparseArray(
-    seed=[i for i in range(6)],  # Fixed seed for all cases
+    seed=[i for i in range(1)],  # Fixed seed for all cases
     inp_dim=[1000],
     active_dim=[40],
     n_train=1024,
@@ -184,10 +185,10 @@ argparse_array = ArgparseArray(
     scaling=[scaling_init],
     threshold=1e-10,
     epochs=int(1e6),
-    lr=0.01,
-    lmda=(lambda lmda_val, **kwargs: f"{lmda_val:.10f}"),  # Function to pass lambda values with proper formatting
+    lr=0.5,
     aux_lmda_val=lmdas_init,  # The lambda values to iterate over
-    init_method=['simple'],
+    lmda=(lambda lmda_val, **kwargs: f"{lmda_val:.10f}"),  # Function to pass lambda values with proper formatting
+    init_method=['complex'],
     # init_method=['simple', 'complex'],  # This creates 4 array IDs: 0=simple+lmda=0, 1=complex+lmda=0, 2=simple+lmda=-c, 3=complex+lmda=-c
     save_folder=(lambda **kwargs: 
                  f"data/diagonal/pretrain/seed={kwargs['seed']}--active_dim={kwargs['active_dim']}--c={kwargs['c']}--lmda={kwargs['lmda_val']}--init_method={kwargs['init_method']}/")
@@ -338,5 +339,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('array_id', type=int)
+    default_args = argparse.Namespace(array_id=0)
+    # args = default_args
     args = parser.parse_args()
     main(args)

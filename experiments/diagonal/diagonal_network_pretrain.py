@@ -1,3 +1,9 @@
+# --- TOP OF FILE ---
+import os
+os.environ["PYTHONHASHSEED"] = "0"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # if CUDA present
 from copy import deepcopy
 import argparse
 import math
@@ -16,6 +22,31 @@ import numpy as np
 import pandas as pd
 
 import functions.networks as nt
+import random
+
+
+def make_deterministic(seed: int, use_gpu=False):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # PyTorch algos
+    torch.use_deterministic_algorithms(True, warn_only=False)
+
+    # Numeric behavior
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # Threads
+    torch.set_num_threads(1)
+    try:
+        torch.set_num_interop_threads(1)
+    except Exception:
+        pass
 
 def get_parameters(c, lmda):
     # if np.any(lmda == 0):
@@ -132,9 +163,12 @@ def teacher(x, W, V):
     outp = V*outp
     return outp.sum(dim=-1)
 
-def circular_sample(shape):
-    W = Normal(0,1).sample(shape)
-    return W/torch.sqrt(torch.mean(W**2, dim=-1, keepdims=True))
+# def circular_sample(shape):
+#     W = Normal(0,1).sample(shape)
+#     return W/torch.sqrt(torch.mean(W**2, dim=-1, keepdims=True))
+def circular_sample(shape, generator=None, device=None, dtype=torch.float32):
+    W = torch.randn(*shape, generator=generator, device=device, dtype=dtype)
+    return W / torch.sqrt((W**2).mean(dim=-1, keepdim=True))
 
 def sample_teacher(inp_dim, active_dim):
     W = F.one_hot(torch.randperm(inp_dim)[:active_dim], inp_dim).float()
@@ -142,6 +176,7 @@ def sample_teacher(inp_dim, active_dim):
     return (W, V)
 
 def main(args):
+    make_deterministic(args.seed, use_gpu=False)
     # Print experiment settings
     print("="*80)
     print("EXPERIMENT SETTINGS")
@@ -162,14 +197,21 @@ def main(args):
     print("="*80)
     print("Starting training...")
     print("="*80)
+
+    gen1 = torch.Generator(device='cpu').manual_seed(args.seed + 0)
+    gen2 = torch.Generator(device='cpu').manual_seed(args.seed + 1)
+    gen3 = torch.Generator(device='cpu').manual_seed(args.seed + 2)
+    gen4 = torch.Generator(device='cpu').manual_seed(args.seed + 3)
     
     Path(args.save_folder).mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
     param = sample_teacher(args.inp_dim, args.active_dim)
-    x = Normal(0, 1).sample((args.n_train, args.inp_dim))
-    x = x/torch.sqrt(torch.mean(x**2, dim=-1, keepdims=True))
-    val_x = Normal(0, 1).sample((10000, args.inp_dim))
-    val_x = val_x/torch.sqrt(torch.mean(val_x**2, dim=-1, keepdims=True))
+    # x = Normal(0, 1).sample((args.n_train, args.inp_dim))
+    # x = x/torch.sqrt(torch.mean(x**2, dim=-1, keepdims=True))
+    x = circular_sample((args.n_train, args.inp_dim), generator=gen1)
+    # val_x = Normal(0, 1).sample((10000, args.inp_dim))
+    # val_x = val_x/torch.sqrt(torch.mean(val_x**2, dim=-1, keepdims=True))
+    val_x = circular_sample((10000, args.inp_dim), generator=gen2)
     y = teacher(x, *param)
     val_y = teacher(val_x, *param)
     net = DiagonalNet(args.inp_dim, scaling=args.scaling, lmda=args.lmda, c=args.c, init_method=args.init_method)

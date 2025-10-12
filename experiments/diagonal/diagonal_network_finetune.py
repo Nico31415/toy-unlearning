@@ -1,3 +1,9 @@
+# --- TOP OF FILE ---
+import os
+os.environ["PYTHONHASHSEED"] = "0"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # if CUDA present
 from copy import deepcopy
 import argparse
 import sys
@@ -15,11 +21,39 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import csv
+import json
 import os
 from datetime import datetime
 
 import functions.networks as nt
 import matplotlib.pyplot as plt
+
+import os, random, numpy as np, torch
+
+def make_deterministic(seed: int, use_gpu=False):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # PyTorch algos
+    torch.use_deterministic_algorithms(True, warn_only=False)
+
+    # Numeric behavior
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # Threads
+    torch.set_num_threads(1)
+    try:
+        torch.set_num_interop_threads(1)
+    except Exception:
+        pass
+
+
 
 class DiagonalNet(nn.Module):
     def __init__(self, inp_dim, scaling=1., linear_readout=False):
@@ -57,6 +91,42 @@ def q(z):
 
 def q_norm(x, gamma):
     return ((torch.abs(x[:,0])+gamma**2)*q(x[:,1]/(torch.abs(x[:,0])+gamma**2))).sum().item()
+
+def plot_training_loss(losses_df, save_path=None, show_plot=True):
+    """
+    Plot training and validation loss against epochs for the train_one_task function.
+    
+    Args:
+        losses_df: DataFrame containing training and validation losses with columns 'epoch', 'loss', 'split'
+        save_path: Optional path to save the plot
+        show_plot: Whether to display the plot
+    """
+    # Filter for training and validation losses
+    train_losses = losses_df[losses_df['split'] == 'train']
+    val_losses = losses_df[losses_df['split'] == 'val']
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_losses['epoch'], train_losses['loss'], 'b-', linewidth=2, label='Training Loss')
+    
+    # Plot validation loss if available
+    if not val_losses.empty:
+        plt.plot(val_losses['epoch'], val_losses['loss'], 'r-', linewidth=2, label='Validation Loss')
+    
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss vs Epochs')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.yscale('log')  # Use log scale for better visualization of loss decay
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to {save_path}")
+    
+    if show_plot:
+        plt.show()
+    
+    return plt.gcf()
 
 class MTDiagonalNet(nn.Module):
     def __init__(self, inp_dim, outp_dim=1, scaling=1., linear_readout=False):
@@ -160,6 +230,8 @@ def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1
         optimizer.step()
         losses.append(loss.detach())
         loss = loss.item()
+        if(i == 60000):
+            print('epoch testing')
         if (i%test_every_n_epochs==0):
             with torch.no_grad():
                 val_loss = F.mse_loss(model(val_x), val_y).item()
@@ -220,28 +292,151 @@ def teacher(x, W, V):
     outp = V*outp
     return outp.sum(dim=-1)
 
-def circular_sample(shape):
-    W = Normal(0,1).sample(shape)
-    return W/torch.sqrt(torch.mean(W**2, dim=-1, keepdims=True))
+
+def circular_sample(shape, generator=None, device=None, dtype=torch.float32):
+    W = torch.randn(*shape, generator=generator, device=device, dtype=dtype)
+    return W / torch.sqrt((W**2).mean(dim=-1, keepdim=True))
+
+# def circular_sample(shape):
+#     W = Normal(0,1).sample(shape)
+#     return W/torch.sqrt(torch.mean(W**2, dim=-1, keepdims=True))
 
 def sample_teacher(inp_dim, active_dim):
     W = F.one_hot(torch.randperm(inp_dim)[:active_dim], inp_dim).float()
     V = torch.sign(torch.rand((active_dim,))-0.5).float()/math.sqrt(active_dim)
     return (W, V)
 
-def sample_two_teachers(inp_dim, active_dim_1, active_dim_2, overlap=0):
-    perm = torch.randperm(inp_dim)
-    W = F.one_hot(perm[:active_dim_1], inp_dim).float()
-    V = torch.sign(torch.rand((active_dim_1,))-0.5).float()
-    W2 = F.one_hot(
-        torch.cat([perm[:overlap], perm[active_dim_1:(active_dim_1+active_dim_2-overlap)]]),
-        inp_dim
-    ).float()
-    return (W, V/math.sqrt(active_dim_1)), (W2, V[:active_dim_2]/math.sqrt(active_dim_2))
+# def sample_two_teachers(inp_dim, active_dim_1, active_dim_2, overlap=0):
+#     perm = torch.randperm(inp_dim)
+#     W = F.one_hot(perm[:active_dim_1], inp_dim).float()
+#     V = torch.sign(torch.rand((active_dim_1,))-0.5).float()
+#     W2 = F.one_hot(
+#         torch.cat([perm[:overlap], perm[active_dim_1:(active_dim_1+active_dim_2-overlap)]]),
+#         inp_dim
+#     ).float()
+#     return (W, V/math.sqrt(active_dim_1)), (W2, V[:active_dim_2]/math.sqrt(active_dim_2))
+
+def sample_two_teachers(
+    inp_dim: int,
+    active_dim_1: int,
+    active_dim_2: int,
+    overlap: int = 0,
+    *,
+    generator: torch.Generator | None = None,
+    device: torch.device | str | None = None,
+    dtype: torch.dtype = torch.float32,
+):
+    # basic sanity checks (helps catch silent bugs)
+    if not (0 <= overlap <= min(active_dim_1, active_dim_2)):
+        raise ValueError("overlap must be in [0, min(active_dim_1, active_dim_2)].")
+    if active_dim_1 > inp_dim or active_dim_2 > inp_dim:
+        raise ValueError("active_dim_* must be <= inp_dim.")
+
+    # permutation of input dimensions (reproducible if generator is fixed)
+    perm = torch.randperm(inp_dim, generator=generator, device=device)
+
+    # first teacher
+    W = F.one_hot(perm[:active_dim_1], num_classes=inp_dim).to(dtype=dtype)
+    # random ±1 signs for the active coordinates
+    V = torch.sign(torch.rand((active_dim_1,), generator=generator, device=device, dtype=dtype) - 0.5)
+
+    # second teacher (shares 'overlap' indices with the first)
+    idx2 = torch.cat([perm[:overlap],
+                      perm[active_dim_1:(active_dim_1 + active_dim_2 - overlap)]])
+    W2 = F.one_hot(idx2, num_classes=inp_dim).to(dtype=dtype)
+
+    # scale by sqrt of active dims
+    return (W.to(device), V / math.sqrt(active_dim_1)), (W2.to(device), V[:active_dim_2] / math.sqrt(active_dim_2))
 
 def select_output(outp, task):
     task_oh = F.one_hot(task, outp.shape[1])
     return (outp*task_oh).sum(dim=-1)
+
+def sample_finetuning_teacher_with_pretrain_overlap(
+    pretrained_beta, 
+    active_dim_2, 
+    overlap, 
+    inp_dim,
+    same_signs=True,
+    generator=None,
+    device=None,
+    dtype=torch.float32
+):
+    """
+    Create a finetuning teacher with controlled overlap with pretraining teacher.
+    
+    Args:
+        pretrained_beta: The effective beta from pretrained model (w_pos*v_pos - w_neg*v_neg)
+        active_dim_2: Number of active dimensions for finetuning teacher
+        overlap: Number of dimensions to overlap with pretraining
+        inp_dim: Input dimension
+        same_signs: If True, use same signs as pretraining for overlapping dimensions
+        generator: Random generator for reproducibility
+        device: Device for tensors
+        dtype: Data type for tensors
+    
+    Returns:
+        (W, V): Teacher parameters for finetuning
+    """
+    # Find active dimensions in pretrained model (largest absolute values)
+    # We need to find the actual number of active dimensions in pretraining
+    # For now, we'll use a threshold-based approach or find top-k dimensions
+    abs_beta = torch.abs(pretrained_beta)
+    # Find dimensions above threshold or use top-k if threshold gives too few
+    above_threshold = (abs_beta > 1e-4).sum().item()
+    k = max(above_threshold, active_dim_2)  # Ensure we have enough dimensions
+    _, active_indices = torch.topk(abs_beta, k=min(k, len(abs_beta)), largest=True)
+    pretrain_active_dims = active_indices.tolist()
+    
+    # Validate overlap constraint
+    if overlap > min(len(pretrain_active_dims), active_dim_2):
+        raise ValueError(f"overlap ({overlap}) must be <= min(pretrain_active_dims, active_dim_2)")
+    
+    # Select overlapping dimensions (random subset of pretraining active dimensions)
+    if overlap > 0:
+        overlap_indices = torch.randperm(len(pretrain_active_dims), generator=generator, device=device)[:overlap]
+        overlap_dims = [pretrain_active_dims[i] for i in overlap_indices]
+    else:
+        overlap_dims = []
+    
+    # Select new dimensions (from inactive dimensions)
+    remaining_dims = active_dim_2 - overlap
+    if remaining_dims > 0:
+        inactive_dims = [i for i in range(inp_dim) if i not in pretrain_active_dims]
+        if len(inactive_dims) < remaining_dims:
+            raise ValueError(f"Not enough inactive dimensions ({len(inactive_dims)}) for remaining_dims ({remaining_dims})")
+        
+        new_indices = torch.randperm(len(inactive_dims), generator=generator, device=device)[:remaining_dims]
+        new_dims = [inactive_dims[i] for i in new_indices]
+    else:
+        new_dims = []
+    
+    # Combine all active dimensions for finetuning teacher
+    finetune_active_dims = overlap_dims + new_dims
+    
+    # Create W (one-hot selector for active dimensions)
+    W = F.one_hot(torch.tensor(finetune_active_dims, device=device), num_classes=inp_dim).to(dtype=dtype)
+    
+    # Create V (signs for active dimensions)
+    V = torch.zeros(active_dim_2, device=device, dtype=dtype)
+    
+    # Set signs for overlapping dimensions
+    if overlap > 0 and same_signs:
+        # Use same signs as pretraining
+        for i, dim in enumerate(overlap_dims):
+            V[i] = torch.sign(pretrained_beta[dim])
+    elif overlap > 0:
+        # Use new random signs
+        V[:overlap] = torch.sign(torch.rand(overlap, generator=generator, device=device, dtype=dtype) - 0.5)
+    
+    # Set signs for new dimensions (always random)
+    if remaining_dims > 0:
+        V[overlap:] = torch.sign(torch.rand(remaining_dims, generator=generator, device=device, dtype=dtype) - 0.5)
+    
+    # Scale by sqrt of active dimensions
+    V = V / math.sqrt(active_dim_2)
+    
+    return (W, V)
 
 def plot_ground_truth_comparison(pretrain_gt, finetune_gt_task1, finetune_gt_task2, save_path, args):
     """Plot comparison between pretraining and finetuning ground truth betas"""
@@ -403,69 +598,134 @@ def plot_pretrain_vs_learned(pretrain_gt, learned_beta, save_path, args):
 	plt.close()
 
 def log_experiment_results(args, final_val_loss, final_train_loss, final_epoch):
-    """Log experiment results to a CSV file for easy analysis"""
-    
+    """Log experiment results to a CSV file including all args parameters automatically.
+
+    This function:
+      - Converts all items in args (simple types or JSON-serializable) into columns
+      - Adds timestamp and final metrics
+      - If the CSV exists, merges columns with any new parameters and rewrites the file
+    """
+
     # Define the CSV file path
     csv_file = 'experiment_results.csv'
-    
-    # Create the results directory if it doesn't exist
     results_dir = 'experiment_results'
     os.makedirs(results_dir, exist_ok=True)
     csv_path = os.path.join(results_dir, csv_file)
-    
-    # Define the fieldnames for the CSV
-    fieldnames = [
-        'timestamp', 'seed', 'active_dim_1', 'active_dim_2', 'model_scaling', 
-        'scaling', 'n_train1', 'n_train2', 'lr', 'threshold', 'epochs',
-        'overlap', 'linear_readout', 'one_task', 'load_model', 'init_method',
-        'lmda', 'c', 'final_train_loss', 'final_val_loss', 'final_epoch',
-        'save_path'
-    ]
-    
-    # Prepare the row data
+
+    # Helper to make values serializable
+    def _serialize_value(value):
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        # Try JSON for lists/tuples/dicts and fall back to str
+        try:
+            return json.dumps(value)
+        except Exception:
+            return str(value)
+
+    # Collect all args as a dict
+    args_dict = {k: _serialize_value(v) for k, v in vars(args).items()}
+
+    # Build the new row with timestamp and metrics
     row_data = {
+        **args_dict,
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'seed': getattr(args, 'seed', 'N/A'),
-        'active_dim_1': getattr(args, 'active_dim_1', 'N/A'),
-        'active_dim_2': getattr(args, 'active_dim_2', 'N/A'),
-        'model_scaling': getattr(args, 'model_scaling', 'N/A'),
-        'scaling': getattr(args, 'scaling', 'N/A'),
-        'n_train1': getattr(args, 'n_train1', 'N/A'),
-        'n_train2': getattr(args, 'n_train2', 'N/A'),
-        'lr': getattr(args, 'lr', 'N/A'),
-        'threshold': getattr(args, 'threshold', 'N/A'),
-        'epochs': getattr(args, 'epochs', 'N/A'),
-        'overlap': getattr(args, 'overlap', 'N/A'),
-        'linear_readout': getattr(args, 'linear_readout', 'N/A'),
-        'one_task': getattr(args, 'one_task', 'N/A'),
-        'load_model': getattr(args, 'load_model', 'N/A'),
-        'init_method': getattr(args, 'init_method', 'N/A'),
-        'lmda': getattr(args, 'lmda', 'N/A'),
-        'c': getattr(args, 'c', 'N/A'),
         'final_train_loss': final_train_loss,
         'final_val_loss': final_val_loss,
         'final_epoch': final_epoch,
-        'save_path': getattr(args, 'save_path', 'N/A')
     }
-    
-    # Check if file exists to determine if we need to write headers
-    file_exists = os.path.exists(csv_path)
-    
-    # Write to CSV
-    with open(csv_path, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
-        # Write header if file is new
-        if not file_exists:
-            writer.writeheader()
-        
-        # Write the data row
-        writer.writerow(row_data)
-    
+
+    # If the CSV exists, read, merge columns, append, and rewrite
+    if os.path.exists(csv_path):
+        try:
+            df_existing = pd.read_csv(csv_path)
+        except Exception:
+            # If the existing file is malformed for any reason, start fresh
+            df_existing = pd.DataFrame()
+        df_new = pd.DataFrame([row_data])
+        # Union columns
+        all_cols = list(dict.fromkeys(['timestamp'] + list(df_existing.columns) + list(df_new.columns)))
+        df_existing = df_existing.reindex(columns=all_cols)
+        df_new = df_new.reindex(columns=all_cols)
+        df_all = pd.concat([df_existing, df_new], ignore_index=True)
+        # Put timestamp first, then other columns in alphabetical order for consistency
+        ordered_cols = ['timestamp'] + sorted([c for c in df_all.columns if c != 'timestamp'])
+        df_all = df_all[ordered_cols]
+        df_all.to_csv(csv_path, index=False)
+    else:
+        # First write of the file
+        df = pd.DataFrame([row_data])
+        ordered_cols = ['timestamp'] + sorted([c for c in df.columns if c != 'timestamp'])
+        df = df[ordered_cols]
+        df.to_csv(csv_path, index=False)
+
     print(f"\nExperiment results logged to: {csv_path}")
     print(f"Final Train Loss: {final_train_loss:.6f}")
     print(f"Final Val Loss: {final_val_loss:.6f}")
     print(f"Final Epoch: {final_epoch}")
+
+def plot_training_and_validation_loss(df, save_path, args):
+    """Plot both training and validation loss against epochs"""
+    
+    # Filter for training and validation data
+    train_data = df[df['split'] == 'train']
+    val_data = df[df['split'] == 'val']
+    
+    if len(train_data) == 0:
+        print("No training data found for plotting")
+        return
+    
+    # Create the plot
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    
+    # Plot training loss
+    ax.plot(train_data['epoch'], train_data['loss'], 'b-', linewidth=2, label='Training Loss')
+    
+    # Plot validation loss if available
+    if len(val_data) > 0:
+        ax.plot(val_data['epoch'], val_data['loss'], 'r-', linewidth=2, label='Validation Loss')
+    
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss (MSE)')
+    ax.set_title(f'Training and Validation Loss vs Epochs (Seed={args.seed}, active_dim_2={args.active_dim_2}, overlap={args.overlap})')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Use log scale for y-axis if losses span multiple orders of magnitude
+    all_losses = train_data['loss']
+    if len(val_data) > 0:
+        all_losses = pd.concat([train_data['loss'], val_data['loss']])
+    
+    if all_losses.max() / all_losses.min() > 100:
+        ax.set_yscale('log')
+        ax.set_ylabel('Loss (MSE) - Log Scale')
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_path = os.path.join(save_path, 'training_validation_loss.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"Training and validation loss plot saved to: {plot_path}")
+    
+    # Also save as PDF for better quality
+    plot_pdf_path = os.path.join(save_path, 'training_validation_loss.pdf')
+    plt.savefig(plot_pdf_path, bbox_inches='tight')
+    print(f"Training and validation loss plot (PDF) saved to: {plot_pdf_path}")
+    
+    plt.close()
+    
+    # Print some statistics
+    print(f"\nTraining Loss Statistics:")
+    print(f"  Initial Loss: {train_data['loss'].iloc[0]:.6f}")
+    print(f"  Final Loss: {train_data['loss'].iloc[-1]:.6f}")
+    print(f"  Total Epochs: {len(train_data)}")
+    print(f"  Loss Reduction: {train_data['loss'].iloc[0] / train_data['loss'].iloc[-1]:.2f}x")
+    
+    if len(val_data) > 0:
+        print(f"\nValidation Loss Statistics:")
+        print(f"  Initial Loss: {val_data['loss'].iloc[0]:.6f}")
+        print(f"  Final Loss: {val_data['loss'].iloc[-1]:.6f}")
+        print(f"  Total Validation Points: {len(val_data)}")
+        print(f"  Loss Reduction: {val_data['loss'].iloc[0] / val_data['loss'].iloc[-1]:.2f}x")
 
 def plot_learned_vs_ground_truth(learned_beta, finetune_ground_truth, save_path, args):
     """Plot comparison between learned and ground truth betas for finetuning task"""
@@ -566,22 +826,48 @@ def plot_learned_vs_ground_truth(learned_beta, finetune_ground_truth, save_path,
     print(f"  Finetuning GT - L1 norm: {torch.norm(finetune_ground_truth, p=1).item():.6f}")
 
 def main(args):
+    make_deterministic(args.seed, use_gpu=False)
     Path(os.path.dirname(args.save_path)).mkdir(parents=True, exist_ok=True)
-    torch.manual_seed(args.seed)
+
+
+    gen1 = torch.Generator(device='cpu').manual_seed(args.seed + 0)
+    gen2 = torch.Generator(device='cpu').manual_seed(args.seed + 1)
+    gen3 = torch.Generator(device='cpu').manual_seed(args.seed + 2)
+    gen4 = torch.Generator(device='cpu').manual_seed(args.seed + 3)
+
+    # Load pretrained model to get effective beta
+    net = DiagonalNet(args.inp_dim, scaling=args.model_scaling, linear_readout=args.linear_readout)
+    net.load_state_dict(torch.load(args.model_path))
+    # Effective beta from pretraining, captured before any finetune re-scaling
+    betapt_groundtruth = net.beta().detach().clone()
+    pretrained_beta = betapt_groundtruth
+
+    # Handle sign logic
+    use_same_signs = getattr(args, 'same_signs', True)
+
+    # Create finetuning teachers
+    if hasattr(args, 'pretrain_overlap') and args.pretrain_overlap is not None and args.one_task:
+        # Single-task mode with pretraining overlap
+        if args.pretrain_overlap > args.active_dim_2:
+            raise ValueError(f"pretrain_overlap ({args.pretrain_overlap}) must be <= active_dim_2 ({args.active_dim_2})")
+        
+        param2 = sample_finetuning_teacher_with_pretrain_overlap(
+            pretrained_beta=betapt_groundtruth,
+            active_dim_2=args.active_dim_2,
+            overlap=args.pretrain_overlap,
+            inp_dim=args.inp_dim,
+            same_signs=use_same_signs,
+            generator=gen4
+        )
+        # For single-task mode, we only need param2, but we still need param1 for compatibility
+        param1 = param2  # This won't be used in single-task mode
+    else:
+        # Original multi-task logic or single-task without pretrain overlap
+        param1, param2 = sample_two_teachers(args.inp_dim, args.active_dim_1, args.active_dim_2, overlap=args.overlap, generator=gen4)
     
-    # Create the finetuning tasks - this will create both pretraining and finetuning teachers
-    # with proper overlap relationship
-    param1, param2 = sample_two_teachers(args.inp_dim, args.active_dim_1, args.active_dim_2, overlap=args.overlap)
-    
-    # Extract pretraining ground truth from param1 (first teacher)
-    W_pretrain, V_pretrain = param1
-    pretrain_ground_truth = torch.zeros(args.inp_dim)
-    for i in range(args.active_dim_1):
-        active_pos = torch.argmax(W_pretrain[i,:]).item()
-        pretrain_ground_truth[active_pos] = V_pretrain[i]
-    x1 = circular_sample((args.n_train1, args.inp_dim))
-    x2 = circular_sample((args.n_train2, args.inp_dim))
-    val_x = circular_sample((10000, args.inp_dim))
+    x1 = circular_sample((args.n_train1, args.inp_dim), generator=gen1)
+    x2 = circular_sample((args.n_train2, args.inp_dim), generator=gen2)
+    val_x = circular_sample((10000, args.inp_dim), generator=gen3)
     y1 = teacher(x1, *param1)
     y2 = teacher(x2, *param2)
     x = torch.cat([x1, x2])
@@ -589,37 +875,12 @@ def main(args):
     task = torch.tensor([0]*args.n_train1+[1]*args.n_train2)
     val_y1 = teacher(val_x, *param1)
     val_y2 = teacher(val_x, *param2)
-    # If requested, plot ground truths before any finetuning and exit
-    if getattr(args, 'plot_ground_truth_only', False):
-        true_beta = torch.stack([
-            param1[0].T@(param1[1]),
-            param2[0].T@(param2[1])
-        ], dim=1)
-        finetune_gt_task1 = true_beta[:, 0]
-        finetune_gt_task2 = true_beta[:, 1]
-        plot_ground_truth_comparison(pretrain_ground_truth, finetune_gt_task1, finetune_gt_task2, args.save_path, args)
-        plot_pretrain_and_finetune_simple(pretrain_ground_truth, finetune_gt_task2, args.save_path, args)
-        print("Plotted ground truths (pretraining vs finetuning) before training. Exiting as requested.")
-        return
-
-    net = DiagonalNet(args.inp_dim, scaling=1.0, linear_readout=args.linear_readout)  # Use default scaling
-    net.load_state_dict(torch.load(args.model_path))
-    
-    # Apply model_scaling to the loaded pretrained weights
-    with torch.no_grad():
-        net.w_pos.data *= args.model_scaling
-        net.v_pos.data *= args.model_scaling
-        net.w_neg.data *= args.model_scaling
-        net.v_neg.data *= args.model_scaling
-    
-    pretrained_beta = net.beta().detach().clone()
     if not args.load_model:
         if args.one_task:
             net = DiagonalNet(args.inp_dim, scaling=args.scaling, linear_readout=args.linear_readout)
         else:
             net = MTDiagonalNet(args.inp_dim, outp_dim=2, scaling=args.scaling, linear_readout=args.linear_readout)
-    # Only (re-)initialize parameters when we're NOT loading a pretrained model
-    if args.one_task and (not args.load_model):
+    if args.one_task:
         nn.init.constant_(net.v_pos, args.scaling)
         nn.init.constant_(net.v_neg, args.scaling)
         net.w_pos = nn.Parameter(args.w_scaling*net.w_pos)
@@ -628,6 +889,10 @@ def main(args):
     # Choose training routine based on one_task flag (independent of load_model)
     if args.one_task:
         df, norm_df, model, df_weights = train_one_task(net, (x2, y2), (val_x, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, beta_1=pretrained_beta)
+        
+        # Plot training loss
+        plot_save_path = os.path.join(args.save_path, 'training_loss_plot.png')
+        plot_training_loss(df, save_path=plot_save_path, show_plot=False)
     else:
         df, norm_df, model, df_weights = train_two_tasks(net, (x, y, task), (val_x, val_y1, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, pretrained_beta=pretrained_beta)
     true_beta = torch.stack([
@@ -649,13 +914,146 @@ def main(args):
         print(os.path.join(args.save_path, 'weights_df.feather'))
         df_weights.to_feather(os.path.join(args.save_path, 'weights_df.feather'))
     
-    # Extract final losses for logging
-    final_train_loss = df[df['split'] == 'train']['loss'].iloc[-1]
-    final_val_loss = df[df['split'] == 'val']['loss'].iloc[-1]
-    final_epoch = df[df['split'] == 'train']['epoch'].iloc[-1]
+    # Save consolidated experiment results (final train/val MSE) into a single CSV
+    # This writes/append to a single file reused across runs: experiment_results.csv at repo root
+    try:
+        if args.one_task:
+            # Single-task fine-tuning uses (x2, y2); validate against (val_x, val_y2)
+            final_train_mse = F.mse_loss(model(x2), y2).item()
+            final_val_mse = F.mse_loss(model(val_x), val_y2).item()
+        else:
+            # Multi-task setting: compute average of task-wise validation MSEs as a single scalar
+            final_train_mse = F.mse_loss(select_output(model(x), task), y).item()
+            val_mse_task1 = F.mse_loss(model(val_x)[:,0], val_y1).item()
+            val_mse_task2 = F.mse_loss(model(val_x)[:,1], val_y2).item()
+            final_val_mse = 0.5*(val_mse_task1 + val_mse_task2)
+
+        # Print final losses to stdout for quick visibility
+        print(f"Final train MSE: {final_train_mse:.6g}")
+        print(f"Final val MSE:   {final_val_mse:.6g}")
+
+        # Parse experiment parameters from save_path directory name
+        # This approach automatically extracts all parameters from the directory name
+        # (which follows the pattern key1=value1--key2=value2--key3=value3)
+        # and creates CSV columns for them dynamically. If new parameters are added
+        # to the directory naming in the future, they'll automatically get their own columns.
+        import re
+        
+        def parse_experiment_params_from_path(save_path):
+            """Parse experiment parameters from directory name in save_path."""
+            # Extract the directory name from the full path
+            dirname = os.path.basename(save_path.rstrip('/'))
+            
+            # Parse parameters using regex pattern: key=value--key=value
+            # Handle scientific notation and negative numbers properly
+            # Use negative lookahead to stop at '--' but allow '-' in values
+            param_pattern = r'(\w+)=((?:(?!--).)+?)(?=--|$)'
+            matches = re.findall(param_pattern, dirname)
+            
+            params = {}
+            for key, value in matches:
+                # Try to convert to appropriate type
+                try:
+                    # Try boolean first (exact match)
+                    if value.lower() in ['true', 'false']:
+                        params[key] = value.lower() == 'true'
+                    # Try int (digits only, including negative)
+                    elif re.match(r'^-?\d+$', value):
+                        params[key] = int(value)
+                    # Try float (including scientific notation)
+                    elif re.match(r'^-?\d*\.?\d+(?:[eE][+-]?\d+)?$', value):
+                        params[key] = float(value)
+                    # Keep as string
+                    else:
+                        params[key] = value
+                except ValueError:
+                    # Keep as string if conversion fails
+                    params[key] = value
+            
+            return params
+        
+        # Parse parameters from the save_path
+        parsed_params = parse_experiment_params_from_path(args.save_path)
+        
+        # Debug: print parsed parameters
+        print(f"\nParsed parameters from directory name:")
+        for key, value in sorted(parsed_params.items()):
+            print(f"  {key}: {value}")
+        
+        # Start with the parsed parameters from directory name
+        result_row = parsed_params.copy()
+        
+        # Add the final metrics
+        result_row.update({
+            'final_train_mse': final_train_mse,
+            'final_val_mse': final_val_mse,
+            'save_path': args.save_path,
+            'model_path': args.model_path,
+        })
+        
+        # Add any additional args that might not be in the directory name
+        # (these will only be added if they're not already present from parsing)
+        additional_params = {
+            'n_train1': args.n_train1,
+            'active_dim_1': args.active_dim_1,
+            'active_dim_2': args.active_dim_2,
+            'inp_dim': args.inp_dim,
+            'lr': args.lr,
+            'epochs': args.epochs,
+            'threshold': args.threshold,
+            'c': args.c,
+            'lmda': args.lmda,
+            'init_method': args.init_method,
+            'scaling': args.scaling,
+            'model_scaling': args.model_scaling,
+            'w_scaling': args.w_scaling,
+            'same_signs': args.same_signs,
+        }
+        
+        # Add pretrain_overlap if it exists (it's computed but not in directory name)
+        if hasattr(args, 'pretrain_overlap') and args.pretrain_overlap is not None:
+            additional_params['pretrain_overlap'] = args.pretrain_overlap
+        
+        # Extract the actual c value from model_path if it exists
+        # This handles cases where aux_c is used for model path but not passed to script
+        if hasattr(args, 'model_path') and args.model_path:
+            model_path_c_match = re.search(r'c=([\d\.\-e]+?)(?:--|/)', args.model_path)
+            if model_path_c_match:
+                model_c_value = float(model_path_c_match.group(1))
+                additional_params['c'] = model_c_value
+                print(f"Extracted c={model_c_value} from model_path")
+        
+        for key, value in additional_params.items():
+            if key not in result_row:
+                result_row[key] = value
+
+        csv_path = os.path.abspath('experiment_results.csv')
+        new_df = pd.DataFrame([result_row])
+        if os.path.exists(csv_path):
+            try:
+                existing = pd.read_csv(csv_path)
+            except Exception:
+                existing = pd.DataFrame()
+            
+            # Get all unique columns from both existing and new data
+            all_columns = sorted(set(list(existing.columns) + list(new_df.columns)))
+            
+            # Reindex both dataframes to have the same columns, filling missing values with NaN
+            existing = existing.reindex(columns=all_columns)
+            new_df = new_df.reindex(columns=all_columns)
+            
+            # Combine the dataframes
+            combined = pd.concat([existing, new_df], ignore_index=True)
+            combined.to_csv(csv_path, index=False)
+        else:
+            new_df.to_csv(csv_path, index=False)
+        print(f"Appended results to {csv_path}")
+    except Exception as e:
+        print(f"Failed to write results CSV: {e}")
     
-    # Log experiment results to CSV
-    log_experiment_results(args, final_val_loss, final_train_loss, final_epoch)
+    # Generate training and validation loss plot
+    print(f"\nGenerating training and validation loss plot...")
+    plot_training_and_validation_loss(df, args.save_path, args)
     
     # Generate ground truth comparison plots
     print(f"\nGenerating ground truth comparison plots...")
@@ -664,17 +1062,10 @@ def main(args):
     finetune_gt_task1 = true_beta[:, 0]  # First task
     finetune_gt_task2 = true_beta[:, 1]  # Second task
     
-    # Verify that pretraining ground truth matches Task 1 (they should be identical)
-    pretrain_task1_match = torch.allclose(pretrain_ground_truth, finetune_gt_task1, atol=1e-6)
-    print(f"Pretraining ground truth matches Task 1: {pretrain_task1_match}")
-    if not pretrain_task1_match:
-        print("WARNING: Pretraining and Task 1 ground truths don't match!")
-        print(f"Max difference: {torch.max(torch.abs(pretrain_ground_truth - finetune_gt_task1)).item():.8f}")
-    
     # Generate comparison plots
-    plot_ground_truth_comparison(pretrain_ground_truth, finetune_gt_task1, finetune_gt_task2, args.save_path, args)
+    plot_ground_truth_comparison(pretrained_beta, finetune_gt_task1, finetune_gt_task2, args.save_path, args)
     # Also generate the simple overlay plot requested
-    plot_pretrain_and_finetune_simple(pretrain_ground_truth, finetune_gt_task2, args.save_path, args)
+    plot_pretrain_and_finetune_simple(pretrained_beta, finetune_gt_task2, args.save_path, args)
     
     # Generate learned vs ground truth plots
     print(f"\nGenerating learned vs ground truth plots...")
@@ -686,7 +1077,7 @@ def main(args):
     plot_learned_vs_ground_truth(learned_beta, finetune_gt_task2, args.save_path, args)
 
     # Additionally, compare pretraining ground truth against learned beta
-    plot_pretrain_vs_learned(pretrain_ground_truth, learned_beta, args.save_path, args)
+    plot_pretrain_vs_learned(pretrained_beta, learned_beta, args.save_path, args)
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -714,6 +1105,9 @@ def get_parser():
     parser.add_argument('--c', type=float, default=0.001)
     parser.add_argument('--init_method', type=str, default='complex', choices=['simple', 'complex'])
     parser.add_argument('--plot_ground_truth_only', action='store_true')
+    parser.add_argument('--pretrain_overlap', type=int, default=None, help='Overlap with pretraining teacher (for single-task mode)')
+    parser.add_argument('--active_threshold', type=float, default=1e-6, help='Threshold for determining active dimensions in pretrained model')
+    parser.add_argument('--same_signs', action='store_true', default=True, help='Use same signs as pretraining for overlapping dimensions')
     return parser
 
 if __name__ == '__main__':

@@ -148,6 +148,61 @@ def _plot_grouped(df_grouped: pd.DataFrame, title: str, filename: str, shared_li
     return out_path
 
 
+def _build_curves_from_csv_by_active_dim(df_csv: pd.DataFrame) -> dict:
+    """Group csv data by active_dim_2 and n_train2 to produce curves.
+    Returns dict active_dim_2 -> grouped df with columns n_train2 and mean_val.
+    """
+    curves = {}
+    if 'active_dim_2' not in df_csv.columns:
+        return curves
+    for ad in sorted(df_csv['active_dim_2'].dropna().unique().tolist()):
+        sub = df_csv[df_csv['active_dim_2'] == ad]
+        if sub.empty:
+            continue
+        grouped = _group_mean_over_other_params(sub)
+        if grouped is None or grouped.empty:
+            continue
+        curves[int(ad)] = grouped
+    return curves
+
+
+def create_per_w_scaling_figures_from_csv(df_csv: pd.DataFrame, out_dir: str) -> list:
+    """Create separate figures for each w_scaling value found in CSV.
+    Each figure shows mean final_val_loss vs n_train2, with a line per active_dim_2.
+    Returns list of output paths.
+    """
+    outputs = []
+    df_csv = _ensure_w_scaling(df_csv)
+    unique_ws = sorted([float(x) for x in df_csv['w_scaling'].dropna().astype(float).unique().tolist()])
+    if not unique_ws:
+        return outputs
+
+    # Pre-compute shared limits across all w_scaling panels for comparability
+    all_grouped = []
+    per_w_curves = {}
+    for w in unique_ws:
+        sub = df_csv[np.isclose(df_csv['w_scaling'].astype(float), float(w))]
+        curves = _build_curves_from_csv_by_active_dim(sub)
+        curves = _normalize_curves_to_first_point(curves)
+        per_w_curves[w] = curves
+        for g in curves.values():
+            if g is not None and not g.empty:
+                all_grouped.append(g)
+    shared_limits = _compute_shared_limits(all_grouped)
+
+    for w in unique_ws:
+        curves = per_w_curves[w]
+        fig, ax = plt.subplots(figsize=(8, 6))
+        _plot_multi_curves(ax, curves, label_fmt='active_dim_2={active_dim_2}', shared_limits=shared_limits)
+        ax.set_title(f'Validation loss vs n_train2 (w_scaling={w}) — normalized')
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        out_path = os.path.join(out_dir, f'val_vs_n_train2_w_scaling_{w}.png')
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        outputs.append(out_path)
+    return outputs
+
 def load_scaling_feather(path: str) -> pd.DataFrame:
     """Load the processed diagonal scaling feather into a pandas DataFrame."""
     return pd.read_feather(path)
@@ -276,6 +331,14 @@ def main():
     combined_out_path = os.path.join(OUT_DIR, 'combined_scaling_lambda_plots.png')
     create_combined_3x2_from_sources(df, df_scale, combined_out_path)
     print(f"Saved combined plot to: {combined_out_path}")
+
+    # Also create separate figures per w_scaling directly from CSV
+    per_w_paths = create_per_w_scaling_figures_from_csv(df, OUT_DIR)
+    if per_w_paths:
+        for p in per_w_paths:
+            print(f"Saved per-w_scaling plot to: {p}")
+    else:
+        print("No per-w_scaling plots created (missing data).")
 
 
 if __name__ == '__main__':
