@@ -176,7 +176,7 @@ scaling_init = 1e-3
 lmdas_init_fraction = [1, 0.9, 0, -0.5, -0.75, -0.85, -1]
 
 argparse_array = ArgparseArray(
-    seed=[i for i in range(1)],
+    seed=[i for i in range(6)],
     inp_dim=[1000],
     active_dim=[40],
     n_train=1024,

@@ -1,8 +1,32 @@
-#!/bin/sh
+#!/bin/bash
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
-#SBATCH --time=06:00:00
-#SBATCH --array=0-999
-#SBATCH --output=slurm/slurm-%A_%a.out
+#SBATCH --time=00:10:00
+#SBATCH --array=0-525
+#SBATCH --output=logs/%A_%a.out
+#SBATCH --error=logs/%A_%a.err
 
-python experiments/iclr_experiments/diagonal_sparse_overlap_1.py $SLURM_ARRAY_TASK_ID
+set -euo pipefail
+
+echo "[SLURM] Job $SLURM_JOB_ID task $SLURM_ARRAY_TASK_ID starting on $(hostname)"
+
+# Ensure we run from project root and logs exist
+cd /home/na658/multi-task2
+mkdir -p logs
+
+# Use absolute Python from conda env to avoid activation issues on compute nodes
+PY="/home/na658/.conda/envs/mtl_ft/bin/python"
+if [ ! -x "$PY" ]; then
+  echo "[SLURM] Expected Python not found at $PY" >&2
+  which python || true
+  python --version || true
+  exit 1
+fi
+
+echo "[SLURM] Using Python: $PY"
+
+# Serialize CSV writes to avoid race conditions across array tasks
+LOCK="/home/na658/multi-task2/experiment_results.csv.lock"
+flock -x "$LOCK" -c "$PY /home/na658/multi-task2/experiments/diagonal/diagonal_sparse_overlap_1.py $SLURM_ARRAY_TASK_ID"
+
+echo "[SLURM] Job $SLURM_JOB_ID task $SLURM_ARRAY_TASK_ID finished"
