@@ -25,7 +25,7 @@ argparse_array = ArgparseArray(
     epochs=int(1e5),
     one_task=[True],
     n_train1=[1024],
-    n_train2 = [2** i for i in range(4, 9)],
+    n_train2 = [2** i for i in range(6, 9)],
     aux_overlap_bool =['no'],
     w_scaling = [1.0],
     pretrain_overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),

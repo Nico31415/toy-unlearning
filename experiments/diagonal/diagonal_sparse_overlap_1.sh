@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
-#SBATCH --time=00:10:00
-#SBATCH --array=0-525
+#SBATCH --time=00:25:00
+#SBATCH --array=0-315
 #SBATCH --output=logs/%A_%a.out
 #SBATCH --error=logs/%A_%a.err
 
