@@ -5,6 +5,8 @@ This version adds progress logging so you can see it's working.
 
 Output:
 - replica_fig3_with_q_abslog_empirical.png
+
+NOTE: the x logx optimiser is not working properly, so comment it out for faster runtimes
 """
 
 import time
