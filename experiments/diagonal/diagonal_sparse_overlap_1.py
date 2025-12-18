@@ -6,13 +6,13 @@ sys.path.append('')
 from functions.array_training import ArgparseArray, name_instance
 
 # Mirror the pretraining script structure: use cs_init and lmdas_init_fraction
-cs_init = [10**-5, 10**-3, 10**-1]
+cs_init = [10**-3]
 scaling_init = 1e-3
-lmdas_init_fraction = [-1, 1, 0.9, 0, -0.5, -0.75, -0.85]
+lmdas_init_fraction = [-1.0, 0.0]
 
 
 argparse_array = ArgparseArray(
-    seed=[i for i in range(1)],  # Fixed seed to match pretraining
+    seed=[i for i in range(2,6)],  # Fixed seed to match pretraining
     active_dim_1=40,
     active_dim_2 = [5, 10, 20, 30, 40],
     scaling=[scaling_init],
@@ -25,8 +25,8 @@ argparse_array = ArgparseArray(
     epochs=int(1e5),
     one_task=[True],
     n_train1=[1024],
-    n_train2 = [2** i for i in range(6, 9)],
-    aux_overlap_bool =['no'],
+    n_train2 = [2** i for i in range(4, 9)],
+    aux_overlap_bool =['yes'],
     w_scaling = [1.0],
     pretrain_overlap=(lambda overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     same_signs=[True],
@@ -52,6 +52,7 @@ argparse_array = ArgparseArray(
                f"lmda={c * lmda_frac:.10f}--c={c:.1e}--model_scaling={model_scaling}--w_scaling={w_scaling}--same_signs={same_signs}/"),
     save_weights=True
 )
+
 
 def main(args):
     import sys as _sys

@@ -29,6 +29,8 @@ import functions.networks as nt
 import matplotlib.pyplot as plt
 
 import os, random, numpy as np, torch
+import fcntl
+import time
 
 def make_deterministic(seed: int, use_gpu=False):
     random.seed(seed)
@@ -597,6 +599,66 @@ def plot_pretrain_vs_learned(pretrain_gt, learned_beta, save_path, args):
 	plt.savefig(out_pdf, bbox_inches='tight')
 	plt.close()
 
+def safe_csv_append(csv_path, new_row_data, max_retries=5, base_delay=0.1):
+    """
+    Thread-safe CSV append operation using file locking.
+    
+    Args:
+        csv_path: Path to the CSV file
+        new_row_data: Dictionary containing the new row data
+        max_retries: Maximum number of retry attempts
+        base_delay: Base delay for exponential backoff
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    lock_file_path = f"{csv_path}.lock"
+    
+    for attempt in range(max_retries):
+        try:
+            # Create lock file and acquire exclusive lock
+            with open(lock_file_path, 'w') as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                
+                # Read existing data
+                if os.path.exists(csv_path):
+                    try:
+                        existing_df = pd.read_csv(csv_path)
+                    except Exception:
+                        existing_df = pd.DataFrame()
+                else:
+                    existing_df = pd.DataFrame()
+                
+                # Create new row dataframe
+                new_df = pd.DataFrame([new_row_data])
+                
+                # Merge columns and combine data
+                all_columns = sorted(set(list(existing_df.columns) + list(new_df.columns)))
+                existing_df = existing_df.reindex(columns=all_columns)
+                new_df = new_df.reindex(columns=all_columns)
+                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                
+                # Write back to file
+                combined_df.to_csv(csv_path, index=False)
+                
+                # Lock is automatically released when file is closed
+                return True
+                
+        except (BlockingIOError, OSError) as e:
+            # Another process has the lock, wait and retry
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                time.sleep(delay)
+                continue
+            else:
+                print(f"Failed to acquire lock after {max_retries} attempts: {e}")
+                return False
+        except Exception as e:
+            print(f"Error in safe_csv_append: {e}")
+            return False
+    
+    return False
+
 def log_experiment_results(args, final_val_loss, final_train_loss, final_epoch):
     """Log experiment results to a CSV file including all args parameters automatically.
 
@@ -634,29 +696,11 @@ def log_experiment_results(args, final_val_loss, final_train_loss, final_epoch):
         'final_epoch': final_epoch,
     }
 
-    # If the CSV exists, read, merge columns, append, and rewrite
-    if os.path.exists(csv_path):
-        try:
-            df_existing = pd.read_csv(csv_path)
-        except Exception:
-            # If the existing file is malformed for any reason, start fresh
-            df_existing = pd.DataFrame()
-        df_new = pd.DataFrame([row_data])
-        # Union columns
-        all_cols = list(dict.fromkeys(['timestamp'] + list(df_existing.columns) + list(df_new.columns)))
-        df_existing = df_existing.reindex(columns=all_cols)
-        df_new = df_new.reindex(columns=all_cols)
-        df_all = pd.concat([df_existing, df_new], ignore_index=True)
-        # Put timestamp first, then other columns in alphabetical order for consistency
-        ordered_cols = ['timestamp'] + sorted([c for c in df_all.columns if c != 'timestamp'])
-        df_all = df_all[ordered_cols]
-        df_all.to_csv(csv_path, index=False)
-    else:
-        # First write of the file
-        df = pd.DataFrame([row_data])
-        ordered_cols = ['timestamp'] + sorted([c for c in df.columns if c != 'timestamp'])
-        df = df[ordered_cols]
-        df.to_csv(csv_path, index=False)
+    # Use thread-safe CSV append
+    success = safe_csv_append(csv_path, row_data)
+    if not success:
+        print(f"Warning: Failed to append results to {csv_path}")
+        return
 
     print(f"\nExperiment results logged to: {csv_path}")
     print(f"Final Train Loss: {final_train_loss:.6f}")
@@ -907,12 +951,16 @@ def main(args):
             'kind': 'teacher'
         })
     ]).reset_index(drop=True)
-    df.to_feather(os.path.join(args.save_path, 'df.feather'))
-    norm_df.to_feather(os.path.join(args.save_path, 'norm_df.feather'))
-    if args.save_weights:
-        print('Saving weights')
-        print(os.path.join(args.save_path, 'weights_df.feather'))
-        df_weights.to_feather(os.path.join(args.save_path, 'weights_df.feather'))
+    # Save feather files only if requested
+    if args.save_feathers:
+        df.to_feather(os.path.join(args.save_path, 'df.feather'))
+        norm_df.to_feather(os.path.join(args.save_path, 'norm_df.feather'))
+        if args.save_weights:
+            print('Saving weights')
+            print(os.path.join(args.save_path, 'weights_df.feather'))
+            df_weights.to_feather(os.path.join(args.save_path, 'weights_df.feather'))
+    else:
+        print('Skipping feather file saving (--save_feathers=False)')
     
     # Save consolidated experiment results (final train/val MSE) into a single CSV
     # This writes/append to a single file reused across runs: experiment_results.csv at repo root
@@ -1028,26 +1076,11 @@ def main(args):
                 result_row[key] = value
 
         csv_path = os.path.abspath('experiment_results.csv')
-        new_df = pd.DataFrame([result_row])
-        if os.path.exists(csv_path):
-            try:
-                existing = pd.read_csv(csv_path)
-            except Exception:
-                existing = pd.DataFrame()
-            
-            # Get all unique columns from both existing and new data
-            all_columns = sorted(set(list(existing.columns) + list(new_df.columns)))
-            
-            # Reindex both dataframes to have the same columns, filling missing values with NaN
-            existing = existing.reindex(columns=all_columns)
-            new_df = new_df.reindex(columns=all_columns)
-            
-            # Combine the dataframes
-            combined = pd.concat([existing, new_df], ignore_index=True)
-            combined.to_csv(csv_path, index=False)
+        success = safe_csv_append(csv_path, result_row)
+        if success:
+            print(f"Appended results to {csv_path}")
         else:
-            new_df.to_csv(csv_path, index=False)
-        print(f"Appended results to {csv_path}")
+            print(f"Failed to append results to {csv_path}")
     except Exception as e:
         print(f"Failed to write results CSV: {e}")
     
@@ -1108,6 +1141,7 @@ def get_parser():
     parser.add_argument('--pretrain_overlap', type=int, default=None, help='Overlap with pretraining teacher (for single-task mode)')
     parser.add_argument('--active_threshold', type=float, default=1e-6, help='Threshold for determining active dimensions in pretrained model')
     parser.add_argument('--same_signs', action='store_true', default=True, help='Use same signs as pretraining for overlapping dimensions')
+    parser.add_argument('--save_feathers', action='store_true', default=True, help='Save feather files (df.feather, norm_df.feather, weights_df.feather)')
     return parser
 
 if __name__ == '__main__':
