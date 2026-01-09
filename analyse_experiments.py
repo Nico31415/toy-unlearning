@@ -12,9 +12,11 @@ sns.set_palette("husl")
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 
-def load_and_explore_data():
+def load_and_explore_data(csv_path=None):
     """Load the experiment results and provide basic exploration"""
-    df = pd.read_csv('/home/na658/multi-task2/experiment_results/experiment_results.csv')
+    if csv_path is None:
+        csv_path = 'experiment_results/experiment_results.csv'
+    df = pd.read_csv(csv_path)
     
     print("=== Dataset Overview ===")
     print(f"Shape: {df.shape}")
@@ -268,8 +270,18 @@ def plot_val_vs_samples_by_lambda(df):
 
 def main():
     """Main analysis function"""
+    import argparse
+    parser = argparse.ArgumentParser(description="Analyze experiment results")
+    parser.add_argument(
+        "--csv_path",
+        type=str,
+        default="experiment_results/experiment_results.csv",
+        help="Path to experiment results CSV file (default: experiment_results/experiment_results.csv)"
+    )
+    args = parser.parse_args()
+    
     print("Loading and exploring experiment data...")
-    df = load_and_explore_data()
+    df = load_and_explore_data(args.csv_path)
     
     print("\nGenerating plots...")
     

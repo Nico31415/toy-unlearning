@@ -1,0 +1,2 @@
+final_train_pred_mse,final_test_pred_mse,final_param_mse,final_epoch,stop_reason,final_grad_norm,final_beta_update_rate,alpha,seed,lr,threshold
+7.564523457403993e-06,2.9468967568391236e-06,2.9591972634079866e-05,499999,max_epochs,4.132542744628154e-05,0.0,1.0,0,0.5,1e-12

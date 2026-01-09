@@ -879,12 +879,14 @@ def main(args):
     gen3 = torch.Generator(device='cpu').manual_seed(args.seed + 2)
     gen4 = torch.Generator(device='cpu').manual_seed(args.seed + 3)
 
-    # Load pretrained model to get effective beta
+    # Load pretrained model to get effective beta (and PT state, before FT reinit)
     net = DiagonalNet(args.inp_dim, scaling=args.model_scaling, linear_readout=args.linear_readout)
     net.load_state_dict(torch.load(args.model_path))
     # Effective beta from pretraining, captured before any finetune re-scaling
     betapt_groundtruth = net.beta().detach().clone()
     pretrained_beta = betapt_groundtruth
+
+    # (k/r logging is handled by separate postprocessing scripts; keep finetune code unchanged)
 
     # Handle sign logic
     use_same_signs = getattr(args, 'same_signs', True)

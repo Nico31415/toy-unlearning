@@ -1,0 +1,2 @@
+alpha,n_train,seed,test_pred_mse,param_mse
+1.024,1024,0,3.571523734535731e-07,3.646225650300039e-06

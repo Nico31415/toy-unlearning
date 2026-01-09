@@ -52,48 +52,6 @@ class ModelWithNTK(nn.Module):
         return feats.reshape(*shape[:(-1)], -1).detach().clone()
 
 class DenseNet(ModelWithNTK):
-    def __init__(self, inp_dim, hdims=None, rho=1, bias=False, linear_readout=False, nonlinearity='piecewise_linear'):
-        super().__init__()
-        hdims = hdims or []
-        L = []
-        for i, (_in, _out) in enumerate(zip([inp_dim]+hdims[:-1], hdims)):
-            linear = nn.Linear(_in, _out, bias=bias)
-            if nonlinearity == 'piecewise_linear':
-                nn.init.normal_(linear.weight, std=math.sqrt(2/(((B(rho)-1)**2)*_in)))
-            elif nonlinearity == 'tanh':
-                nn.init.xavier_normal_(linear.weight)
-            L.append(linear)
-            if nonlinearity == 'piecewise_linear':
-                L.append(ABReLU(rho))
-            elif nonlinearity == 'tanh':
-                L.append(nn.Tanh)
-        self.features = nn.Sequential(*L)
-        if len(hdims) > 0:
-            _in = hdims[-1]
-        else:
-            _in = inp_dim
-        self.readout = nn.Linear(_in, 1, bias=bias)
-        if linear_readout:
-            nn.init.zeros_(self.readout.weight)
-        else:
-            if nonlinearity == 'piecewise_linear':
-                nn.init.normal_(self.readout.weight, std=math.sqrt(2/(((B(rho)-1)**2)*_out)))
-            elif nonlinearity == 'tanh':
-                nn.init.xavier_normal_(self.readout.weight)
-        self.linear_readout = linear_readout
-    
-    def parameters(self):
-        if self.linear_readout:
-            return self.readout.parameters()
-        return super().parameters()
-    
-    def forward(self, x):
-        x = self.features(x)
-        x = self.readout(x)
-        x = torch.squeeze(x, -1)
-        return x
-
-class DenseNet2(ModelWithNTK):
     def __init__(self, inp_dim, hdims=None, outp_dim=1, rho=1, bias=False, linear_readout=False, nonlinearity='piecewise_linear'):
         super().__init__()
         hdims = hdims or []
@@ -108,7 +66,7 @@ class DenseNet2(ModelWithNTK):
             if nonlinearity == 'piecewise_linear':
                 L.append(ABReLU(rho))
             elif nonlinearity == 'tanh':
-                L.append(nn.Tanh)
+                L.append(nn.Tanh())
         self.features = nn.Sequential(*L)
         if len(hdims) > 0:
             _in = hdims[-1]
@@ -123,6 +81,7 @@ class DenseNet2(ModelWithNTK):
             elif nonlinearity == 'tanh':
                 nn.init.xavier_normal_(self.readout.weight)
         self.linear_readout = linear_readout
+        self.outp_dim = outp_dim
     
     def parameters(self):
         if self.linear_readout:
@@ -132,7 +91,12 @@ class DenseNet2(ModelWithNTK):
     def forward(self, x):
         x = self.features(x)
         x = self.readout(x)
+        if self.outp_dim == 1:
+            x = torch.squeeze(x, -1)
         return x
+
+# Alias for backward compatibility
+DenseNet2 = DenseNet
 
 class ZeroOutput(ModelWithNTK):
     def __init__(self, module, scaling=1.):
