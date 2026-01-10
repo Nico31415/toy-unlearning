@@ -1,8 +1,6 @@
 import math
 from copy import deepcopy
 import argparse
-from itertools import product
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -57,7 +55,7 @@ class DenseNet(ModelWithNTK):
             if nonlinearity == 'piecewise_linear':
                 L.append(ABReLU(rho))
             elif nonlinearity == 'tanh':
-                L.append(nn.Tanh)
+                L.append(nn.Tanh())
         self.features = nn.Sequential(*L)
         if len(hdims) > 0:
             _in = hdims[-1]
@@ -121,7 +119,7 @@ class MTDenseNet(ModelWithNTK):
             if nonlinearity == 'piecewise_linear':
                 L.append(ABReLU(rho))
             elif nonlinearity == 'tanh':
-                L.append(nn.Tanh)
+                L.append(nn.Tanh())
         self.features = MTSequential(*L)
         if len(hdims) > 0:
             _in = hdims[-1]
@@ -233,7 +231,7 @@ class DenseNet2(ModelWithNTK):
             if nonlinearity == 'piecewise_linear':
                 L.append(ABReLU(rho))
             elif nonlinearity == 'tanh':
-                L.append(nn.Tanh)
+                L.append(nn.Tanh())
         self.features = nn.Sequential(*L)
         if len(hdims) > 0:
             _in = hdims[-1]
@@ -276,7 +274,7 @@ class MTDenseNet2(ModelWithNTK):
             if nonlinearity == 'piecewise_linear':
                 L.append(ABReLU(rho))
             elif nonlinearity == 'tanh':
-                L.append(nn.Tanh)
+                L.append(nn.Tanh())
         self.features = MTSequential(*L)
         if len(hdims) > 0:
             _in = hdims[-1]

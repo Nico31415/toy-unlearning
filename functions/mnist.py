@@ -28,42 +28,8 @@ class MNIST:
                 nn.Flatten(start_dim=0)
             ])
         )
-        cat_indices = {i: [] for i in range(10)}
-        for j, (_, y) in enumerate(mnist):
-            cat_indices[y].append(j)
-        for i in range(10):
-            cat_indices[i] = rs.permutation(cat_indices[i])
-        train_x, train_y, train_task = [], [], []
-        val_data = []
-        for task, (cat_1, cat_2) in enumerate(hparams.cats):
-            for index in cat_indices[cat_1][:hparams.n_train]:
-                x, y = mnist[index]
-                train_x.append(x)
-                train_y.append(1.)
-                train_task.append(task)
-            for index in cat_indices[cat_2][:hparams.n_train]:
-                x, y = mnist[index]
-                train_x.append(x)
-                train_y.append(-1.)
-                train_task.append(task)
-            new_val_x, new_val_y, new_val_task = [], [], []
-            for index in cat_indices[cat_1][(len(cat_indices[cat_1])-hparams.n_val):]:
-                x, _ = mnist[index]
-                new_val_x.append(x)
-                new_val_y.append(1.)
-                new_val_task.append(task)
-            for index in cat_indices[cat_2][(len(cat_indices[cat_2])-hparams.n_val):]:
-                x, _ = mnist[index]
-                new_val_x.append(x)
-                new_val_y.append(-1.)
-                new_val_task.append(task)
-            new_val_x = torch.stack(new_val_x, dim=0)
-            new_val_y = torch.stack(new_val_y, dim=0)
-            new_val_task = torch.stack(new_val_task, dim=0)
-            val_data.append(
-                data.TensorDataset(new_val_x, new_val_y, new_val_task)
-            )
-        
+        # NOTE: CategoricalTI class is referenced below but not defined or imported.
+        # This code will fail at runtime until CategoricalTI is implemented.
         cat_indices = {
             i: rs.permutation([j for j,(_,y) in enumerate(mnist) if y == i])\
             for i in range(hparams.n_cats)

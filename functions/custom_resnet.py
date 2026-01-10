@@ -89,7 +89,6 @@ class BasicBlock(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         identity = x
 
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
@@ -138,7 +137,6 @@ class BasicBlockMesh(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         identity = x[:, :x.shape[1]//2]
-
 
         out = self.conv1(x)
         out = self.bn1(out)
@@ -342,8 +340,6 @@ class ResNetDeconstructed(nn.Module):
             layer4_inps.append(x.detach())
             x = l(x)
 
-
-            
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         fc_inp = x.detach()
@@ -501,8 +497,6 @@ class ResNetMesh(nn.Module):
             x = l(x)
             l_idx += 1
 
-
-            
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = torch.cat([x, base_model_outs['fc_inp']], dim=1)
