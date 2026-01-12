@@ -1,0 +1,123 @@
+[SLURM] Job 20446027 task 45 starting on cpu-q-35
+[SLURM] Step 1 Mixture Sweep
+[SLURM] Using Python: /home/na658/.conda/envs/mtl_ft/bin/python
+Starting diagonal network pretrain BG script...
+
+================================================================================
+SCRIPT STARTED - Running diagonal network BG experiment...
+================================================================================
+
+================================================================================
+EXPERIMENT SETTINGS
+================================================================================
+Seed: 0
+Input dimension: 1000
+Sparsity (rho): 0.04
+Training samples: 250
+Test samples: 10000
+Learning rate: 0.5
+Max epochs: 5000000
+Test every N epochs: 200
+Convergence threshold: 1e-12
+Stop pred MSE: 1e-10
+Stop beta rate: disabled
+Stop grad norm: disabled
+LR decay: disabled
+LR decay interval: 2000
+Scaling: 1.0
+Lambda (λ): 0.0
+C parameter: 0.001
+Initialization method: complex
+Learning rate tuning: False
+Save folder: results/diagonal/step1_mixture/pi_A=0.50--alpha=0.250000--seed=0/
+C mode: mixture
+  c_A=0.001, c_B=0.5, pi_A=0.5
+================================================================================
+Starting training...
+================================================================================
+[c_mode=mixture] pi_A=0.5, empirical frac_A=0.5240
+[c_mode=mixture] c_A=0.001, c_B=0.5
+Per-coordinate c init: c_vec range [0.001000, 0.500000]
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-12)...
+Epoch      0 (0.0%): Train pred MSE = 6.616629e+00, Test pred MSE = 1.608605e-01, Param MSE = 1.604117e+00, Grad norm = 5.368362e-01, Beta update rate = nan
+Epoch    200 (0.0%): Train pred MSE = 2.469907e-01, Test pred MSE = 1.435681e-01, Param MSE = 1.429491e+00, Grad norm = 6.787785e-02, Beta update rate = 1.369800e-01
+Epoch    400 (0.0%): Train pred MSE = 5.472977e-02, Test pred MSE = 1.473789e-01, Param MSE = 1.478251e+00, Grad norm = 2.616165e-02, Beta update rate = 3.068619e-02
+Epoch    600 (0.0%): Train pred MSE = 1.804330e-02, Test pred MSE = 1.477781e-01, Param MSE = 1.486400e+00, Grad norm = 1.354263e-02, Beta update rate = 1.295172e-02
+Epoch    800 (0.0%): Train pred MSE = 6.944828e-03, Test pred MSE = 1.481353e-01, Param MSE = 1.491858e+00, Grad norm = 7.959197e-03, Beta update rate = 6.894095e-03
+Epoch   1000 (0.0%): Train pred MSE = 2.888518e-03, Test pred MSE = 1.484459e-01, Param MSE = 1.496067e+00, Grad norm = 4.964250e-03, Beta update rate = 4.122069e-03
+Epoch   1200 (0.0%): Train pred MSE = 1.260212e-03, Test pred MSE = 1.486768e-01, Param MSE = 1.499083e+00, Grad norm = 3.201529e-03, Beta update rate = 2.604244e-03
+Epoch   1400 (0.0%): Train pred MSE = 5.690502e-04, Test pred MSE = 1.488380e-01, Param MSE = 1.501161e+00, Grad norm = 2.110732e-03, Beta update rate = 1.695834e-03
+Epoch   1600 (0.0%): Train pred MSE = 2.640586e-04, Test pred MSE = 1.489480e-01, Param MSE = 1.502569e+00, Grad norm = 1.414803e-03, Beta update rate = 1.126610e-03
+Epoch   1800 (0.0%): Train pred MSE = 1.253475e-04, Test pred MSE = 1.490225e-01, Param MSE = 1.503519e+00, Grad norm = 9.611504e-04, Beta update rate = 7.600255e-04
+Epoch   2000 (0.0%): Train pred MSE = 6.066803e-05, Test pred MSE = 1.490727e-01, Param MSE = 1.504159e+00, Grad norm = 6.603949e-04, Beta update rate = 5.192665e-04
+Epoch   2200 (0.0%): Train pred MSE = 2.986217e-05, Test pred MSE = 1.491067e-01, Param MSE = 1.504591e+00, Grad norm = 4.581864e-04, Beta update rate = 3.586299e-04
+Epoch   2400 (0.0%): Train pred MSE = 1.491845e-05, Test pred MSE = 1.491297e-01, Param MSE = 1.504884e+00, Grad norm = 3.205979e-04, Beta update rate = 2.500123e-04
+Epoch   2600 (0.1%): Train pred MSE = 7.552141e-06, Test pred MSE = 1.491454e-01, Param MSE = 1.505083e+00, Grad norm = 2.260076e-04, Beta update rate = 1.757211e-04
+Epoch   2800 (0.1%): Train pred MSE = 3.869062e-06, Test pred MSE = 1.491561e-01, Param MSE = 1.505219e+00, Grad norm = 1.603911e-04, Beta update rate = 1.244006e-04
+Epoch   3000 (0.1%): Train pred MSE = 2.003936e-06, Test pred MSE = 1.491635e-01, Param MSE = 1.505312e+00, Grad norm = 1.145127e-04, Beta update rate = 8.863913e-05
+Epoch   3200 (0.1%): Train pred MSE = 1.048430e-06, Test pred MSE = 1.491686e-01, Param MSE = 1.505376e+00, Grad norm = 8.220885e-05, Beta update rate = 6.352812e-05
+Epoch   3400 (0.1%): Train pred MSE = 5.536907e-07, Test pred MSE = 1.491722e-01, Param MSE = 1.505421e+00, Grad norm = 5.931889e-05, Beta update rate = 4.577487e-05
+Epoch   3600 (0.1%): Train pred MSE = 2.949879e-07, Test pred MSE = 1.491746e-01, Param MSE = 1.505452e+00, Grad norm = 4.300565e-05, Beta update rate = 3.314590e-05
+Epoch   3800 (0.1%): Train pred MSE = 1.584587e-07, Test pred MSE = 1.491764e-01, Param MSE = 1.505473e+00, Grad norm = 3.131749e-05, Beta update rate = 2.411142e-05
+Epoch   4000 (0.1%): Train pred MSE = 8.578033e-08, Test pred MSE = 1.491776e-01, Param MSE = 1.505488e+00, Grad norm = 2.290147e-05, Beta update rate = 1.761468e-05
+Epoch   4200 (0.1%): Train pred MSE = 4.677513e-08, Test pred MSE = 1.491784e-01, Param MSE = 1.505499e+00, Grad norm = 1.681322e-05, Beta update rate = 1.292016e-05
+Epoch   4400 (0.1%): Train pred MSE = 2.568038e-08, Test pred MSE = 1.491791e-01, Param MSE = 1.505507e+00, Grad norm = 1.238943e-05, Beta update rate = 9.512487e-06
+Epoch   4600 (0.1%): Train pred MSE = 1.418910e-08, Test pred MSE = 1.491795e-01, Param MSE = 1.505512e+00, Grad norm = 9.161588e-06, Beta update rate = 7.028305e-06
+Epoch   4800 (0.1%): Train pred MSE = 7.886539e-09, Test pred MSE = 1.491798e-01, Param MSE = 1.505516e+00, Grad norm = 6.796984e-06, Beta update rate = 5.210021e-06
+Epoch   5000 (0.1%): Train pred MSE = 4.407681e-09, Test pred MSE = 1.491800e-01, Param MSE = 1.505519e+00, Grad norm = 5.058204e-06, Beta update rate = 3.874048e-06
+Epoch   5200 (0.1%): Train pred MSE = 2.475963e-09, Test pred MSE = 1.491802e-01, Param MSE = 1.505521e+00, Grad norm = 3.775029e-06, Beta update rate = 2.888912e-06
+Epoch   5400 (0.1%): Train pred MSE = 1.397369e-09, Test pred MSE = 1.491803e-01, Param MSE = 1.505522e+00, Grad norm = 2.824870e-06, Beta update rate = 2.160013e-06
+Epoch   5600 (0.1%): Train pred MSE = 7.920270e-10, Test pred MSE = 1.491804e-01, Param MSE = 1.505523e+00, Grad norm = 2.119057e-06, Beta update rate = 1.618986e-06
+Epoch   5800 (0.1%): Train pred MSE = 4.506786e-10, Test pred MSE = 1.491805e-01, Param MSE = 1.505524e+00, Grad norm = 1.593189e-06, Beta update rate = 1.216211e-06
+Epoch   6000 (0.1%): Train pred MSE = 2.573573e-10, Test pred MSE = 1.491805e-01, Param MSE = 1.505524e+00, Grad norm = 1.200298e-06, Beta update rate = 9.155285e-07
+Epoch   6200 (0.1%): Train pred MSE = 1.474354e-10, Test pred MSE = 1.491805e-01, Param MSE = 1.505525e+00, Grad norm = 9.060014e-07, Beta update rate = 6.904844e-07
+Epoch   6400 (0.1%): Train pred MSE = 8.470834e-11, Test pred MSE = 1.491806e-01, Param MSE = 1.505525e+00, Grad norm = 6.850327e-07, Beta update rate = 5.216521e-07
+
+Training completed at epoch 6400
+Stop reason: train_pred_mse
+Final Train pred MSE = 8.470834e-11
+Final Test pred MSE = 1.491806e-01
+Final Param MSE = 1.505525e+00
+Final Grad norm = 6.850327e-07
+Final Beta update rate = 5.216521e-07
+Success flag: True (train_pred_mse < 1.00e-10)
+Results metadata saved to results/diagonal/step1_mixture/pi_A=0.50--alpha=0.250000--seed=0/results_meta.json
+Saved c_vec to results/diagonal/step1_mixture/pi_A=0.50--alpha=0.250000--seed=0/c_vec.npy
+
+Results saved to results/diagonal/step1_mixture/pi_A=0.50--alpha=0.250000--seed=0/
+Total jobs in this sweep: 108
+Pi_A values: [0.1, 0.5, 0.9]
+Alpha values: [0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+Seeds: [0, 1, 2]
+================================================================================
+Step 1 Mixture Sweep - Experiment Parameters:
+================================================================================
+  c: 0.001
+  c_A: 0.001
+  c_B: 0.5
+  c_mode: mixture
+  epochs: 5000000
+  init_method: complex
+  inp_dim: 1000
+  lmda: 0.0
+  lr: 0.5
+  n_test: 10000
+  n_train: 250
+  no_tuning: True
+  pi_A: 0.5
+  rho: 0.04
+  save_folder: results/diagonal/step1_mixture/pi_A=0.50--alpha=0.250000--seed=0/
+  scaling: 1.0
+  seed: 0
+  test_every_n_epochs: 200
+  threshold: 1e-12
+================================================================================
+
+Running training script...
+
+Extracting results and saving to CSV...
+Results appended to /home/na658/multi-task2/experiment_results_step1_mixture.csv
+
+✓ Experiment 45 completed successfully
+[SLURM] Job 20446027 task 45 finished

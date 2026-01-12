@@ -578,13 +578,51 @@ def solve_rspmap_qk_one(
     init_state: Optional[Tuple[float, float]] = None,
     k_mc: Optional[np.ndarray] = None,
     g_mc: Optional[np.ndarray] = None,
-) -> Tuple[float, float, float]:
+    return_diag: bool = False,
+    eps_active: float = 1e-6,
+) -> Union[Tuple[float, float, float], Tuple[float, float, float, Dict]]:
+    """
+    Solve the RS-PMAP fixed point for q_k regulariser at a single beta value.
+    
+    Args:
+        beta: Measurement ratio n/d
+        gamma_ext: External regularization parameter
+        k_q: Scalar k value (used in homogeneous mode)
+        x_mc: Monte Carlo teacher samples
+        v_mc: Monte Carlo noise samples
+        cfg: Configuration object
+        init_state: Optional (s2, gp) initialization state
+        k_mc: Optional per-coordinate k values (enables heterogeneous mode)
+        g_mc: Optional group labels for coordinates
+        return_diag: If True, return diagnostics dict with active_frac
+        eps_active: Threshold for considering a coordinate "active"
+    
+    Returns:
+        If return_diag=False: (mse, s2, gp)
+        If return_diag=True: (mse, s2, gp, diag_dict) where diag_dict contains:
+            - 'active_frac': fraction of coordinates with |xhat| > eps_active
+            - 'active_frac_by_group': dict mapping group label to active fraction (if g_mc provided)
+    """
     beta = float(beta)
     gamma_ext = float(gamma_ext)
     k_q = float(k_q)
 
     s2 = float(cfg.sigma0_2 if init_state is None else max(init_state[0], cfg.sigma0_2))
     gp = float(max(gamma_ext, 1e-14) if init_state is None else max(init_state[1], gamma_ext, 1e-14))
+
+    # Helper to compute diagnostics from xhat
+    def _compute_diag(xhat_final: np.ndarray) -> Dict:
+        active_mask = np.abs(xhat_final) > eps_active
+        diag = {'active_frac': float(np.mean(active_mask))}
+        if g_mc is not None:
+            labels = np.asarray(g_mc)
+            active_by_group = {}
+            for lab in np.unique(labels):
+                idx = labels == lab
+                if np.any(idx):
+                    active_by_group[int(lab)] = float(np.mean(active_mask[idx]))
+            diag['active_frac_by_group'] = active_by_group
+        return diag
 
     # Homogeneous path: preserve exact historical behaviour when k_mc is None.
     if k_mc is None:
@@ -600,6 +638,8 @@ def solve_rspmap_qk_one(
             gp_new = float(gamma_ext + beta * mean_sigma2)
 
             if max(abs(s2_new - s2), abs(gp_new - gp)) < cfg.tol_fp:
+                if return_diag:
+                    return float(mse), float(s2_new), float(gp_new), _compute_diag(xhat)
                 return float(mse), float(s2_new), float(gp_new)
 
             s2 = (1.0 - cfg.damp) * s2 + cfg.damp * s2_new
@@ -610,6 +650,8 @@ def solve_rspmap_qk_one(
         z = x_mc + math.sqrt(max(s2, 1e-15)) * v_mc
         xhat = prox_qk_safeguarded(z, gp, k_q)
         mse = float(np.mean((x_mc - xhat) ** 2))
+        if return_diag:
+            return float(mse), float(s2), float(gp), _compute_diag(xhat)
         return float(mse), float(s2), float(gp)
 
     # Heterogeneous path: k varies per MC sample.
@@ -653,6 +695,8 @@ def solve_rspmap_qk_one(
         gp_new = float(gamma_ext + beta * mean_sigma2)
 
         if max(abs(s2_new - s2), abs(gp_new - gp)) < cfg.tol_fp:
+            if return_diag:
+                return float(mse), float(s2_new), float(gp_new), _compute_diag(xhat)
             return float(mse), float(s2_new), float(gp_new)
 
         s2 = (1.0 - cfg.damp) * s2 + cfg.damp * s2_new
@@ -679,6 +723,8 @@ def solve_rspmap_qk_one(
                 continue
             xhat[idx] = prox_qk_safeguarded(z[idx], gp, float(k_val))
     mse = float(np.mean((x_mc - xhat) ** 2))
+    if return_diag:
+        return float(mse), float(s2), float(gp), _compute_diag(xhat)
     return float(mse), float(s2), float(gp)
 
 
@@ -691,12 +737,34 @@ def solve_rspmap_qk_curve_best_of_forward_backward(
     cfg: Config,
     k_mc: Optional[np.ndarray] = None,
     g_mc: Optional[np.ndarray] = None,
-) -> np.ndarray:
+    return_diag: bool = False,
+    eps_active: float = 1e-6,
+) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    """
+    Solve the RS-PMAP fixed point curve with forward/backward continuation.
+    
+    Args:
+        betas: Array of beta values (measurement ratios)
+        gamma_ext: External regularization parameter
+        k_q: Scalar k value (used in homogeneous mode)
+        x_mc: Monte Carlo teacher samples
+        v_mc: Monte Carlo noise samples
+        cfg: Configuration object
+        k_mc: Optional per-coordinate k values (enables heterogeneous mode)
+        g_mc: Optional group labels for coordinates
+        return_diag: If True, return active fraction curve alongside MSE
+        eps_active: Threshold for considering a coordinate "active"
+    
+    Returns:
+        If return_diag=False: mse_curve (np.ndarray)
+        If return_diag=True: (mse_curve, active_frac_curve) tuple
+    """
     # forward continuation
     f = np.zeros_like(betas, dtype=float)
+    active_fwd = np.zeros_like(betas, dtype=float) if return_diag else None
     state = None
     for i, b in enumerate(betas):
-        mse, s2, gp = solve_rspmap_qk_one(
+        result = solve_rspmap_qk_one(
             b,
             gamma_ext,
             k_q,
@@ -706,15 +774,23 @@ def solve_rspmap_qk_curve_best_of_forward_backward(
             init_state=state,
             k_mc=k_mc,
             g_mc=g_mc,
+            return_diag=return_diag,
+            eps_active=eps_active,
         )
+        if return_diag:
+            mse, s2, gp, diag = result
+            active_fwd[i] = diag['active_frac']
+        else:
+            mse, s2, gp = result
         f[i] = mse
         state = (s2, gp)
 
     # backward continuation
     bwd = np.zeros_like(betas, dtype=float)
+    active_bwd = np.zeros_like(betas, dtype=float) if return_diag else None
     state = None
     for j, b in enumerate(betas[::-1]):
-        mse, s2, gp = solve_rspmap_qk_one(
+        result = solve_rspmap_qk_one(
             b,
             gamma_ext,
             k_q,
@@ -724,13 +800,29 @@ def solve_rspmap_qk_curve_best_of_forward_backward(
             init_state=state,
             k_mc=k_mc,
             g_mc=g_mc,
+            return_diag=return_diag,
+            eps_active=eps_active,
         )
+        if return_diag:
+            mse, s2, gp, diag = result
+            active_bwd[j] = diag['active_frac']
+        else:
+            mse, s2, gp = result
         bwd[j] = mse
         state = (s2, gp)
     bwd = bwd[::-1]
+    if return_diag:
+        active_bwd = active_bwd[::-1]
 
     # take best branch pointwise (helps near beta~1)
-    return np.minimum(f, bwd)
+    mse_curve = np.minimum(f, bwd)
+    
+    if return_diag:
+        # Select active_frac from the same branch as the lower MSE
+        active_curve = np.where(f <= bwd, active_fwd, active_bwd)
+        return mse_curve, active_curve
+    
+    return mse_curve
 
 
 def _test_homogeneous_vs_vector_k(

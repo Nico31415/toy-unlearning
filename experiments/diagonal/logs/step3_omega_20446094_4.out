@@ -1,0 +1,114 @@
+[SLURM] Job 20446199 task 4 starting on cpu-q-10
+[SLURM] Step 3 Omega Sweep (PT+FT Oracle)
+[SLURM] Using Python: /home/na658/.conda/envs/mtl_ft/bin/python
+Starting PT+FT Oracle experiment...
+
+================================================================================
+STEP 3: PT+FT ORACLE EXPERIMENT
+================================================================================
+
+================================================================================
+EXPERIMENT SETTINGS
+================================================================================
+Seed: 1
+Input dimension: 1000
+PT support fraction (rho_pt): 0.1
+FT sparsity (rho_ft): 0.04
+Overlap (omega): 0.0
+PT amplitude (a_pt): 1.0
+PT c parameter (c_pt): 0.001
+PT lambda (lambda_pt): 0.0
+Gamma reinit: 0.0
+Training samples (FT): 100
+Test samples: 10000
+Learning rate: 0.5
+Max epochs: 5000000
+Save folder: results/diagonal/step3_omega/omega=0.00--alpha=0.100000--seed=1/
+================================================================================
+
+Sampling PT teacher (oracle)...
+  PT support size: 100 / 1000 = 0.1000
+
+Sampling FT teacher with overlap...
+  FT support size: 40 / 1000 = 0.0400
+  Overlap: 0 / 40 = 0.0000 (target: 0.0)
+
+  Coordinate groups:
+    OV (both):     0
+    NEW (FT only): 40
+    PTONLY:        100
+    NONE:          860
+
+Computing c_ft from Cosyne formula...
+
+  c_ft statistics by group:
+    OV:     N/A
+    NEW:    mean=0.002000 (beta_pt=0 -> baseline c_ft)
+    PTONLY: mean=1.001000
+    NONE:   mean=0.002000
+
+Sampling FT data...
+
+Initializing DiagonalNet with per-coordinate c_ft...
+Per-coordinate c init: c_vec range [0.002000, 1.001000]
+
+Training on FT data...
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-12)...
+Epoch      0 (0.0%): Train pred MSE = 1.161561e+01, Test pred MSE = 1.026182e-01, Param MSE = 1.022471e+00, Grad norm = 9.295358e-01, Beta update rate = nan
+Epoch    200 (0.0%): Train pred MSE = 1.427304e-02, Test pred MSE = 1.282694e-01, Param MSE = 1.303893e+00, Grad norm = 2.579711e-02, Beta update rate = 1.252322e-01
+Epoch    400 (0.0%): Train pred MSE = 2.814473e-04, Test pred MSE = 1.271474e-01, Param MSE = 1.292727e+00, Grad norm = 3.202961e-03, Beta update rate = 6.332737e-03
+Epoch    600 (0.0%): Train pred MSE = 9.054765e-06, Test pred MSE = 1.270361e-01, Param MSE = 1.291573e+00, Grad norm = 5.505546e-04, Beta update rate = 9.459164e-04
+Epoch    800 (0.0%): Train pred MSE = 3.656847e-07, Test pred MSE = 1.270207e-01, Param MSE = 1.291411e+00, Grad norm = 1.075427e-04, Beta update rate = 1.722172e-04
+Epoch   1000 (0.0%): Train pred MSE = 1.716964e-08, Test pred MSE = 1.270184e-01, Param MSE = 1.291387e+00, Grad norm = 2.281711e-05, Beta update rate = 3.475234e-05
+Epoch   1200 (0.0%): Train pred MSE = 9.031618e-10, Test pred MSE = 1.270181e-01, Param MSE = 1.291383e+00, Grad norm = 5.141083e-06, Beta update rate = 7.523832e-06
+Epoch   1400 (0.0%): Train pred MSE = 5.240623e-11, Test pred MSE = 1.270181e-01, Param MSE = 1.291383e+00, Grad norm = 1.217820e-06, Beta update rate = 1.718608e-06
+Epoch   1600 (0.0%): Train pred MSE = 3.334980e-12, Test pred MSE = 1.270181e-01, Param MSE = 1.291383e+00, Grad norm = 3.021691e-07, Beta update rate = 4.112864e-07
+
+Training completed at epoch 1691
+Stop reason: loss_threshold_legacy
+Final Train pred MSE = 9.806441e-13
+Final Test pred MSE = 1.270181e-01
+Final Param MSE = 1.291383e+00
+Final Grad norm = 1.615617e-07
+Final Beta update rate = 1.404629e-07
+Success flag: True (train_pred_mse < 1.00e-12)
+Results metadata saved to results/diagonal/step3_omega/omega=0.00--alpha=0.100000--seed=1/results_meta.json
+Group diagnostics saved to results/diagonal/step3_omega/omega=0.00--alpha=0.100000--seed=1/group_diagnostics.csv
+
+Results saved to results/diagonal/step3_omega/omega=0.00--alpha=0.100000--seed=1/
+Total jobs in this sweep: 108
+Omega values: [0.0, 0.5, 1.0]
+Alpha values: [0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+Seeds: [0, 1, 2]
+================================================================================
+Step 3 Omega Sweep - Experiment Parameters:
+================================================================================
+  a_pt: 1.0
+  c_pt: 0.001
+  epochs: 5000000
+  gamma_reinit: 0.0
+  inp_dim: 1000
+  lambda_pt: 0.0
+  lr: 0.5
+  n_test: 10000
+  n_train: 100
+  no_tuning: True
+  omega: 0.0
+  rho_ft: 0.04
+  rho_pt: 0.1
+  save_folder: results/diagonal/step3_omega/omega=0.00--alpha=0.100000--seed=1/
+  seed: 1
+  test_every_n_epochs: 200
+  threshold: 1e-12
+================================================================================
+
+Omega: 0.0, Alpha: 0.1000
+
+Running PT+FT Oracle script...
+
+Extracting results and saving to CSV...
+Results appended to /home/na658/multi-task2/experiment_results_step3_omega.csv
+
+✓ Experiment 4 completed successfully
+[SLURM] Job 20446199 task 4 finished

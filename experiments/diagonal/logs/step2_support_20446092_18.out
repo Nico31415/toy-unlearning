@@ -1,0 +1,175 @@
+[SLURM] Job 20446123 task 18 starting on cpu-q-59
+[SLURM] Step 2 Support Sweep
+[SLURM] Using Python: /home/na658/.conda/envs/mtl_ft/bin/python
+Starting diagonal network pretrain BG script...
+
+================================================================================
+SCRIPT STARTED - Running diagonal network BG experiment...
+================================================================================
+
+================================================================================
+EXPERIMENT SETTINGS
+================================================================================
+Seed: 0
+Input dimension: 1000
+Sparsity (rho): 0.04
+Training samples: 500
+Test samples: 10000
+Learning rate: 0.5
+Max epochs: 5000000
+Test every N epochs: 200
+Convergence threshold: 1e-12
+Stop pred MSE: 1e-10
+Stop beta rate: disabled
+Stop grad norm: disabled
+LR decay: disabled
+LR decay interval: 2000
+Scaling: 1.0
+Lambda (λ): 0.0
+C parameter: 0.001
+Initialization method: complex
+Learning rate tuning: False
+Save folder: results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.500000--seed=0/
+C mode: support
+  c_nz=0.001, c_z=0.5
+================================================================================
+Starting training...
+================================================================================
+[c_mode=support] support fraction=0.0570 (rho=0.04)
+[c_mode=support] c_nz=0.001, c_z=0.5
+Per-coordinate c init: c_vec range [0.001000, 0.500000]
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-12)...
+Epoch      0 (0.0%): Train pred MSE = 3.299926e+00, Test pred MSE = 1.614431e-01, Param MSE = 1.610167e+00, Grad norm = 2.211051e-01, Beta update rate = nan
+Epoch    200 (0.0%): Train pred MSE = 8.100843e-01, Test pred MSE = 1.873472e-01, Param MSE = 1.894662e+00, Grad norm = 1.048973e-01, Beta update rate = 9.108451e-02
+Epoch    400 (0.0%): Train pred MSE = 2.718372e-01, Test pred MSE = 1.984939e-01, Param MSE = 2.021128e+00, Grad norm = 4.804871e-02, Beta update rate = 5.201954e-02
+Epoch    600 (0.0%): Train pred MSE = 1.271539e-01, Test pred MSE = 2.023945e-01, Param MSE = 2.067457e+00, Grad norm = 2.990413e-02, Beta update rate = 2.635856e-02
+Epoch    800 (0.0%): Train pred MSE = 6.577311e-02, Test pred MSE = 2.045039e-01, Param MSE = 2.092265e+00, Grad norm = 2.023548e-02, Beta update rate = 1.743323e-02
+Epoch   1000 (0.0%): Train pred MSE = 3.653631e-02, Test pred MSE = 2.059197e-01, Param MSE = 2.108941e+00, Grad norm = 1.427992e-02, Beta update rate = 1.211622e-02
+Epoch   1200 (0.0%): Train pred MSE = 2.154503e-02, Test pred MSE = 2.069514e-01, Param MSE = 2.121185e+00, Grad norm = 1.039877e-02, Beta update rate = 8.665910e-03
+Epoch   1400 (0.0%): Train pred MSE = 1.338669e-02, Test pred MSE = 2.077366e-01, Param MSE = 2.130582e+00, Grad norm = 7.789969e-03, Beta update rate = 6.365202e-03
+Epoch   1600 (0.0%): Train pred MSE = 8.693015e-03, Test pred MSE = 2.083594e-01, Param MSE = 2.138096e+00, Grad norm = 5.994173e-03, Beta update rate = 4.796770e-03
+Epoch   1800 (0.0%): Train pred MSE = 5.849650e-03, Test pred MSE = 2.088688e-01, Param MSE = 2.144288e+00, Grad norm = 4.725132e-03, Beta update rate = 3.706129e-03
+Epoch   2000 (0.0%): Train pred MSE = 4.047455e-03, Test pred MSE = 2.092933e-01, Param MSE = 2.149484e+00, Grad norm = 3.802177e-03, Beta update rate = 2.929689e-03
+Epoch   2200 (0.0%): Train pred MSE = 2.861289e-03, Test pred MSE = 2.096510e-01, Param MSE = 2.153890e+00, Grad norm = 3.111317e-03, Beta update rate = 2.362043e-03
+Epoch   2400 (0.0%): Train pred MSE = 2.056521e-03, Test pred MSE = 2.099544e-01, Param MSE = 2.157647e+00, Grad norm = 2.580238e-03, Beta update rate = 1.935610e-03
+Epoch   2600 (0.1%): Train pred MSE = 1.497267e-03, Test pred MSE = 2.102127e-01, Param MSE = 2.160859e+00, Grad norm = 2.162419e-03, Beta update rate = 1.606982e-03
+Epoch   2800 (0.1%): Train pred MSE = 1.101246e-03, Test pred MSE = 2.104332e-01, Param MSE = 2.163611e+00, Grad norm = 1.827284e-03, Beta update rate = 1.347973e-03
+Epoch   3000 (0.1%): Train pred MSE = 8.166279e-04, Test pred MSE = 2.106217e-01, Param MSE = 2.165970e+00, Grad norm = 1.554210e-03, Beta update rate = 1.139939e-03
+Epoch   3200 (0.1%): Train pred MSE = 6.096519e-04, Test pred MSE = 2.107829e-01, Param MSE = 2.167996e+00, Grad norm = 1.328881e-03, Beta update rate = 9.702400e-04
+Epoch   3400 (0.1%): Train pred MSE = 4.577014e-04, Test pred MSE = 2.109211e-01, Param MSE = 2.169735e+00, Grad norm = 1.141069e-03, Beta update rate = 8.300781e-04
+Epoch   3600 (0.1%): Train pred MSE = 3.452757e-04, Test pred MSE = 2.110394e-01, Param MSE = 2.171230e+00, Grad norm = 9.832618e-04, Beta update rate = 7.131521e-04
+Epoch   3800 (0.1%): Train pred MSE = 2.615515e-04, Test pred MSE = 2.111410e-01, Param MSE = 2.172516e+00, Grad norm = 8.497992e-04, Beta update rate = 6.148266e-04
+Epoch   4000 (0.1%): Train pred MSE = 1.988564e-04, Test pred MSE = 2.112281e-01, Param MSE = 2.173622e+00, Grad norm = 7.363239e-04, Beta update rate = 5.316070e-04
+Epoch   4200 (0.1%): Train pred MSE = 1.516846e-04, Test pred MSE = 2.113029e-01, Param MSE = 2.174575e+00, Grad norm = 6.394156e-04, Beta update rate = 4.607996e-04
+Epoch   4400 (0.1%): Train pred MSE = 1.160441e-04, Test pred MSE = 2.113672e-01, Param MSE = 2.175396e+00, Grad norm = 5.563474e-04, Beta update rate = 4.002893e-04
+Epoch   4600 (0.1%): Train pred MSE = 8.901627e-05, Test pred MSE = 2.114226e-01, Param MSE = 2.176104e+00, Grad norm = 4.849159e-04, Beta update rate = 3.483883e-04
+Epoch   4800 (0.1%): Train pred MSE = 6.845165e-05, Test pred MSE = 2.114701e-01, Param MSE = 2.176715e+00, Grad norm = 4.233213e-04, Beta update rate = 3.037320e-04
+Epoch   5000 (0.1%): Train pred MSE = 5.275758e-05, Test pred MSE = 2.115111e-01, Param MSE = 2.177242e+00, Grad norm = 3.700799e-04, Beta update rate = 2.652049e-04
+Epoch   5200 (0.1%): Train pred MSE = 4.074758e-05, Test pred MSE = 2.115465e-01, Param MSE = 2.177698e+00, Grad norm = 3.239596e-04, Beta update rate = 2.318869e-04
+Epoch   5400 (0.1%): Train pred MSE = 3.153359e-05, Test pred MSE = 2.115769e-01, Param MSE = 2.178092e+00, Grad norm = 2.839306e-04, Beta update rate = 2.030130e-04
+Epoch   5600 (0.1%): Train pred MSE = 2.444816e-05, Test pred MSE = 2.116032e-01, Param MSE = 2.178434e+00, Grad norm = 2.491274e-04, Beta update rate = 1.779432e-04
+Epoch   5800 (0.1%): Train pred MSE = 1.898771e-05, Test pred MSE = 2.116259e-01, Param MSE = 2.178729e+00, Grad norm = 2.188193e-04, Beta update rate = 1.561394e-04
+Epoch   6000 (0.1%): Train pred MSE = 1.477102e-05, Test pred MSE = 2.116456e-01, Param MSE = 2.178986e+00, Grad norm = 1.923869e-04, Beta update rate = 1.371466e-04
+Epoch   6200 (0.1%): Train pred MSE = 1.150858e-05, Test pred MSE = 2.116626e-01, Param MSE = 2.179208e+00, Grad norm = 1.693035e-04, Beta update rate = 1.205790e-04
+Epoch   6400 (0.1%): Train pred MSE = 8.979921e-06, Test pred MSE = 2.116773e-01, Param MSE = 2.179401e+00, Grad norm = 1.491191e-04, Beta update rate = 1.061078e-04
+Epoch   6600 (0.1%): Train pred MSE = 7.016681e-06, Test pred MSE = 2.116900e-01, Param MSE = 2.179569e+00, Grad norm = 1.314492e-04, Beta update rate = 9.345247e-05
+Epoch   6800 (0.1%): Train pred MSE = 5.489987e-06, Test pred MSE = 2.117011e-01, Param MSE = 2.179715e+00, Grad norm = 1.159633e-04, Beta update rate = 8.237254e-05
+Epoch   7000 (0.1%): Train pred MSE = 4.300962e-06, Test pred MSE = 2.117107e-01, Param MSE = 2.179841e+00, Grad norm = 1.023777e-04, Beta update rate = 7.266161e-05
+Epoch   7200 (0.1%): Train pred MSE = 3.373579e-06, Test pred MSE = 2.117190e-01, Param MSE = 2.179952e+00, Grad norm = 9.044750e-05, Beta update rate = 6.414203e-05
+Epoch   7400 (0.1%): Train pred MSE = 2.649265e-06, Test pred MSE = 2.117263e-01, Param MSE = 2.180048e+00, Grad norm = 7.996143e-05, Beta update rate = 5.666063e-05
+Epoch   7600 (0.2%): Train pred MSE = 2.082808e-06, Test pred MSE = 2.117326e-01, Param MSE = 2.180132e+00, Grad norm = 7.073667e-05, Beta update rate = 5.008504e-05
+Epoch   7800 (0.2%): Train pred MSE = 1.639244e-06, Test pred MSE = 2.117381e-01, Param MSE = 2.180205e+00, Grad norm = 6.261482e-05, Beta update rate = 4.430072e-05
+Epoch   8000 (0.2%): Train pred MSE = 1.291489e-06, Test pred MSE = 2.117429e-01, Param MSE = 2.180269e+00, Grad norm = 5.545840e-05, Beta update rate = 3.920836e-05
+Epoch   8200 (0.2%): Train pred MSE = 1.018532e-06, Test pred MSE = 2.117470e-01, Param MSE = 2.180325e+00, Grad norm = 4.914792e-05, Beta update rate = 3.472176e-05
+Epoch   8400 (0.2%): Train pred MSE = 8.040445e-07, Test pred MSE = 2.117507e-01, Param MSE = 2.180374e+00, Grad norm = 4.357942e-05, Beta update rate = 3.076597e-05
+Epoch   8600 (0.2%): Train pred MSE = 6.353199e-07, Test pred MSE = 2.117538e-01, Param MSE = 2.180416e+00, Grad norm = 3.866229e-05, Beta update rate = 2.727573e-05
+Epoch   8800 (0.2%): Train pred MSE = 5.024562e-07, Test pred MSE = 2.117566e-01, Param MSE = 2.180454e+00, Grad norm = 3.431747e-05, Beta update rate = 2.419420e-05
+Epoch   9000 (0.2%): Train pred MSE = 3.977264e-07, Test pred MSE = 2.117590e-01, Param MSE = 2.180486e+00, Grad norm = 3.047593e-05, Beta update rate = 2.147175e-05
+Epoch   9200 (0.2%): Train pred MSE = 3.150931e-07, Test pred MSE = 2.117611e-01, Param MSE = 2.180515e+00, Grad norm = 2.707732e-05, Beta update rate = 1.906504e-05
+Epoch   9400 (0.2%): Train pred MSE = 2.498331e-07, Test pred MSE = 2.117630e-01, Param MSE = 2.180540e+00, Grad norm = 2.406879e-05, Beta update rate = 1.693618e-05
+Epoch   9600 (0.2%): Train pred MSE = 1.982470e-07, Test pred MSE = 2.117646e-01, Param MSE = 2.180562e+00, Grad norm = 2.140408e-05, Beta update rate = 1.505200e-05
+Epoch   9800 (0.2%): Train pred MSE = 1.574338e-07, Test pred MSE = 2.117660e-01, Param MSE = 2.180582e+00, Grad norm = 1.904261e-05, Beta update rate = 1.338345e-05
+Epoch  10000 (0.2%): Train pred MSE = 1.251164e-07, Test pred MSE = 2.117673e-01, Param MSE = 2.180599e+00, Grad norm = 1.694876e-05, Beta update rate = 1.190504e-05
+Epoch  10200 (0.2%): Train pred MSE = 9.950507e-08, Test pred MSE = 2.117684e-01, Param MSE = 2.180613e+00, Grad norm = 1.509127e-05, Beta update rate = 1.059442e-05
+Epoch  10400 (0.2%): Train pred MSE = 7.919211e-08, Test pred MSE = 2.117694e-01, Param MSE = 2.180627e+00, Grad norm = 1.344263e-05, Beta update rate = 9.431955e-06
+Epoch  10600 (0.2%): Train pred MSE = 6.306889e-08, Test pred MSE = 2.117702e-01, Param MSE = 2.180638e+00, Grad norm = 1.197867e-05, Beta update rate = 8.400392e-06
+Epoch  10800 (0.2%): Train pred MSE = 5.026160e-08, Test pred MSE = 2.117709e-01, Param MSE = 2.180648e+00, Grad norm = 1.067809e-05, Beta update rate = 7.484549e-06
+Epoch  11000 (0.2%): Train pred MSE = 4.008087e-08, Test pred MSE = 2.117716e-01, Param MSE = 2.180657e+00, Grad norm = 9.522144e-06, Beta update rate = 6.671068e-06
+Epoch  11200 (0.2%): Train pred MSE = 3.198228e-08, Test pred MSE = 2.117722e-01, Param MSE = 2.180665e+00, Grad norm = 8.494300e-06, Beta update rate = 5.948180e-06
+Epoch  11400 (0.2%): Train pred MSE = 2.553556e-08, Test pred MSE = 2.117727e-01, Param MSE = 2.180672e+00, Grad norm = 7.579973e-06, Beta update rate = 5.305515e-06
+Epoch  11600 (0.2%): Train pred MSE = 2.040035e-08, Test pred MSE = 2.117731e-01, Param MSE = 2.180678e+00, Grad norm = 6.766292e-06, Beta update rate = 4.733925e-06
+Epoch  11800 (0.2%): Train pred MSE = 1.630719e-08, Test pred MSE = 2.117735e-01, Param MSE = 2.180683e+00, Grad norm = 6.041890e-06, Beta update rate = 4.225339e-06
+Epoch  12000 (0.2%): Train pred MSE = 1.304255e-08, Test pred MSE = 2.117738e-01, Param MSE = 2.180688e+00, Grad norm = 5.396721e-06, Beta update rate = 3.772629e-06
+Epoch  12200 (0.2%): Train pred MSE = 1.043713e-08, Test pred MSE = 2.117742e-01, Param MSE = 2.180692e+00, Grad norm = 4.821902e-06, Beta update rate = 3.369497e-06
+Epoch  12400 (0.2%): Train pred MSE = 8.356573e-09, Test pred MSE = 2.117744e-01, Param MSE = 2.180696e+00, Grad norm = 4.309574e-06, Beta update rate = 3.010377e-06
+Epoch  12600 (0.3%): Train pred MSE = 6.694188e-09, Test pred MSE = 2.117747e-01, Param MSE = 2.180699e+00, Grad norm = 3.852782e-06, Beta update rate = 2.690344e-06
+Epoch  12800 (0.3%): Train pred MSE = 5.365174e-09, Test pred MSE = 2.117749e-01, Param MSE = 2.180702e+00, Grad norm = 3.445364e-06, Beta update rate = 2.405040e-06
+Epoch  13000 (0.3%): Train pred MSE = 4.302095e-09, Test pred MSE = 2.117750e-01, Param MSE = 2.180705e+00, Grad norm = 3.081862e-06, Beta update rate = 2.150607e-06
+Epoch  13200 (0.3%): Train pred MSE = 3.451285e-09, Test pred MSE = 2.117752e-01, Param MSE = 2.180707e+00, Grad norm = 2.757435e-06, Beta update rate = 1.923626e-06
+Epoch  13400 (0.3%): Train pred MSE = 2.770006e-09, Test pred MSE = 2.117754e-01, Param MSE = 2.180709e+00, Grad norm = 2.467791e-06, Beta update rate = 1.721068e-06
+Epoch  13600 (0.3%): Train pred MSE = 2.224203e-09, Test pred MSE = 2.117755e-01, Param MSE = 2.180711e+00, Grad norm = 2.209121e-06, Beta update rate = 1.540245e-06
+Epoch  13800 (0.3%): Train pred MSE = 1.786720e-09, Test pred MSE = 2.117756e-01, Param MSE = 2.180712e+00, Grad norm = 1.978042e-06, Beta update rate = 1.378775e-06
+Epoch  14000 (0.3%): Train pred MSE = 1.435892e-09, Test pred MSE = 2.117757e-01, Param MSE = 2.180713e+00, Grad norm = 1.771552e-06, Beta update rate = 1.234541e-06
+Epoch  14200 (0.3%): Train pred MSE = 1.154426e-09, Test pred MSE = 2.117758e-01, Param MSE = 2.180715e+00, Grad norm = 1.586982e-06, Beta update rate = 1.105664e-06
+Epoch  14400 (0.3%): Train pred MSE = 9.285044e-10, Test pred MSE = 2.117759e-01, Param MSE = 2.180716e+00, Grad norm = 1.421958e-06, Beta update rate = 9.904756e-07
+Epoch  14600 (0.3%): Train pred MSE = 7.470871e-10, Test pred MSE = 2.117759e-01, Param MSE = 2.180717e+00, Grad norm = 1.274371e-06, Beta update rate = 8.874925e-07
+Epoch  14800 (0.3%): Train pred MSE = 6.013445e-10, Test pred MSE = 2.117760e-01, Param MSE = 2.180718e+00, Grad norm = 1.142343e-06, Beta update rate = 7.953957e-07
+Epoch  15000 (0.3%): Train pred MSE = 4.842126e-10, Test pred MSE = 2.117760e-01, Param MSE = 2.180718e+00, Grad norm = 1.024205e-06, Beta update rate = 7.130120e-07
+Epoch  15200 (0.3%): Train pred MSE = 3.900364e-10, Test pred MSE = 2.117761e-01, Param MSE = 2.180719e+00, Grad norm = 9.184683e-07, Beta update rate = 6.392975e-07
+Epoch  15400 (0.3%): Train pred MSE = 3.142872e-10, Test pred MSE = 2.117761e-01, Param MSE = 2.180719e+00, Grad norm = 8.238085e-07, Beta update rate = 5.733230e-07
+Epoch  15600 (0.3%): Train pred MSE = 2.533359e-10, Test pred MSE = 2.117762e-01, Param MSE = 2.180720e+00, Grad norm = 7.390452e-07, Beta update rate = 5.142610e-07
+Epoch  15800 (0.3%): Train pred MSE = 2.042732e-10, Test pred MSE = 2.117762e-01, Param MSE = 2.180720e+00, Grad norm = 6.631263e-07, Beta update rate = 4.613743e-07
+Epoch  16000 (0.3%): Train pred MSE = 1.647659e-10, Test pred MSE = 2.117762e-01, Param MSE = 2.180721e+00, Grad norm = 5.951136e-07, Beta update rate = 4.140060e-07
+Epoch  16200 (0.3%): Train pred MSE = 1.329415e-10, Test pred MSE = 2.117763e-01, Param MSE = 2.180721e+00, Grad norm = 5.341706e-07, Beta update rate = 3.715704e-07
+Epoch  16400 (0.3%): Train pred MSE = 1.072971e-10, Test pred MSE = 2.117763e-01, Param MSE = 2.180722e+00, Grad norm = 4.795507e-07, Beta update rate = 3.335452e-07
+Epoch  16600 (0.3%): Train pred MSE = 8.662555e-11, Test pred MSE = 2.117763e-01, Param MSE = 2.180722e+00, Grad norm = 4.305879e-07, Beta update rate = 2.994646e-07
+
+Training completed at epoch 16600
+Stop reason: train_pred_mse
+Final Train pred MSE = 8.662555e-11
+Final Test pred MSE = 2.117763e-01
+Final Param MSE = 2.180722e+00
+Final Grad norm = 4.305879e-07
+Final Beta update rate = 2.994646e-07
+Success flag: True (train_pred_mse < 1.00e-10)
+Results metadata saved to results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.500000--seed=0/results_meta.json
+Saved c_vec to results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.500000--seed=0/c_vec.npy
+
+Results saved to results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.500000--seed=0/
+Total jobs in this sweep: 72
+Cases: good (c_nz=0.001, c_z=0.5), bad (c_nz=0.5, c_z=0.001)
+Alpha values: [0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+Seeds: [0, 1, 2]
+================================================================================
+Step 2 Support Sweep - Experiment Parameters:
+================================================================================
+  c: 0.001
+  c_mode: support
+  c_nz: 0.001
+  c_z: 0.5
+  epochs: 5000000
+  init_method: complex
+  inp_dim: 1000
+  lmda: 0.0
+  lr: 0.5
+  n_test: 10000
+  n_train: 500
+  no_tuning: True
+  rho: 0.04
+  save_folder: results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.500000--seed=0/
+  scaling: 1.0
+  seed: 0
+  test_every_n_epochs: 200
+  threshold: 1e-12
+================================================================================
+
+Case: good (c_nz=0.001, c_z=0.5)
+
+Running training script...
+
+Extracting results and saving to CSV...
+Results appended to /home/na658/multi-task2/experiment_results_step2_support.csv
+
+✓ Experiment 18 completed successfully
+[SLURM] Job 20446123 task 18 finished

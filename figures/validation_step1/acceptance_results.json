@@ -1,3 +1,5 @@
 {
   "ordering_correct": false,
-  "smooth_interpolation": 
+  "smooth_interpolation": false,
+  "collapse_sanity": null
+}

@@ -1,0 +1,97 @@
+[SLURM] Job 20446112 task 7 starting on cpu-q-508
+[SLURM] Step 2 Support Sweep
+[SLURM] Using Python: /home/na658/.conda/envs/mtl_ft/bin/python
+Starting diagonal network pretrain BG script...
+
+================================================================================
+SCRIPT STARTED - Running diagonal network BG experiment...
+================================================================================
+
+================================================================================
+EXPERIMENT SETTINGS
+================================================================================
+Seed: 1
+Input dimension: 1000
+Sparsity (rho): 0.04
+Training samples: 200
+Test samples: 10000
+Learning rate: 0.5
+Max epochs: 5000000
+Test every N epochs: 200
+Convergence threshold: 1e-12
+Stop pred MSE: 1e-10
+Stop beta rate: disabled
+Stop grad norm: disabled
+LR decay: disabled
+LR decay interval: 2000
+Scaling: 1.0
+Lambda (λ): 0.0
+C parameter: 0.001
+Initialization method: complex
+Learning rate tuning: False
+Save folder: results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.200000--seed=1/
+C mode: support
+  c_nz=0.001, c_z=0.5
+================================================================================
+Starting training...
+================================================================================
+[c_mode=support] support fraction=0.0470 (rho=0.04)
+[c_mode=support] c_nz=0.001, c_z=0.5
+Per-coordinate c init: c_vec range [0.001000, 0.500000]
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-12)...
+Epoch      0 (0.0%): Train pred MSE = 6.727555e+00, Test pred MSE = 1.346759e-01, Param MSE = 1.326074e+00, Grad norm = 8.226182e-01, Beta update rate = nan
+Epoch    200 (0.0%): Train pred MSE = 5.135589e-03, Test pred MSE = 1.731683e-01, Param MSE = 1.702436e+00, Grad norm = 1.719648e-02, Beta update rate = 9.647774e-02
+Epoch    400 (0.0%): Train pred MSE = 2.872819e-05, Test pred MSE = 1.746758e-01, Param MSE = 1.717085e+00, Grad norm = 1.195104e-03, Beta update rate = 3.654137e-03
+Epoch    600 (0.0%): Train pred MSE = 2.597831e-07, Test pred MSE = 1.747558e-01, Param MSE = 1.717884e+00, Grad norm = 1.098549e-04, Beta update rate = 2.754360e-04
+Epoch    800 (0.0%): Train pred MSE = 2.969360e-09, Test pred MSE = 1.747616e-01, Param MSE = 1.717943e+00, Grad norm = 1.151673e-05, Beta update rate = 2.630365e-05
+Epoch   1000 (0.0%): Train pred MSE = 3.875539e-11, Test pred MSE = 1.747620e-01, Param MSE = 1.717949e+00, Grad norm = 1.300360e-06, Beta update rate = 2.825590e-06
+
+Training completed at epoch 1000
+Stop reason: train_pred_mse
+Final Train pred MSE = 3.875539e-11
+Final Test pred MSE = 1.747620e-01
+Final Param MSE = 1.717949e+00
+Final Grad norm = 1.300360e-06
+Final Beta update rate = 2.825590e-06
+Success flag: True (train_pred_mse < 1.00e-10)
+Results metadata saved to results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.200000--seed=1/results_meta.json
+Saved c_vec to results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.200000--seed=1/c_vec.npy
+
+Results saved to results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.200000--seed=1/
+Total jobs in this sweep: 72
+Cases: good (c_nz=0.001, c_z=0.5), bad (c_nz=0.5, c_z=0.001)
+Alpha values: [0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+Seeds: [0, 1, 2]
+================================================================================
+Step 2 Support Sweep - Experiment Parameters:
+================================================================================
+  c: 0.001
+  c_mode: support
+  c_nz: 0.001
+  c_z: 0.5
+  epochs: 5000000
+  init_method: complex
+  inp_dim: 1000
+  lmda: 0.0
+  lr: 0.5
+  n_test: 10000
+  n_train: 200
+  no_tuning: True
+  rho: 0.04
+  save_folder: results/diagonal/step2_support/c_nz=0.001000--c_z=0.500000--alpha=0.200000--seed=1/
+  scaling: 1.0
+  seed: 1
+  test_every_n_epochs: 200
+  threshold: 1e-12
+================================================================================
+
+Case: good (c_nz=0.001, c_z=0.5)
+
+Running training script...
+
+Extracting results and saving to CSV...
+Results appended to /home/na658/multi-task2/experiment_results_step2_support.csv
+
+✓ Experiment 7 completed successfully
+[SLURM] Job 20446112 task 7 finished

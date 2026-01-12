@@ -1,0 +1,108 @@
+[SLURM] Job 20446026 task 44 starting on cpu-q-35
+[SLURM] Step 1 Mixture Sweep
+[SLURM] Using Python: /home/na658/.conda/envs/mtl_ft/bin/python
+Starting diagonal network pretrain BG script...
+
+================================================================================
+SCRIPT STARTED - Running diagonal network BG experiment...
+================================================================================
+
+================================================================================
+EXPERIMENT SETTINGS
+================================================================================
+Seed: 2
+Input dimension: 1000
+Sparsity (rho): 0.04
+Training samples: 200
+Test samples: 10000
+Learning rate: 0.5
+Max epochs: 5000000
+Test every N epochs: 200
+Convergence threshold: 1e-12
+Stop pred MSE: 1e-10
+Stop beta rate: disabled
+Stop grad norm: disabled
+LR decay: disabled
+LR decay interval: 2000
+Scaling: 1.0
+Lambda (λ): 0.0
+C parameter: 0.001
+Initialization method: complex
+Learning rate tuning: False
+Save folder: results/diagonal/step1_mixture/pi_A=0.50--alpha=0.200000--seed=2/
+C mode: mixture
+  c_A=0.001, c_B=0.5, pi_A=0.5
+================================================================================
+Starting training...
+================================================================================
+[c_mode=mixture] pi_A=0.5, empirical frac_A=0.4960
+[c_mode=mixture] c_A=0.001, c_B=0.5
+Per-coordinate c init: c_vec range [0.001000, 0.500000]
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-12)...
+Epoch      0 (0.0%): Train pred MSE = 3.005902e+00, Test pred MSE = 8.198370e-02, Param MSE = 8.311875e-01, Grad norm = 4.199805e-01, Beta update rate = nan
+Epoch    200 (0.0%): Train pred MSE = 6.014458e-02, Test pred MSE = 6.695274e-02, Param MSE = 6.887116e-01, Grad norm = 3.860838e-02, Beta update rate = 8.191689e-02
+Epoch    400 (0.0%): Train pred MSE = 7.210690e-03, Test pred MSE = 6.998214e-02, Param MSE = 7.185563e-01, Grad norm = 1.165569e-02, Beta update rate = 1.415409e-02
+Epoch    600 (0.0%): Train pred MSE = 1.282001e-03, Test pred MSE = 7.105044e-02, Param MSE = 7.288064e-01, Grad norm = 4.563919e-03, Beta update rate = 4.786282e-03
+Epoch    800 (0.0%): Train pred MSE = 2.761732e-04, Test pred MSE = 7.144141e-02, Param MSE = 7.325461e-01, Grad norm = 2.018025e-03, Beta update rate = 1.954805e-03
+Epoch   1000 (0.0%): Train pred MSE = 6.733559e-05, Test pred MSE = 7.159025e-02, Param MSE = 7.339748e-01, Grad norm = 9.602699e-04, Beta update rate = 8.833332e-04
+Epoch   1200 (0.0%): Train pred MSE = 1.795197e-05, Test pred MSE = 7.164868e-02, Param MSE = 7.345392e-01, Grad norm = 4.816213e-04, Beta update rate = 4.262747e-04
+Epoch   1400 (0.0%): Train pred MSE = 5.113781e-06, Test pred MSE = 7.167199e-02, Param MSE = 7.347662e-01, Grad norm = 2.512534e-04, Beta update rate = 2.158620e-04
+Epoch   1600 (0.0%): Train pred MSE = 1.530791e-06, Test pred MSE = 7.168129e-02, Param MSE = 7.348576e-01, Grad norm = 1.350318e-04, Beta update rate = 1.133779e-04
+Epoch   1800 (0.0%): Train pred MSE = 4.757271e-07, Test pred MSE = 7.168495e-02, Param MSE = 7.348937e-01, Grad norm = 7.423127e-05, Beta update rate = 6.123690e-05
+Epoch   2000 (0.0%): Train pred MSE = 1.521074e-07, Test pred MSE = 7.168631e-02, Param MSE = 7.349073e-01, Grad norm = 4.151955e-05, Beta update rate = 3.379134e-05
+Epoch   2200 (0.0%): Train pred MSE = 4.969759e-08, Test pred MSE = 7.168678e-02, Param MSE = 7.349120e-01, Grad norm = 2.353305e-05, Beta update rate = 1.895594e-05
+Epoch   2400 (0.0%): Train pred MSE = 1.650665e-08, Test pred MSE = 7.168690e-02, Param MSE = 7.349132e-01, Grad norm = 1.347454e-05, Beta update rate = 1.076878e-05
+Epoch   2600 (0.1%): Train pred MSE = 5.551342e-09, Test pred MSE = 7.168690e-02, Param MSE = 7.349132e-01, Grad norm = 7.775295e-06, Beta update rate = 6.177021e-06
+Epoch   2800 (0.1%): Train pred MSE = 1.884686e-09, Test pred MSE = 7.168686e-02, Param MSE = 7.349129e-01, Grad norm = 4.513182e-06, Beta update rate = 3.569315e-06
+Epoch   3000 (0.1%): Train pred MSE = 6.444438e-10, Test pred MSE = 7.168683e-02, Param MSE = 7.349125e-01, Grad norm = 2.631449e-06, Beta update rate = 2.074037e-06
+Epoch   3200 (0.1%): Train pred MSE = 2.215557e-10, Test pred MSE = 7.168680e-02, Param MSE = 7.349122e-01, Grad norm = 1.539512e-06, Beta update rate = 1.210283e-06
+Epoch   3400 (0.1%): Train pred MSE = 7.648317e-11, Test pred MSE = 7.168678e-02, Param MSE = 7.349120e-01, Grad norm = 9.030074e-07, Beta update rate = 7.085187e-07
+
+Training completed at epoch 3400
+Stop reason: train_pred_mse
+Final Train pred MSE = 7.648317e-11
+Final Test pred MSE = 7.168678e-02
+Final Param MSE = 7.349120e-01
+Final Grad norm = 9.030074e-07
+Final Beta update rate = 7.085187e-07
+Success flag: True (train_pred_mse < 1.00e-10)
+Results metadata saved to results/diagonal/step1_mixture/pi_A=0.50--alpha=0.200000--seed=2/results_meta.json
+Saved c_vec to results/diagonal/step1_mixture/pi_A=0.50--alpha=0.200000--seed=2/c_vec.npy
+
+Results saved to results/diagonal/step1_mixture/pi_A=0.50--alpha=0.200000--seed=2/
+Total jobs in this sweep: 108
+Pi_A values: [0.1, 0.5, 0.9]
+Alpha values: [0.05, 0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+Seeds: [0, 1, 2]
+================================================================================
+Step 1 Mixture Sweep - Experiment Parameters:
+================================================================================
+  c: 0.001
+  c_A: 0.001
+  c_B: 0.5
+  c_mode: mixture
+  epochs: 5000000
+  init_method: complex
+  inp_dim: 1000
+  lmda: 0.0
+  lr: 0.5
+  n_test: 10000
+  n_train: 200
+  no_tuning: True
+  pi_A: 0.5
+  rho: 0.04
+  save_folder: results/diagonal/step1_mixture/pi_A=0.50--alpha=0.200000--seed=2/
+  scaling: 1.0
+  seed: 2
+  test_every_n_epochs: 200
+  threshold: 1e-12
+================================================================================
+
+Running training script...
+
+Extracting results and saving to CSV...
+Results appended to /home/na658/multi-task2/experiment_results_step1_mixture.csv
+
+✓ Experiment 44 completed successfully
+[SLURM] Job 20446026 task 44 finished

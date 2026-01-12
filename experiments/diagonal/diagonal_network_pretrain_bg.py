@@ -76,7 +76,11 @@ def get_parameters(c, lmda):
         raise ValueError("Require c² ≥ λ² for real outputs.")
     v = np.sqrt((c + lmda) / 2)
     u = np.sqrt((c - lmda) / 2)
-    return v, u, u, v  # v_pos, v_neg, u_pos, u_neg -> w_pos=v, v_pos=u, v_neg=u, w_neg=v
+    # For scalar c, v and u are scalars (no aliasing issue)
+    # For array c, return copies to avoid aliasing with torch.from_numpy()
+    if np.isscalar(v):
+        return v, u, u, v
+    return v.copy(), u.copy(), u.copy(), v.copy()
 
 
 def get_parameters_vectorized(c_vec, lmda):
@@ -100,7 +104,9 @@ def get_parameters_vectorized(c_vec, lmda):
         raise ValueError("Require c² ≥ λ² for all coordinates.")
     v = np.sqrt((c_vec + lmda) / 2)
     u = np.sqrt((c_vec - lmda) / 2)
-    return v, u, u, v  # v_pos, v_neg, u_pos, u_neg -> w_pos=v, v_pos=u, v_neg=u, w_neg=v
+    # Return COPIES to avoid aliasing when used with torch.from_numpy()
+    # (which shares memory with the underlying array)
+    return v.copy(), u.copy(), u.copy(), v.copy()
 
 
 def check_init_invariants(net, c_expected, lmda_expected, atol=1e-12):
@@ -222,7 +228,9 @@ def sample_beta_star_bg(inp_dim, rho, generator=None):
     
     return beta_star
 
-def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-9, stop_pred_mse=None, stop_beta_rate=0.0, stop_grad_norm=0.0, lr_decay=1.0, lr_decay_interval=2000, save_folder=None):
+def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-9, stop_pred_mse=None, stop_beta_rate=0.0, stop_grad_norm=0.0, lr_decay=1.0, lr_decay_interval=2000, save_folder=None,
+          min_epochs_before_stop=None, require_eval_before_stop=False, disable_legacy_loss_stop=False,
+          fixed_point_beta_rate=1e-6, fixed_point_consecutive_evals=2, fixed_point_grad_norm=0.0):
     or_model = deepcopy(model)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     all_results = []
@@ -235,6 +243,17 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
     beta_hat_prev = None
     prev_eval_epoch = -1
     
+    # === Fixed-point stopping state variables ===
+    eval_count = 0
+    consecutive_fixed_point_evals = 0
+    beta_hat_prev_eval = None  # ONLY updated at eval checkpoints (not per-epoch)
+    beta_update_rate = float('inf')  # Track latest rate for guard logic
+    
+    # === Safe defaults (resolve None to safe values) ===
+    # This ensures sweeps are safe even without explicit flags
+    if min_epochs_before_stop is None:
+        min_epochs_before_stop = test_every_n_epochs
+    
     # Use stop_pred_mse if provided, otherwise use threshold
     if stop_pred_mse is None:
         stop_pred_mse = threshold
@@ -245,10 +264,22 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
     print(f"\nStarting training loop (max {epochs} epochs, threshold={threshold:.2e})...")
     sys.stdout.flush()
     
-    # Create tqdm progress bar with initial description
-    # Use miniters=1 and mininterval=0.1 to ensure frequent updates
-    pbar = tqdm(range(epochs), desc="Training", unit="epoch", miniters=1, mininterval=0.1, file=sys.stdout)
-    pbar.set_postfix({'loss': 'N/A', 'pct': '0.0%'})
+    # Disable tqdm progress bar in non-interactive mode (SLURM batch jobs)
+    # This prevents massive log files from tqdm updates
+    is_interactive = sys.stdout.isatty()
+    
+    # Create tqdm progress bar - disabled if not interactive to avoid log bloat
+    pbar = tqdm(
+        range(epochs), 
+        desc="Training", 
+        unit="epoch", 
+        miniters=1000 if not is_interactive else 1,  # Less frequent updates in batch mode
+        mininterval=10.0 if not is_interactive else 0.1,  # 10s interval in batch mode
+        disable=not is_interactive,  # Completely disable in batch mode
+        file=sys.stdout
+    )
+    if is_interactive:
+        pbar.set_postfix({'loss': 'N/A', 'pct': '0.0%'})
     sys.stdout.flush()
     
     for i in pbar:
@@ -270,14 +301,15 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
         optimizer.step()
         loss = loss.item()
         
-        # Update progress bar with current loss and percentage
+        # Update progress bar with current loss and percentage (only in interactive mode)
         pct_complete = 100.0 * (i + 1) / epochs
-        pbar.set_postfix({
-            'loss': f'{loss:.6e}',
-            'pct': f'{pct_complete:.1f}%',
-            'grad_norm': f'{grad_norm:.6e}'
-        })
-        pbar.refresh()  # Force refresh to ensure updates are visible
+        if is_interactive:
+            pbar.set_postfix({
+                'loss': f'{loss:.6e}',
+                'pct': f'{pct_complete:.1f}%',
+                'grad_norm': f'{grad_norm:.6e}'
+            })
+            pbar.refresh()  # Force refresh to ensure updates are visible
         
         # Evaluate at test intervals or at the end
         should_evaluate = (i % test_every_n_epochs == 0) or (i == epochs - 1)
@@ -292,16 +324,22 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
                 beta_l2 = l2_norm(beta_hat)
                 beta_l1 = l1_norm(beta_hat)
                 
-                # Compute beta update rate
-                if beta_hat_prev is not None:
-                    delta_beta = torch.norm(beta_hat - beta_hat_prev).item()
-                    epochs_since_last_eval = max(1, i - prev_eval_epoch)
-                    beta_update_rate = delta_beta / epochs_since_last_eval
+                # Compute beta update rate (relative change between consecutive evals)
+                # Uses beta_hat_prev_eval (ONLY updated at eval checkpoints)
+                if beta_hat_prev_eval is not None:
+                    numer = (beta_hat - beta_hat_prev_eval).norm().item()
+                    denom = beta_hat_prev_eval.norm().item() + 1e-12
+                    beta_update_rate = numer / denom
+                    delta_beta = numer  # For logging
                 else:
-                    delta_beta = np.nan
-                    beta_update_rate = np.nan
+                    delta_beta = float('inf')
+                    beta_update_rate = float('inf')
                 
-                # Store previous beta for next evaluation
+                # Update prev for next eval (ONLY inside eval block, not per-epoch)
+                beta_hat_prev_eval = beta_hat.clone().detach()
+                eval_count += 1
+                
+                # Also keep old tracking for backward compat
                 beta_hat_prev = beta_hat.clone()
                 prev_eval_epoch = i
                 
@@ -342,20 +380,35 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
                 pbar.write(f"Epoch {i:6d} ({pct_complete:.1f}%): Train pred MSE = {train_pred_mse:.6e}, Test pred MSE = {test_pred_mse:.6e}, Param MSE = {param_mse:.6e}, Grad norm = {grad_norm:.6e}, Beta update rate = {beta_update_rate:.6e}")
                 last_evaluated_epoch = i
                 
-                # Multi-criterion stopping with explicit reason tracking
-                # For c=0.001, numerical precision may prevent reaching strict thresholds
-                # If beta_update_rate = 0, beta has stopped moving (numerical limit reached)
+                # === Fixed-point detection ===
+                # Check if model is at a fixed point (beta not changing significantly)
+                fixed_point_met = (beta_update_rate < fixed_point_beta_rate)
+                if fixed_point_grad_norm > 0.0:
+                    fixed_point_met = fixed_point_met and (grad_norm < fixed_point_grad_norm)
+                
+                # Update consecutive counter (increment if met, RESET to 0 otherwise)
+                if fixed_point_met:
+                    consecutive_fixed_point_evals += 1
+                else:
+                    consecutive_fixed_point_evals = 0
+                
+                # === Fixed-point stopping (requires >= 2 evals to define a rate) ===
+                if (eval_count >= 2 and 
+                    i >= min_epochs_before_stop and 
+                    consecutive_fixed_point_evals >= fixed_point_consecutive_evals):
+                    detected_stop_reason = "fixed_point"
+                    break
+                
+                # === Multi-criterion stopping (existing logic, kept for backward compat) ===
+                # These criteria are only evaluated at eval checkpoints
                 pred_mse_met = (train_pred_mse < stop_pred_mse)
                 beta_rate_met = False
                 grad_norm_met = False
                 
                 if stop_beta_rate > 0:
-                    # Stop if beta_update_rate < threshold OR if it's exactly 0 (numerical precision)
-                    beta_rate_met = (beta_update_rate < stop_beta_rate) or (np.isnan(beta_update_rate)) or (beta_update_rate == 0.0)
-                elif np.isfinite(beta_update_rate) and beta_update_rate == 0.0:
-                    # If beta stopped moving and no explicit beta_rate threshold, still consider stopping
-                    # (but require train_pred_mse to be reasonable)
-                    if train_pred_mse < 1e-5:  # Relaxed threshold when beta stopped
+                    beta_rate_met = (beta_update_rate < stop_beta_rate) or (beta_update_rate == 0.0)
+                elif beta_update_rate == 0.0:
+                    if train_pred_mse < 1e-5:
                         beta_rate_met = True
                 
                 if stop_grad_norm > 0:
@@ -363,39 +416,45 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
                 
                 # Determine stop reason based on criteria combination
                 should_stop = False
-                detected_stop_reason = None
                 
                 if stop_beta_rate > 0 and stop_grad_norm > 0:
-                    # Both criteria active: need all three
                     if pred_mse_met and beta_rate_met and grad_norm_met:
                         should_stop = True
                         detected_stop_reason = "train_pred_mse_and_beta_rate_and_grad_norm"
                 elif stop_beta_rate > 0:
-                    # Beta rate criterion active
                     if pred_mse_met and beta_rate_met:
                         should_stop = True
                         detected_stop_reason = "train_pred_mse_and_beta_rate"
                 elif stop_grad_norm > 0:
-                    # Grad norm criterion active
                     if pred_mse_met and grad_norm_met:
                         should_stop = True
                         detected_stop_reason = "train_pred_mse_and_grad_norm"
                 elif beta_rate_met and train_pred_mse < 1e-5:
-                    # Beta stopped moving (implicit criterion)
                     should_stop = True
                     detected_stop_reason = "train_pred_mse"
                 elif pred_mse_met:
-                    # Only pred MSE criterion
                     should_stop = True
                     detected_stop_reason = "train_pred_mse"
                 
                 if should_stop:
                     break
         
-        # Legacy threshold check (only if not using multi-criterion)
-        if stop_beta_rate == 0.0 and stop_grad_norm == 0.0 and loss < threshold:
-            detected_stop_reason = "loss_threshold_legacy"
-            break
+        # === Legacy loss threshold stop (GUARDED - safe by default) ===
+        # This prevents premature stops where loss is tiny but beta is still moving
+        if not disable_legacy_loss_stop:
+            if loss < threshold:
+                # Guard conditions (ALL must be true to allow legacy stop):
+                # 1. Minimum epochs reached
+                # 2. At least one eval has occurred (so beta_update_rate is valid)
+                # 3. Near fixed-point (beta not still moving fast)
+                can_stop_epochs = (i >= min_epochs_before_stop)
+                can_stop_eval = (eval_count >= 1)
+                near_fixed_point = (consecutive_fixed_point_evals >= 1) or \
+                                   (beta_update_rate < fixed_point_beta_rate)
+                
+                if can_stop_epochs and can_stop_eval and near_fixed_point:
+                    detected_stop_reason = "loss_threshold_legacy_guarded"
+                    break
         if lr_tuning and ((loss > 100) | np.isnan(loss)):
             lr = lr/10
             pbar.write('='*80)
@@ -406,7 +465,10 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
             # Recursive call returns (df, model, norm_df, stop_reason, final_epoch)
-            return train(or_model, train_data, test_data, beta_star, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, stop_pred_mse=stop_pred_mse, stop_beta_rate=stop_beta_rate, stop_grad_norm=stop_grad_norm, lr_decay=lr_decay, lr_decay_interval=lr_decay_interval, save_folder=save_folder)
+            return train(or_model, train_data, test_data, beta_star, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, stop_pred_mse=stop_pred_mse, stop_beta_rate=stop_beta_rate, stop_grad_norm=stop_grad_norm, lr_decay=lr_decay, lr_decay_interval=lr_decay_interval, save_folder=save_folder,
+                         min_epochs_before_stop=min_epochs_before_stop, require_eval_before_stop=require_eval_before_stop,
+                         disable_legacy_loss_stop=disable_legacy_loss_stop, fixed_point_beta_rate=fixed_point_beta_rate,
+                         fixed_point_consecutive_evals=fixed_point_consecutive_evals, fixed_point_grad_norm=fixed_point_grad_norm)
     
     # Ensure final epoch is evaluated
     if last_evaluated_epoch != i:
@@ -426,14 +488,19 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
         loss_temp.backward()
         grad_norm = torch.sqrt(sum(p.grad.norm()**2 for p in model.parameters() if p.grad is not None)).item() if any(p.grad is not None for p in model.parameters()) else 0.0
         
-        # Compute beta update rate
-        if beta_hat_prev is not None:
-            delta_beta = torch.norm(beta_hat - beta_hat_prev).item()
-            epochs_since_last_eval = max(1, i - prev_eval_epoch)
-            beta_update_rate = delta_beta / epochs_since_last_eval
+        # Compute beta update rate (using relative norm formula, consistent with eval block)
+        if beta_hat_prev_eval is not None:
+            numer = (beta_hat - beta_hat_prev_eval).norm().item()
+            denom = beta_hat_prev_eval.norm().item() + 1e-12
+            beta_update_rate = numer / denom
+            delta_beta = numer
         else:
-            delta_beta = np.nan
-            beta_update_rate = np.nan
+            delta_beta = float('inf')
+            beta_update_rate = float('inf')
+        
+        # Update eval tracking for final epoch
+        beta_hat_prev_eval = beta_hat.clone().detach()
+        eval_count += 1
         
         all_results.append({
             'epoch': i,
@@ -510,7 +577,18 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
         if 'grad_norm' in final_train:
             meta['final_grad_norm'] = float(final_train['grad_norm'])
         if 'beta_update_rate' in final_train:
-            meta['final_beta_update_rate'] = float(final_train['beta_update_rate'])
+            # Handle inf values for JSON serialization
+            bur = final_train['beta_update_rate']
+            meta['final_beta_update_rate'] = float(bur) if np.isfinite(bur) else None
+        
+        # Add new diagnostic fields for fixed-point stopping
+        meta['eval_count'] = eval_count
+        meta['final_consecutive_fixed_point_evals'] = consecutive_fixed_point_evals
+        meta['min_epochs_before_stop'] = min_epochs_before_stop
+        meta['fixed_point_beta_rate'] = fixed_point_beta_rate
+        meta['fixed_point_consecutive_evals'] = fixed_point_consecutive_evals
+        meta['fixed_point_grad_norm'] = fixed_point_grad_norm
+        meta['legacy_loss_stop_disabled'] = disable_legacy_loss_stop
         
         meta_path = os.path.join(save_folder, 'results_meta.json')
         with open(meta_path, 'w') as f:
@@ -560,6 +638,14 @@ def main(args):
         print(f"  c_A={args.c_A}, c_B={args.c_B}, pi_A={args.pi_A}")
     elif c_mode == 'support':
         print(f"  c_nz={args.c_nz}, c_z={args.c_z}")
+    # Print fixed-point stopping settings
+    print(f"Fixed-point stopping settings:")
+    print(f"  min_epochs_before_stop: {args.min_epochs_before_stop if args.min_epochs_before_stop is not None else f'auto ({args.test_every_n_epochs})'}")
+    print(f"  require_eval_before_stop: {args.require_eval_before_stop}")
+    print(f"  disable_legacy_loss_stop: {args.disable_legacy_loss_stop}")
+    print(f"  fixed_point_beta_rate: {args.fixed_point_beta_rate}")
+    print(f"  fixed_point_consecutive_evals: {args.fixed_point_consecutive_evals}")
+    print(f"  fixed_point_grad_norm: {args.fixed_point_grad_norm if args.fixed_point_grad_norm > 0 else 'disabled'}")
     print("="*80)
     print("Starting training...")
     print("="*80)
@@ -614,7 +700,14 @@ def main(args):
         stop_grad_norm=args.stop_grad_norm,
         lr_decay=args.lr_decay,
         lr_decay_interval=args.lr_decay_interval,
-        save_folder=args.save_folder
+        save_folder=args.save_folder,
+        # Fixed-point stopping args
+        min_epochs_before_stop=args.min_epochs_before_stop,
+        require_eval_before_stop=args.require_eval_before_stop,
+        disable_legacy_loss_stop=args.disable_legacy_loss_stop,
+        fixed_point_beta_rate=args.fixed_point_beta_rate,
+        fixed_point_consecutive_evals=args.fixed_point_consecutive_evals,
+        fixed_point_grad_norm=args.fixed_point_grad_norm,
     )
     
     # Save results
@@ -757,6 +850,20 @@ def get_parser():
                         help='c value for nonzero teacher coordinates in support mode')
     parser.add_argument('--c_z', type=float, default=None,
                         help='c value for zero teacher coordinates in support mode')
+    
+    # Fixed-point stopping arguments (prevent premature legacy stops)
+    parser.add_argument('--min_epochs_before_stop', type=int, default=None,
+                        help='Min epoch before any early stop (default: auto=test_every_n_epochs)')
+    parser.add_argument('--require_eval_before_stop', action='store_true',
+                        help='Require at least one eval before stopping')
+    parser.add_argument('--disable_legacy_loss_stop', action='store_true',
+                        help='Completely disable legacy loss<threshold stop')
+    parser.add_argument('--fixed_point_beta_rate', type=float, default=1e-6,
+                        help='Beta update rate threshold for fixed-point detection')
+    parser.add_argument('--fixed_point_consecutive_evals', type=int, default=2,
+                        help='Consecutive evals at fixed-point before stopping')
+    parser.add_argument('--fixed_point_grad_norm', type=float, default=0.0,
+                        help='Grad norm threshold for fixed-point (0.0=disabled)')
     
     return parser
 
