@@ -2,38 +2,33 @@
 #SBATCH --partition=icelake
 #SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
-#SBATCH --time=01:00:00
-#SBATCH --array=0-23
-#SBATCH --output=logs/phase0_step2_%A_%a.out
-#SBATCH --error=logs/phase0_step2_%A_%a.err
-
-# Phase 0 Step 2 (support): 2 cases × 4 alpha × 3 seeds = 24 tasks (0-23)
-# Targeted smoke-run for fixed-point/legacy-stop fix validation
+#SBATCH --time=03:00:00
+#SBATCH --array=0-131
+#SBATCH --output=logs/%A_%a.out
+#SBATCH --error=logs/%A_%a.err
 
 set -euo pipefail
 
 echo "[SLURM] Job $SLURM_JOB_ID task $SLURM_ARRAY_TASK_ID starting on $(hostname)"
-echo "[SLURM] Phase 0 Step 2 Smoke Run"
 
 # Ensure we run from project root and logs exist
 cd /home/na658/multi-task2
 mkdir -p logs
-mkdir -p results/diagonal/phase0/step2
 
-# Use absolute Python from conda env
+# Use absolute Python from conda env to avoid activation issues on compute nodes
 PY="/home/na658/.conda/envs/mtl_ft/bin/python"
 if [ ! -x "$PY" ]; then
   echo "[SLURM] Expected Python not found at $PY" >&2
+  which python || true
+  python --version || true
   exit 1
 fi
 
 echo "[SLURM] Using Python: $PY"
 
-# Run the phase0 smoke run script
-$PY experiments/diagonal/phase0_smoke_run.py --phase step2 --task_id $SLURM_ARRAY_TASK_ID
+# Run the Python script directly (CSV locking is handled in Python)
+$PY /home/na658/multi-task2/experiments/diagonal/diagonal_bg_alpha_sweep_c_lmda_1.py $SLURM_ARRAY_TASK_ID
 
 echo "[SLURM] Job $SLURM_JOB_ID task $SLURM_ARRAY_TASK_ID finished"
-
-
 
 
