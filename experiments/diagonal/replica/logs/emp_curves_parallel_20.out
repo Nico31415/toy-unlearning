@@ -1,0 +1,11 @@
+============================================
+Empirical computation: Task ID 20
+Hostname: cpu-q-265
+Start time: Mon 26 Jan 16:54:06 GMT 2026
+============================================
+Running Task 20:
+  omega=0.0, lambda_pt=0.0, gamma_reinit=0.0, alpha=0.108
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-05)...
+[invariants@init] c_emp: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_pos: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_neg: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00
+Epoch      0 (0.0%): Train pred MSE = 9.151074e-01, Test pred MSE = 9.405010e-01, Param MSE = 9.358991e-01, Grad norm = 3.713886e-02, Beta update rate = inf, c_emp_max_dev = 3.193e-06, lam_pos_max_dev = 3.193e-06, lam_pos_neg_max_gap = 0.000e+00
