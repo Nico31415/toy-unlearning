@@ -67,6 +67,8 @@ from diagonal_network_pretrain_bg import (
 # Small utilities
 # -------------------------
 
+DEFAULT_FT_TEACHER_NORM = "unit_total_var"
+
 def _to_list(x):
     return x if isinstance(x, (list, tuple, np.ndarray)) else [x]
 
@@ -134,11 +136,18 @@ def _safe_csv_upsert_row(csv_path: Path, row: Dict[str, Any], key_cols: Sequence
 
                 for k in key_cols:
                     if k not in df.columns:
-                        df[k] = np.nan
+                        # Back-compat: if old master CSV predates this key, assume default convention.
+                        if k == "ft_teacher_norm":
+                            df[k] = DEFAULT_FT_TEACHER_NORM
+                        else:
+                            df[k] = np.nan
 
                 mask = np.ones(len(df), dtype=bool)
                 for k in key_cols:
-                    mask &= (df[k].astype(str) == str(row.get(k)))
+                    col = df[k]
+                    if k == "ft_teacher_norm":
+                        col = col.fillna(DEFAULT_FT_TEACHER_NORM)
+                    mask &= (col.astype(str) == str(row.get(k)))
                 if bool(mask.any()):
                     return
 
@@ -208,10 +217,15 @@ def sample_ft_teacher_with_overlap(
     omega: float,
     support_pt: torch.Tensor,
     generator: torch.Generator,
+    ft_teacher_norm: str = DEFAULT_FT_TEACHER_NORM,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     FT teacher: Bernoulli-Gaussian with controlled overlap with PT support.
     Overlap definition: omega = |S_pt ∩ S_ft| / |S_ft|.
+
+    ft_teacher_norm:
+      - "unit_total_var": nonzeros ~ Normal(0, 1/rho_ft) so that E[beta_i^2]=1  (DEFAULT / current)
+      - "unit_nonzero_var": nonzeros ~ Normal(0, 1) so that Var(nonzero)=1
     """
     inp_dim = int(inp_dim)
     rho_ft = float(rho_ft)
@@ -238,7 +252,13 @@ def sample_ft_teacher_with_overlap(
     beta_ft = torch.zeros(inp_dim, dtype=torch.float64)
     k = int(support_ft.sum().item())
     if k > 0:
-        z = torch.randn(k, generator=generator, dtype=torch.float64) / math.sqrt(rho_ft)
+        ft_teacher_norm = str(ft_teacher_norm)
+        if ft_teacher_norm == "unit_total_var":
+            z = torch.randn(k, generator=generator, dtype=torch.float64) / math.sqrt(rho_ft)
+        elif ft_teacher_norm == "unit_nonzero_var":
+            z = torch.randn(k, generator=generator, dtype=torch.float64)
+        else:
+            raise ValueError(f"Unknown ft_teacher_norm={ft_teacher_norm!r}")
         beta_ft[support_ft] = z
     return beta_ft, support_ft
 
@@ -427,6 +447,7 @@ def run_one(
     # FT knobs (only used for ptft)
     rho_ft: float,
     omega: float,
+    ft_teacher_norm: str = DEFAULT_FT_TEACHER_NORM,
     # training knobs
     lr: float,
     epochs: int,
@@ -473,6 +494,7 @@ def run_one(
         "a_pt": float(a_pt),
         "rho_ft": float(rho_ft),
         "omega": float(omega),
+        "ft_teacher_norm": str(ft_teacher_norm),
         "save_folder": save_folder,
         "lr": float(lr),
         "epochs": int(epochs),
@@ -577,7 +599,9 @@ def run_one(
             return {**base, "status": "skipped_infeasible", "why": why}
 
         gen_ft = torch.Generator(device="cpu").manual_seed(seed + 1)
-        beta_ft, support_ft = sample_ft_teacher_with_overlap(inp_dim, rho_ft, omega, support_pt, gen_ft)
+        beta_ft, support_ft = sample_ft_teacher_with_overlap(
+            inp_dim, rho_ft, omega, support_pt, gen_ft, ft_teacher_norm=ft_teacher_norm
+        )
 
         y_train = x_train @ beta_ft
         y_test = x_test @ beta_ft
@@ -739,6 +763,7 @@ def build_ptft_finetune_curves_dataframe(
     rho_pt: Union[float, List[float]] = 0.10,
     rho_ft: Union[float, List[float]] = 0.04,
     omega: Union[float, List[float]] = 1.00,
+    ft_teacher_norm: str = DEFAULT_FT_TEACHER_NORM,
     a_pt: float = 1.0,
     c_pt: Union[float, List[float]] = 0.001,
     lambda_pt: Union[float, List[float]] = 0.0,
@@ -789,6 +814,7 @@ def build_ptft_finetune_curves_dataframe(
                                             a_pt=float(a_pt),
                                             rho_ft=float(rf),
                                             omega=float(om),
+                                            ft_teacher_norm=str(ft_teacher_norm),
                                             lr=float(lr),
                                             epochs=int(epochs),
                                             test_every_n_epochs=int(test_every_n_epochs),
@@ -826,6 +852,7 @@ class Task:
     # ptft-only
     rho_ft: float
     omega: float
+    ft_teacher_norm: str = DEFAULT_FT_TEACHER_NORM
 
 
 def build_tasks(
@@ -842,6 +869,7 @@ def build_tasks(
     gamma_reinit: Union[float, Sequence[float]],
     rho_ft: Union[float, Sequence[float]],
     omega: Union[float, Sequence[float]],
+    ft_teacher_norm: str = DEFAULT_FT_TEACHER_NORM,
 ) -> List[Task]:
     setting = str(setting)
     if setting not in {"single_task", "ptft"}:
@@ -868,6 +896,7 @@ def build_tasks(
                                     gamma_reinit=0.0,
                                     rho_ft=0.0,
                                     omega=0.0,
+                                    ft_teacher_norm=DEFAULT_FT_TEACHER_NORM,
                                 )
                             )
         return tasks
@@ -895,6 +924,7 @@ def build_tasks(
                                             gamma_reinit=float(gam),
                                             rho_ft=float(rf),
                                             omega=float(om),
+                                            ft_teacher_norm=str(ft_teacher_norm),
                                         )
                                     )
     return tasks
@@ -915,6 +945,7 @@ def _task_save_folder(save_root: str, t: Task) -> str:
         / (
             f"rho_pt={t.rho_pt:.6g}--rho_ft={t.rho_ft:.6g}--om={t.omega:.6g}"
             f"--c_pt={t.c_pt:.6g}--lam={t.lambda_pt:.6g}--gam={t.gamma_reinit:.6g}"
+            f"{'' if str(t.ft_teacher_norm) == DEFAULT_FT_TEACHER_NORM else f'--ftnorm={t.ft_teacher_norm}'}"
             f"--alpha={alpha_eff:.6f}--seed={t.seed}"
         )
     )
@@ -936,6 +967,13 @@ def main():
     p.add_argument("--rho_pt_json", type=str, default='[0.10]')
     p.add_argument("--rho_ft_json", type=str, default='[0.04]')
     p.add_argument("--omega_json", type=str, default='[1.0]')
+    p.add_argument(
+        "--ft_teacher_norm",
+        type=str,
+        default=DEFAULT_FT_TEACHER_NORM,
+        choices=["unit_total_var", "unit_nonzero_var"],
+        help="FT teacher amplitude convention (default preserves existing behavior).",
+    )
     p.add_argument("--a_pt", type=float, default=1.0)
     p.add_argument("--c_pt_json", type=str, default='[0.001]')
     p.add_argument("--lambda_pt_json", type=str, default='[0.0]')
@@ -974,6 +1012,7 @@ def main():
         gamma_reinit=json.loads(args.gamma_reinit_json),
         rho_ft=json.loads(args.rho_ft_json),
         omega=json.loads(args.omega_json),
+        ft_teacher_norm=str(args.ft_teacher_norm),
     )
 
     if not (0 <= args.array_id < len(tasks)):
@@ -994,6 +1033,7 @@ def main():
         a_pt=t.a_pt,
         rho_ft=t.rho_ft,
         omega=t.omega,
+        ft_teacher_norm=str(t.ft_teacher_norm),
         lr=args.lr,
         epochs=args.epochs,
         test_every_n_epochs=args.test_every_n_epochs,
@@ -1020,7 +1060,7 @@ def main():
         "lambda_pt",
     ]
     if args.setting == "ptft":
-        key_cols += ["rho_ft", "omega", "gamma_reinit"]
+        key_cols += ["rho_ft", "omega", "gamma_reinit", "ft_teacher_norm"]
     _safe_csv_upsert_row(master_csv, row, key_cols=key_cols)
 
     print(f"Task {args.array_id}/{len(tasks)-1} done. status={row.get('status')}")

@@ -165,6 +165,7 @@ def sample_ptft_oracle_mc(
     mc: int,
     seed: int,
     p: PTFTOracleParams,
+    ft_teacher_norm: str = "unit_total_var",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict]:
     """
     Returns:
@@ -210,7 +211,16 @@ def sample_ptft_oracle_mc(
     ft_nonzero = (g_mc == 0) | (g_mc == 1)
     n_ft = int(ft_nonzero.sum())
     if n_ft > 0:
-        sigma_ft = 1.0 / math.sqrt(rho_ft)  # Var(nonzero)=1/rho_ft
+        # FT teacher amplitude convention (default preserves existing behavior):
+        # - "unit_total_var": Var(nonzero)=1/rho_ft so that E[x_i^2]=1 regardless of rho_ft
+        # - "unit_nonzero_var": Var(nonzero)=1 so that typical active feature has O(1) magnitude
+        ft_teacher_norm = str(ft_teacher_norm)
+        if ft_teacher_norm == "unit_total_var":
+            sigma_ft = 1.0 / math.sqrt(rho_ft)
+        elif ft_teacher_norm == "unit_nonzero_var":
+            sigma_ft = 1.0
+        else:
+            raise ValueError(f"Unknown ft_teacher_norm={ft_teacher_norm!r}")
         x[ft_nonzero] = rng.normal(0.0, sigma_ft, size=n_ft)
 
     c_ft = compute_c_ft_from_pt(beta_pt, p.c_pt, p.lambda_pt, p.gamma_reinit)
@@ -553,6 +563,8 @@ def ptft_qk_curve(
     score_agg: str = "p95",
     score_z: float = 3.0,
     score_sfp_db: float = 1.0,
+    # FT teacher convention (default preserves existing behavior)
+    ft_teacher_norm: str = "unit_total_var",
 ) -> Tuple[Dict[str, np.ndarray], Dict, Dict]:
     """
     Returns:
@@ -569,7 +581,7 @@ def ptft_qk_curve(
         rho_pt=float(rho_pt), rho_ft=float(rho_ft), omega=float(omega),
         a_pt=float(a_pt), c_pt=float(c_pt), lambda_pt=float(lambda_pt), gamma_reinit=float(gamma_reinit)
     )
-    x, k_mc, g_mc, v, info = sample_ptft_oracle_mc(int(mc), int(seed), params)
+    x, k_mc, g_mc, v, info = sample_ptft_oracle_mc(int(mc), int(seed), params, ft_teacher_norm=ft_teacher_norm)
 
     curve = solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
         alphas=alphas,
@@ -744,6 +756,7 @@ def build_ptft_curves_dataframe(
     score_agg: str = "p95",
     score_z: float = 3.0,
     score_sfp_db: float = 1.0,
+    ft_teacher_norm: str = "unit_total_var",
 ) -> pd.DataFrame:
     """
     Build a dataframe of curves by running ptft_qk_curve for the Cartesian product
@@ -816,6 +829,7 @@ def build_ptft_curves_dataframe(
                 score_agg=score_agg,
                 score_z=score_z,
                 score_sfp_db=score_sfp_db,
+                ft_teacher_norm=ft_teacher_norm,
             )
             
             # Extract curve arrays
@@ -833,6 +847,7 @@ def build_ptft_curves_dataframe(
                     "lambda_pt": lambda_pt_val,
                     "gamma_reinit": gamma_reinit_val,
                     "seed": int(seed_val),
+                    "ft_teacher_norm": str(ft_teacher_norm),
                     # Alpha value
                     "alpha": alphas_arr[i],
                     # Curve outputs
