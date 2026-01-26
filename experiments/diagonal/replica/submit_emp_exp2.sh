@@ -3,8 +3,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --time=2:00:00
 #SBATCH --array=0-2463
-#SBATCH --output=logs/emp_curves_parallel_%a.out
-#SBATCH --error=logs/emp_curves_parallel_%a.err
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
 #SBATCH --partition=icelake
 #SBATCH --job-name=emp_curves
 
