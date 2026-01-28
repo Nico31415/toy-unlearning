@@ -18,7 +18,7 @@ TO DIFFERENTIATE BETWEEEN PRETRAINING DEPENDENCE AND INDEPENDENCE
 - vary lambda_pt, fixed c_pt = 1e-3, gamma_reinit = 0
 - vary gamma_reinit, fixed c_pt = 1e-3, lambda_pt = 0
 
-EXPERIMENT 2 (2x(8x 14 seeds) = 256 experiments): 
+EXPERIMENT 2: 
 CAN WE LEARN NEW FEATURES?
 TO DIFFERENTIATE BETWEEN RICH AND LAZY LEARNING IN NEW FEATURES
 - omega = 0, vary rho_ft to be 0.1 or 0.9 
@@ -26,7 +26,7 @@ TO DIFFERENTIATE BETWEEN RICH AND LAZY LEARNING IN NEW FEATURES
 - vary lambda_pt, fixed c_pt = 1e-3, gamma_reinit = 0
 - vary gamma_reinit, fixed c_pt = 1e-3, lambda_pt = 0
 
-EXPERIMENT 3 (total seeds = 336 experiments):
+EXPERIMENT 3 :
 CAN WE GET INTO THE NESTED FEATURE REGIME?
 TO SHOW RICH AND LAZY LEARNING ON PRETRAINED FEATURES 
 - omega = {1, 0}, rho_pt = 0.1, rho_ft = {0.01, 0.04}

@@ -1,0 +1,25 @@
+============================================
+Empirical computation: Task ID 110
+Hostname: cpu-q-185
+Start time: Mon Jan 26 21:22:08 GMT 2026
+============================================
+Total tasks: 2464
+Running Task 110/2463
+sweep=baseline | rho_pt=0.1, rho_ft=0.1, omega=0.0, c_pt=0.001, lambda_pt=0.0, gamma_reinit=0.0, seed=16, alpha=0.01
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-04)...
+[invariants@init] c_emp: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_pos: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_neg: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00
+Epoch      0 (0.0%): Train pred MSE = 9.040361e-01, Test pred MSE = 9.609221e-01, Param MSE = 9.493533e-01, Grad norm = 1.153792e-01, Beta update rate = inf, c_emp_max_dev = 4.520e-05, lam_pos_max_dev = 4.520e-05, lam_pos_neg_max_gap = 0.000e+00
+
+Training completed at epoch 5000
+Stop reason: train_pred_mse
+Final Train pred MSE = 6.014643e-14
+Final Test pred MSE = 1.054478e+00
+Final Param MSE = 1.058372e+00
+Final Grad norm = 2.502251e-08
+Final Beta update rate = 2.886745e+02
+Success flag: True (train_pred_mse < 1.00e-04)
+Results saved to results/emp_ptft_parallel/EXPERIMENT2_baseline_rhoft0.1_omega0.0_c0.001_lambda0.0_reinit0.0_alpha0.0100_seed16.csv
+============================================
+Finished at: Mon Jan 26 21:22:24 GMT 2026
+============================================

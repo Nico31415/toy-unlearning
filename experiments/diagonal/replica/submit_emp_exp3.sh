@@ -2,7 +2,7 @@
 #SBATCH --mem=8G
 #SBATCH --cpus-per-task=1
 #SBATCH --time=2:00:00
-#SBATCH --array=0-4927
+#SBATCH --array=0-615
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 #SBATCH --partition=icelake

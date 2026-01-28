@@ -1,0 +1,12 @@
+============================================
+Empirical computation: Task ID 173
+Hostname: cpu-q-606
+Start time: Mon Jan 26 21:22:08 GMT 2026
+============================================
+Total tasks: 2464
+Running Task 173/2463
+sweep=baseline | rho_pt=0.1, rho_ft=0.9, omega=0.0, c_pt=0.001, lambda_pt=0.0, gamma_reinit=0.0, seed=7, alpha=0.402
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-04)...
+[invariants@init] c_emp: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_pos: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_neg: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00
+Epoch      0 (0.0%): Train pred MSE = 9.710654e-01, Test pred MSE = 9.882921e-01, Param MSE = 9.878592e-01, Grad norm = 2.078829e-02, Beta update rate = inf, c_emp_max_dev = 1.116e-06, lam_pos_max_dev = 1.116e-06, lam_pos_neg_max_gap = 0.000e+00

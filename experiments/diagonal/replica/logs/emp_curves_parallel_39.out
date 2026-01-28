@@ -1,5 +1,12 @@
 ============================================
 Empirical computation: Task ID 39
-Hostname: cpu-q-311
-Start time: Mon 26 Jan 16:54:07 GMT 2026
+Hostname: cpu-q-100
+Start time: Mon Jan 26 21:18:26 GMT 2026
 ============================================
+Total tasks: 2464
+Running Task 39/2463
+sweep=baseline | rho_pt=0.1, rho_ft=0.1, omega=0.0, c_pt=0.001, lambda_pt=0.0, gamma_reinit=0.0, seed=9, alpha=0.30400000000000005
+
+Starting training loop (max 5000000 epochs, threshold=1.00e-04)...
+[invariants@init] c_emp: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_pos: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00; lmda_neg: mean=1.019000e-01, min=2.000000e-03, max=1.001000e+00
+Epoch      0 (0.0%): Train pred MSE = 9.591045e-01, Test pred MSE = 9.860432e-01, Param MSE = 9.638745e-01, Grad norm = 2.314512e-02, Beta update rate = inf, c_emp_max_dev = 1.147e-06, lam_pos_max_dev = 1.147e-06, lam_pos_neg_max_gap = 0.000e+00

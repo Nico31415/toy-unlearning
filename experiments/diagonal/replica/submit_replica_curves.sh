@@ -3,8 +3,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --time=02:00:00
 #SBATCH --array=0-11
-#SBATCH --output=logs/replica_curves_parallel_%a.out
-#SBATCH --error=logs/replica_curves_parallel_%a.err
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
 #SBATCH --partition=icelake
 #SBATCH --job-name=rep_curves
 
