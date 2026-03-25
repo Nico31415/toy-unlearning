@@ -151,9 +151,14 @@ class MTDiagonalNet(nn.Module):
     def forward(self, x):
         return x@self.beta()
 
-def train_two_tasks(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-5, pretrained_beta=None):
+def train_two_tasks(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-5, pretrained_beta=None, optimizer_type='full_batch', adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8):
     or_model = deepcopy(model)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    if optimizer_type == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps)
+    elif optimizer_type == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    else:  # 'full_batch' — current behaviour, momentum forced to 0
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.)
     losses = []
     test_preds = []
     x, y, task = train_data
@@ -183,7 +188,7 @@ def train_two_tasks(model, train_data, val_data, test_every_n_epochs=50, epochs=
         if lr_tuning and ((loss > 100) | np.isnan(loss)):
             lr = lr/10
             print(f'Decreasing learning rate to {lr}')
-            return train_two_tasks(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, pretrained_beta=pretrained_beta)
+            return train_two_tasks(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, pretrained_beta=pretrained_beta, optimizer_type=optimizer_type, adam_beta1=adam_beta1, adam_beta2=adam_beta2, adam_eps=adam_eps)
     with torch.no_grad():
         new_df = pd.DataFrame({
             'loss': [
@@ -217,9 +222,14 @@ def train_two_tasks(model, train_data, val_data, test_every_n_epochs=50, epochs=
         test_preds
     ]).reset_index(drop=True), norm_df, model, df_weights.reset_index(drop=True)
 
-def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-5, beta_1=None):
+def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-5, beta_1=None, optimizer_type='full_batch', adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8):
     or_model = deepcopy(model)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    if optimizer_type == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps)
+    elif optimizer_type == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    else:  # 'full_batch' — current behaviour, momentum forced to 0
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.)
     losses = []
     test_preds = []
     x, y = train_data
@@ -251,7 +261,7 @@ def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1
         if lr_tuning and ((loss > 100) | np.isnan(loss)):
             lr = lr/10
             print(f'Decreasing learning rate to {lr}')
-            return train_one_task(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, beta_1=beta_1)
+            return train_one_task(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, beta_1=beta_1, optimizer_type=optimizer_type, adam_beta1=adam_beta1, adam_beta2=adam_beta2, adam_eps=adam_eps)
     with torch.no_grad():
         final_val_loss = F.mse_loss(model(val_x), val_y).item()
         new_df = pd.DataFrame({
@@ -934,13 +944,13 @@ def main(args):
 
     # Choose training routine based on one_task flag (independent of load_model)
     if args.one_task:
-        df, norm_df, model, df_weights = train_one_task(net, (x2, y2), (val_x, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, beta_1=pretrained_beta)
+        df, norm_df, model, df_weights = train_one_task(net, (x2, y2), (val_x, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, beta_1=pretrained_beta, optimizer_type=args.optimizer, adam_beta1=args.adam_beta1, adam_beta2=args.adam_beta2, adam_eps=args.adam_eps)
         
         # Plot training loss
         plot_save_path = os.path.join(args.save_path, 'training_loss_plot.png')
         plot_training_loss(df, save_path=plot_save_path, show_plot=False)
     else:
-        df, norm_df, model, df_weights = train_two_tasks(net, (x, y, task), (val_x, val_y1, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, pretrained_beta=pretrained_beta)
+        df, norm_df, model, df_weights = train_two_tasks(net, (x, y, task), (val_x, val_y1, val_y2), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, pretrained_beta=pretrained_beta, optimizer_type=args.optimizer, adam_beta1=args.adam_beta1, adam_beta2=args.adam_beta2, adam_eps=args.adam_eps)
     true_beta = torch.stack([
         param1[0].T@(param1[1]),
         param2[0].T@(param2[1])
@@ -1144,6 +1154,10 @@ def get_parser():
     parser.add_argument('--active_threshold', type=float, default=1e-6, help='Threshold for determining active dimensions in pretrained model')
     parser.add_argument('--same_signs', action='store_true', default=True, help='Use same signs as pretraining for overlapping dimensions')
     parser.add_argument('--save_feathers', action='store_true', default=True, help='Save feather files (df.feather, norm_df.feather, weights_df.feather)')
+    parser.add_argument('--optimizer', type=str, default='full_batch', choices=['full_batch', 'sgd', 'adam'])
+    parser.add_argument('--adam_beta1', type=float, default=0.9)
+    parser.add_argument('--adam_beta2', type=float, default=0.999)
+    parser.add_argument('--adam_eps', type=float, default=1e-8)
     return parser
 
 if __name__ == '__main__':

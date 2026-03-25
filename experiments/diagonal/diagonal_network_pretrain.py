@@ -90,9 +90,14 @@ def l1_norm(x):
 def l2_norm(x):
     return torch.sqrt(torch.sum(torch.abs(x)**2)).item()
 
-def train(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-5):
+def train(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-5, optimizer_type='full_batch', adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8):
     or_model = deepcopy(model)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    if optimizer_type == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps)
+    elif optimizer_type == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    else:  # 'full_batch' — current behaviour, momentum forced to 0
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.)
     losses = []
     test_preds = []
     norms = []
@@ -127,7 +132,7 @@ def train(model, train_data, val_data, test_every_n_epochs=50, epochs=1000, lr=0
         if lr_tuning and ((loss > 100) | np.isnan(loss)):
             lr = lr/10
             print(f'Decreasing learning rate to {lr}')
-            return train(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold)
+            return train(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, optimizer_type=optimizer_type, adam_beta1=adam_beta1, adam_beta2=adam_beta2, adam_eps=adam_eps)
     with torch.no_grad():
         final_val_loss = F.mse_loss(model(val_x), val_y).item()
         new_df = pd.DataFrame({
@@ -193,6 +198,9 @@ def main(args):
     print(f"C parameter: {args.c}")
     print(f"Initialization method: {args.init_method}")
     print(f"Learning rate tuning: {not args.no_tuning}")
+    print(f"Optimizer: {args.optimizer}")
+    if args.optimizer == 'adam':
+        print(f"Adam betas: ({args.adam_beta1}, {args.adam_beta2}), eps: {args.adam_eps}")
     print(f"Save folder: {args.save_folder}")
     print("="*80)
     print("Starting training...")
@@ -215,7 +223,7 @@ def main(args):
     y = teacher(x, *param)
     val_y = teacher(val_x, *param)
     net = DiagonalNet(args.inp_dim, scaling=args.scaling, lmda=args.lmda, c=args.c, init_method=args.init_method)
-    df, net, norm_df = train(net, (x, y), (val_x, val_y), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold)
+    df, net, norm_df = train(net, (x, y), (val_x, val_y), lr=args.lr, epochs=args.epochs, lr_tuning=(not args.no_tuning), threshold=args.threshold, optimizer_type=args.optimizer, adam_beta1=args.adam_beta1, adam_beta2=args.adam_beta2, adam_eps=args.adam_eps)
     df.to_feather(os.path.join(args.save_folder, 'df.feather'))
     norm_df.to_feather(os.path.join(args.save_folder, 'norm_df.feather'))
     teacher_df = pd.DataFrame({
@@ -242,6 +250,10 @@ def get_parser():
     # parser.add_argument('--lmda_frac', type=float, default=0.)
     parser.add_argument('--c', type=float, default=0.001)
     parser.add_argument('--init_method', type=str, default='complex', choices=['simple', 'complex'])
+    parser.add_argument('--optimizer', type=str, default='full_batch', choices=['full_batch', 'sgd', 'adam'])
+    parser.add_argument('--adam_beta1', type=float, default=0.9)
+    parser.add_argument('--adam_beta2', type=float, default=0.999)
+    parser.add_argument('--adam_eps', type=float, default=1e-8)
     return parser
 
 if __name__ == '__main__':
