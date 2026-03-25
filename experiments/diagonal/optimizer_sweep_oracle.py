@@ -49,10 +49,12 @@ THRESHOLD  = 1e-12
 
 ALPHA_VALUES_DEFAULT = [0.01, 0.1, 0.2, 0.3, 0.4, 0.5]
 ADAM_LRS_DEFAULT     = [1e-4, 1e-3, 1e-2]
+ADAM_WDS_DEFAULT     = [1e-4, 1e-3, 1e-2, 0.1]
 SGD_MOMENTUM         = 0.9
 
 
-def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, threshold=THRESHOLD):
+def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, threshold=THRESHOLD,
+               weight_decay=0.0):
     make_deterministic(seed)
     torch.set_default_dtype(torch.float64)
 
@@ -78,7 +80,13 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
     net = DiagonalNet(INP_DIM, scaling=1.0, lmda=0.0, c=C_PT, c_vec=c_ft, init_method='complex')
     momentum = SGD_MOMENTUM if optimizer_type == 'sgd' else 0.0
 
-    label = f"{optimizer_type}_lr={lr}" if optimizer_type == 'adam' else optimizer_type
+    if weight_decay > 0.0:
+        label = f"adam_wd={weight_decay}"
+    elif optimizer_type == 'adam':
+        label = f"adam_lr={lr}"
+    else:
+        label = optimizer_type
+
     run_folder = os.path.join(
         save_folder, f"opt={label}--alpha={alpha}--seed={seed}"
     )
@@ -95,6 +103,7 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
         threshold=threshold,
         lr_tuning=True,
         optimizer_type=optimizer_type,
+        weight_decay=weight_decay,
         save_folder=run_folder,
     )
 
@@ -105,6 +114,7 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
         'label':          label,
         'optimizer':      optimizer_type,
         'lr':             lr,
+        'weight_decay':   weight_decay,
         'alpha':          alpha,
         'n_train':        n_train,
         'seed':           seed,
@@ -120,6 +130,8 @@ def main():
     parser.add_argument('--alphas',    type=float, nargs='+', default=ALPHA_VALUES_DEFAULT)
     parser.add_argument('--optimizers', type=str, nargs='+', default=['full_batch', 'sgd', 'adam'])
     parser.add_argument('--adam_lrs', type=float, nargs='+', default=ADAM_LRS_DEFAULT)
+    parser.add_argument('--adam_wds', type=float, nargs='+', default=None,
+                        help='If set, run Adam only with lr=1e-3 at these weight_decay values')
     parser.add_argument('--seeds',    type=int, default=3)
     parser.add_argument('--epochs',   type=int, default=EPOCHS)
     parser.add_argument('--threshold',type=float, default=THRESHOLD)
@@ -127,12 +139,19 @@ def main():
 
     Path(args.save_folder).mkdir(parents=True, exist_ok=True)
 
-    # Build list of (optimizer_type, lr) conditions
-    all_conditions = [
-        ('full_batch', 0.5),
-        ('sgd',        0.5),
-    ] + [('adam', lr) for lr in args.adam_lrs]
-    conditions = [(o, lr) for o, lr in all_conditions if o in args.optimizers]
+    # Build list of (optimizer_type, lr, weight_decay) conditions
+    if args.adam_wds is not None:
+        # weight-decay sweep: Adam only, lr=1e-3
+        conditions = [('adam', 1e-3, wd) for wd in args.adam_wds]
+    else:
+        base = []
+        if 'full_batch' in args.optimizers:
+            base.append(('full_batch', 0.5, 0.0))
+        if 'sgd' in args.optimizers:
+            base.append(('sgd', 0.5, 0.0))
+        if 'adam' in args.optimizers:
+            base += [('adam', lr, 0.0) for lr in args.adam_lrs]
+        conditions = base
 
     seeds        = list(range(args.seeds))
     alpha_values = args.alphas
@@ -140,11 +159,11 @@ def main():
 
     print(f"\nRunning {total} conditions "
           f"({len(conditions)} optimizer/lr combos × {len(alpha_values)} alphas × {len(seeds)} seeds)\n")
-    print(f"{'label':>20}  {'alpha':>6}  {'seed':>4}  {'test_mse':>12}  stop_reason")
-    print("-" * 65)
+    print(f"{'label':>25}  {'alpha':>6}  {'seed':>4}  {'test_mse':>12}  stop_reason")
+    print("-" * 70)
 
     rows = []
-    for opt, lr in conditions:
+    for opt, lr, wd in conditions:
         for alpha in alpha_values:
             for seed in seeds:
                 row = run_single(
@@ -152,9 +171,10 @@ def main():
                     args.save_folder,
                     epochs=args.epochs,
                     threshold=args.threshold,
+                    weight_decay=wd,
                 )
                 rows.append(row)
-                print(f"{row['label']:>20}  {row['alpha']:>6.2f}  {row['seed']:>4d}  "
+                print(f"{row['label']:>25}  {row['alpha']:>6.2f}  {row['seed']:>4d}  "
                       f"{row['final_test_mse']:>12.6f}  {row['stop_reason']}")
 
     results_df = pd.DataFrame(rows)

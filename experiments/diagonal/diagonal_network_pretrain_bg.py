@@ -230,10 +230,13 @@ def sample_beta_star_bg(inp_dim, rho, generator=None):
 def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-9, stop_pred_mse=None, stop_beta_rate=0.0, stop_grad_norm=0.0, lr_decay=1.0, lr_decay_interval=2000, save_folder=None,
           min_epochs_before_stop=None, require_eval_before_stop=False, disable_legacy_loss_stop=False,
           fixed_point_beta_rate=1e-6, fixed_point_consecutive_evals=2, fixed_point_grad_norm=0.0,
-          optimizer_type='full_batch', adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8):
+          optimizer_type='full_batch', adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8,
+          weight_decay=0.0):
     or_model = deepcopy(model)
     if optimizer_type == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps)
+        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps, weight_decay=weight_decay)
+    elif optimizer_type == 'adamw':
+        optimizer = optim.AdamW(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps, weight_decay=weight_decay)
     elif optimizer_type == 'sgd':
         optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
     else:  # 'full_batch' — current behaviour, momentum forced to 0
