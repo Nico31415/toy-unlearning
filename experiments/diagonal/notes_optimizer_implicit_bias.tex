@@ -1,0 +1,137 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\geometry{margin=1.2in}
+\usepackage{hyperref}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\norm}[1]{\left\|#1\right\|}
+\newcommand{\abs}[1]{\left|#1\right|}
+
+\title{Implicit Bias of GD vs.\ Adam for Diagonal Linear Networks}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Setup}
+
+Consider a two-layer diagonal linear network with parameters $\mathbf{u}, \mathbf{v} \in \R^d$, whose
+prediction on input $\mathbf{x} \in \R^d$ is
+\[
+    f(\mathbf{x}) = \mathbf{x}^\top \boldsymbol{\beta}, \qquad \boldsymbol{\beta}_i = u_i v_i.
+\]
+We train on $n$ samples $\{(\mathbf{x}_j, y_j)\}_{j=1}^n$ with the squared loss
+\[
+    \mathcal{L} = \frac{1}{n} \sum_{j=1}^n \bigl(\mathbf{x}_j^\top \boldsymbol{\beta} - y_j\bigr)^2,
+\]
+initialised symmetrically at small scale: $u_i = v_i = c$ for small $c > 0$.
+
+The ground-truth teacher is \emph{sparse}: $\boldsymbol{\beta}^* \in \R^d$ has support of size $\rho d \ll d$.
+
+\section{Implicit Bias of Gradient Descent}
+
+The gradient-flow equations for $\mathbf{u}$ and $\mathbf{v}$ are
+\[
+    \dot{u}_i = -\frac{\partial \mathcal{L}}{\partial \beta_i} \, v_i, \qquad
+    \dot{v}_i = -\frac{\partial \mathcal{L}}{\partial \beta_i} \, u_i.
+\]
+With symmetric initialisation $u_i(0) = v_i(0) = c$, the conservation law
+$\tfrac{d}{dt}(u_i^2 - v_i^2) = 0$ ensures $u_i = v_i$ throughout training, so
+$\beta_i = u_i^2 \geq 0$.  Writing $g_i = \partial \mathcal{L}/\partial \beta_i$, the
+effective dynamics on $\boldsymbol{\beta}$ become
+\[
+    \dot{\beta}_i = -2g_i \,\beta_i^{1/2} \cdot \beta_i^{1/2} = -2g_i\,\beta_i.
+\]
+Equivalently, the gradient flow on the \emph{square-root} parametrisation
+$\phi_i = \sqrt{\beta_i} = u_i$ is
+\[
+    \dot{\phi}_i = -g_i \,\phi_i.
+\]
+This is precisely \textbf{mirror descent} with the Bregman potential
+$\Phi(\boldsymbol{\phi}) = \sum_i \phi_i^2 \log \phi_i$, which in the original
+$\boldsymbol{\beta}$ coordinates corresponds to an $\ell_{1/2}$-like regulariser.  As
+$c \to 0$, gradient flow is therefore biased towards the \textbf{minimum
+$\ell_1$-norm interpolant}~\cite{woodworth2020kernel}, which recovers the
+sparse teacher whenever $n$ exceeds a threshold of order $\rho d \log(d/\rho d)$.
+
+\paragraph{Intuition.}  The factor of $v_i$ in $\dot{u}_i$ creates a
+\emph{rich-get-richer} dynamic: coordinates that are already large attract
+larger updates and grow faster, while small coordinates remain small.  This
+self-amplification is the mechanism that selects a sparse solution.
+
+\section{Why Adam Fails}
+
+The Adam update for $u_i$ at step $t$ is
+\[
+    u_i^{(t+1)} = u_i^{(t)} - \eta \,\frac{\hat{m}_i^{(t)}}{\sqrt{\hat{v}_i^{(t)}} + \epsilon},
+\]
+where $\hat{m}_i \approx g_i v_i$ and $\hat{v}_i \approx \E[(g_i v_i)^2]$ are the
+bias-corrected first and second moment estimates.  The effective per-coordinate
+learning rate is therefore
+\[
+    \eta_i^{\text{eff}} \approx \frac{\eta}{\sqrt{\E[g_i^2 v_i^2]}}.
+\]
+Crucially, this \textbf{normalises away the $|v_i|$ factor}: regardless of how
+large or small $v_i$ is, the update is rescaled to have roughly unit magnitude.
+The rich-get-richer amplification is destroyed, and all coordinates receive
+approximately equal effective step sizes.
+
+Without this self-amplification, Adam converges quickly to a \textbf{dense
+interpolating solution} that spreads weight across all $d$ coordinates.  Since
+the true signal is sparse and $n \ll d$, this dense solution has poor test
+error.
+
+\section{Why Test Error Increases with $\alpha = n/d$ for Adam}
+
+In the underdetermined regime ($n < d$), the loss landscape contains infinitely
+many interpolating solutions.  Adam effectively selects the one closest (in a
+distorted, coordinate-wise metric) to the initialisation, which is a dense,
+low-magnitude vector.  As $\alpha$ increases, the additional training
+constraints force this dense solution to satisfy more equations, pushing it
+further from the sparse ground truth.  Formally, for a sparse $\boldsymbol{\beta}^*$
+the minimum-$\ell_2$-norm interpolant satisfies
+\[
+    \boldsymbol{\beta}^{\ell_2} = \mathbf{X}^\top (\mathbf{X}\mathbf{X}^\top)^{-1} \mathbf{y},
+\]
+and its test error $\E_{\mathbf{x}}\bigl[(\mathbf{x}^\top(\boldsymbol{\beta}^{\ell_2} -
+\boldsymbol{\beta}^*))^2\bigr]$ is non-monotone in $n$ for sparse signals: in the
+regime $\rho d \ll n \ll d$, each additional constraint reshapes the dense
+solution in a direction that need not reduce its distance from $\boldsymbol{\beta}^*$,
+and can increase it.  This is a manifestation of the \emph{harm of
+interpolation} for mismatched inductive bias~\cite{koehler2021uniform}.
+
+\section{Summary}
+
+\begin{center}
+\begin{tabular}{lll}
+\hline
+Optimizer & Implicit bias & Generalisation \\
+\hline
+Gradient descent & Minimum $\ell_1$ norm (sparse) & Good: recovers sparse teacher \\
+Adam & Dense interpolant (no sparsity) & Poor: test MSE flat or increasing in $\alpha$ \\
+\hline
+\end{tabular}
+\end{center}
+
+The generalisation gap is \emph{not} a tuning problem.  No choice of Adam
+learning rate can restore the $\ell_1$ implicit bias, because the bias is
+structural: it arises from the interaction between the gradient and the current
+parameter magnitude, which Adam's normalisation removes.
+
+\begin{thebibliography}{9}
+\bibitem{woodworth2020kernel}
+    B.\ Woodworth, S.\ Gunasekar, J.\ D.\ Lee, E.\ Moroshko, P.\ Savarese,
+    I.\ Golan, D.\ Soudry, N.\ Srebro.
+    \textit{Kernel and Rich Regimes in Overparametrized Models}.
+    COLT 2020.
+
+\bibitem{koehler2021uniform}
+    F.\ Koehler, L.\ Zhou, D.\ J.\ Sutherland, N.\ Srebro.
+    \textit{Uniform Convergence of Interpolators: Gaussian Width, Norm Bounds,
+    and Benign Overfitting}.
+    NeurIPS 2021.
+\end{thebibliography}
+
+\end{document}

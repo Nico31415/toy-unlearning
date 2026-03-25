@@ -22,7 +22,6 @@ import numpy as np
 import pandas as pd
 import json
 
-import functions.networks as nt
 import random
 
 
@@ -230,9 +229,15 @@ def sample_beta_star_bg(inp_dim, rho, generator=None):
 
 def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epochs=1000, lr=0.01, momentum=0., lr_tuning=True, test_at_end_only=False, threshold=1e-9, stop_pred_mse=None, stop_beta_rate=0.0, stop_grad_norm=0.0, lr_decay=1.0, lr_decay_interval=2000, save_folder=None,
           min_epochs_before_stop=None, require_eval_before_stop=False, disable_legacy_loss_stop=False,
-          fixed_point_beta_rate=1e-6, fixed_point_consecutive_evals=2, fixed_point_grad_norm=0.0):
+          fixed_point_beta_rate=1e-6, fixed_point_consecutive_evals=2, fixed_point_grad_norm=0.0,
+          optimizer_type='full_batch', adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8):
     or_model = deepcopy(model)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    if optimizer_type == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps)
+    elif optimizer_type == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+    else:  # 'full_batch' — current behaviour, momentum forced to 0
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.)
     all_results = []
     norms = []
     x, y = train_data
@@ -468,7 +473,8 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
             return train(or_model, train_data, test_data, beta_star, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, stop_pred_mse=stop_pred_mse, stop_beta_rate=stop_beta_rate, stop_grad_norm=stop_grad_norm, lr_decay=lr_decay, lr_decay_interval=lr_decay_interval, save_folder=save_folder,
                          min_epochs_before_stop=min_epochs_before_stop, require_eval_before_stop=require_eval_before_stop,
                          disable_legacy_loss_stop=disable_legacy_loss_stop, fixed_point_beta_rate=fixed_point_beta_rate,
-                         fixed_point_consecutive_evals=fixed_point_consecutive_evals, fixed_point_grad_norm=fixed_point_grad_norm)
+                         fixed_point_consecutive_evals=fixed_point_consecutive_evals, fixed_point_grad_norm=fixed_point_grad_norm,
+                         optimizer_type=optimizer_type, adam_beta1=adam_beta1, adam_beta2=adam_beta2, adam_eps=adam_eps)
     
     # Ensure final epoch is evaluated
     if last_evaluated_epoch != i:

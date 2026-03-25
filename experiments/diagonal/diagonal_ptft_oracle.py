@@ -254,7 +254,11 @@ def main(args):
         stop_grad_norm=args.stop_grad_norm,
         lr_decay=args.lr_decay,
         lr_decay_interval=args.lr_decay_interval,
-        save_folder=args.save_folder
+        save_folder=args.save_folder,
+        optimizer_type=args.optimizer,
+        adam_beta1=args.adam_beta1,
+        adam_beta2=args.adam_beta2,
+        adam_eps=args.adam_eps,
     )
     
     # Save results
@@ -355,7 +359,11 @@ def get_parser():
     parser.add_argument('--lr_decay_interval', type=int, default=2000)
     parser.add_argument('--test_every_n_epochs', type=int, default=200)
     parser.add_argument('--no_tuning', action='store_true')
-    
+    parser.add_argument('--optimizer', type=str, default='full_batch', choices=['full_batch', 'sgd', 'adam'])
+    parser.add_argument('--adam_beta1', type=float, default=0.9)
+    parser.add_argument('--adam_beta2', type=float, default=0.999)
+    parser.add_argument('--adam_eps', type=float, default=1e-8)
+
     return parser
 
 
