@@ -42,8 +42,8 @@ def _prox_qk_vec(
     z: np.ndarray,
     gp: float,
     k,
-    iters: int = 80,
-    tol: float = 1e-12,
+    iters: int = 20,
+    tol: float = 1e-10,
 ) -> np.ndarray:
     """
     Solve x - z + 0.5*gp*asinh(2x/sqrt(k)) = 0 by safeguarded Newton/bisection.
@@ -426,8 +426,8 @@ def ptft_qk_curve_imperfect_pt(
     res_pt = 0.0
     k_pt = 4.0 * float(c_pt) ** 2
 
-    if float(alpha_pt) >= 1.0:
-        # Oracle shortcut: at alpha_pt=1 the square system has a unique solution = beta*_PT
+    if float(alpha_pt) >= 1.0 and float(sigma0_pt) == 0.0:
+        # Oracle shortcut: noiseless square system → unique solution = beta*_PT
         beta_hat_pt = beta_pt.copy()
     else:
         # Step 3: Independent PT noise Z (must be independent of FT noise U = v_ft)
@@ -437,15 +437,25 @@ def ptft_qk_curve_imperfect_pt(
         # Step 4: Solve PT fixed-point equations
         # Pretraining estimator: prox_{q_{k_PT}/theta_PT}, k_PT = 4*c_pt^2 (homogeneous)
         # gamma_ext_PT = 0 (interpolating PT, no external regularization)
+        #
+        # Initialization: (s2=0, gp=0) is a spurious trivial fixed point.
+        # Warm-start from the prior-variance formula for underdetermined min-norm:
+        #   tau_PT_init = (1/alpha_pt - 1) * rho_pt * a_pt^2
+        _alpha_pt = float(alpha_pt)
+        _rho_pt   = float(rho_pt)
+        _a_pt     = float(a_pt)
+        s2_pt_init  = (1.0 / _alpha_pt - 1.0) * _rho_pt * (_a_pt ** 2) + float(sigma0_pt)
+        gp_pt_init  = 0.01
         k_pt_mc = np.full(int(mc), k_pt)
         _, _, (s2_pt, gp_pt), res_pt, _ = _solve_fp_qk_vec(
-            beta=1.0 / float(alpha_pt),
+            beta=1.0 / _alpha_pt,
             x=beta_pt,
             v=v_pt,
             k_mc=k_pt_mc,
             g_mc=None,
             sigma0_2=float(sigma0_pt),
             gamma_ext=0.0,
+            init_state=(s2_pt_init, gp_pt_init),
             use_grouped_k=False,
             max_iters=int(max_iters),
             tol=float(tol),
@@ -511,6 +521,6 @@ def ptft_qk_curve_imperfect_pt(
     info["s2_pt"] = float(s2_pt)
     info["gp_pt"] = float(gp_pt)
     info["res_pt"] = float(res_pt)
-    info["oracle"] = float(alpha_pt) >= 1.0
+    info["oracle"] = float(alpha_pt) >= 1.0 and float(sigma0_pt) == 0.0
 
     return curve, reliability, info
