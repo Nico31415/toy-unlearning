@@ -231,16 +231,19 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
           min_epochs_before_stop=None, require_eval_before_stop=False, disable_legacy_loss_stop=False,
           fixed_point_beta_rate=1e-6, fixed_point_consecutive_evals=2, fixed_point_grad_norm=0.0,
           optimizer_type='full_batch', adam_beta1=0.9, adam_beta2=0.999, adam_eps=1e-8,
-          weight_decay=0.0):
+          weight_decay=0.0, l2sp_lambda=0.0):
     or_model = deepcopy(model)
+    # Capture initial parameters for L2-SP regularisation (regularise toward PT init)
+    if l2sp_lambda > 0.0:
+        init_params = [p.detach().clone() for p in model.parameters()]
+    else:
+        init_params = None
     if optimizer_type == 'adam':
         optimizer = optim.Adam(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps, weight_decay=weight_decay)
-    elif optimizer_type == 'adamw':
-        optimizer = optim.AdamW(model.parameters(), lr=lr, betas=(adam_beta1, adam_beta2), eps=adam_eps, weight_decay=weight_decay)
     elif optimizer_type == 'sgd':
-        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
     else:  # 'full_batch' — current behaviour, momentum forced to 0
-        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.)
+        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0., weight_decay=weight_decay)
     all_results = []
     norms = []
     x, y = train_data
@@ -301,6 +304,9 @@ def train(model, train_data, test_data, beta_star, test_every_n_epochs=200, epoc
         
         optimizer.zero_grad()
         loss = F.mse_loss(model(x), y)
+        if l2sp_lambda > 0.0:
+            l2sp = sum(((p - p0) ** 2).sum() for p, p0 in zip(model.parameters(), init_params))
+            loss = loss + l2sp_lambda * l2sp
         loss.backward()
         
         # Compute gradient norm before step

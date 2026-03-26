@@ -54,7 +54,7 @@ SGD_MOMENTUM         = 0.9
 
 
 def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, threshold=THRESHOLD,
-               weight_decay=0.0):
+               weight_decay=0.0, l2sp_lambda=0.0):
     make_deterministic(seed)
     torch.set_default_dtype(torch.float64)
 
@@ -80,7 +80,9 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
     net = DiagonalNet(INP_DIM, scaling=1.0, lmda=0.0, c=C_PT, c_vec=c_ft, init_method='complex')
     momentum = SGD_MOMENTUM if optimizer_type == 'sgd' else 0.0
 
-    if weight_decay > 0.0:
+    if l2sp_lambda > 0.0:
+        label = f"adam_l2sp={l2sp_lambda}"
+    elif weight_decay > 0.0:
         label = f"adam_wd={weight_decay}"
     elif optimizer_type == 'adam':
         label = f"adam_lr={lr}"
@@ -104,6 +106,7 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
         lr_tuning=True,
         optimizer_type=optimizer_type,
         weight_decay=weight_decay,
+        l2sp_lambda=l2sp_lambda,
         save_folder=run_folder,
     )
 
@@ -115,6 +118,7 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
         'optimizer':      optimizer_type,
         'lr':             lr,
         'weight_decay':   weight_decay,
+        'l2sp_lambda':    l2sp_lambda,
         'alpha':          alpha,
         'n_train':        n_train,
         'seed':           seed,
@@ -132,6 +136,8 @@ def main():
     parser.add_argument('--adam_lrs', type=float, nargs='+', default=ADAM_LRS_DEFAULT)
     parser.add_argument('--adam_wds', type=float, nargs='+', default=None,
                         help='If set, run Adam only with lr=1e-3 at these weight_decay values')
+    parser.add_argument('--adam_l2sp', type=float, nargs='+', default=None,
+                        help='If set, run Adam only with lr=1e-3 at these l2sp_lambda values')
     parser.add_argument('--seeds',    type=int, default=3)
     parser.add_argument('--epochs',   type=int, default=EPOCHS)
     parser.add_argument('--threshold',type=float, default=THRESHOLD)
@@ -139,18 +145,21 @@ def main():
 
     Path(args.save_folder).mkdir(parents=True, exist_ok=True)
 
-    # Build list of (optimizer_type, lr, weight_decay) conditions
-    if args.adam_wds is not None:
+    # Build list of (optimizer_type, lr, weight_decay, l2sp_lambda) conditions
+    if args.adam_l2sp is not None:
+        # L2-SP sweep: Adam only, lr=1e-3, no weight decay
+        conditions = [('adam', 1e-3, 0.0, lam) for lam in args.adam_l2sp]
+    elif args.adam_wds is not None:
         # weight-decay sweep: Adam only, lr=1e-3
-        conditions = [('adam', 1e-3, wd) for wd in args.adam_wds]
+        conditions = [('adam', 1e-3, wd, 0.0) for wd in args.adam_wds]
     else:
         base = []
         if 'full_batch' in args.optimizers:
-            base.append(('full_batch', 0.5, 0.0))
+            base.append(('full_batch', 0.5, 0.0, 0.0))
         if 'sgd' in args.optimizers:
-            base.append(('sgd', 0.5, 0.0))
+            base.append(('sgd', 0.5, 0.0, 0.0))
         if 'adam' in args.optimizers:
-            base += [('adam', lr, 0.0) for lr in args.adam_lrs]
+            base += [('adam', lr, 0.0, 0.0) for lr in args.adam_lrs]
         conditions = base
 
     seeds        = list(range(args.seeds))
@@ -163,7 +172,7 @@ def main():
     print("-" * 70)
 
     rows = []
-    for opt, lr, wd in conditions:
+    for opt, lr, wd, l2sp in conditions:
         for alpha in alpha_values:
             for seed in seeds:
                 row = run_single(
@@ -172,6 +181,7 @@ def main():
                     epochs=args.epochs,
                     threshold=args.threshold,
                     weight_decay=wd,
+                    l2sp_lambda=l2sp,
                 )
                 rows.append(row)
                 print(f"{row['label']:>25}  {row['alpha']:>6.2f}  {row['seed']:>4d}  "
