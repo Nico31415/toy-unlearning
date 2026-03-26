@@ -134,7 +134,7 @@ import matplotlib.pyplot as plt
 
 fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharey=False)
 fig.suptitle(
-    f"Quick replica check  (ρ_PT={RHO_PT}, ρ_FT={RHO_FT}, c_PT={C_PT}, λ_PT={LAMBDA_PT}, mc={MC}, tol={TOL})",
+    f"Quick replica check  (ρ_PT={RHO_PT}, ρ_FT={RHO_FT}, c_PT={C_PT}, λ_PT={LAMBDA_PT}, γ_FT={GAMMA_REINIT}, mc={MC}, tol={TOL})",
     fontsize=9,
 )
 
