@@ -35,7 +35,8 @@ SIGMA0_2     = 0.0
 
 OMEGA_LIST     = [1.0, 0.0]
 ALPHA_PT_LIST  = [0.01, 0.2, 0.5, 1.0]
-SIGMA0_PT_LIST = [0.0, 1.0, 10.0]
+SIGMA0_PT_LIST       = [0.0, 0.01, 0.05, 0.1, 0.5, 1.0, 10.0]
+ALPHA_PT_SIGMA_LIST  = [1.0, 0.95]   # alpha_pt values to show in sigma0_pt sweep
 
 # ---------------------------------------------------------------------------
 
@@ -118,9 +119,10 @@ for omega in OMEGA_LIST:
         records.append(_run_imperfect(alpha_pt, 0.0, omega, label=f"w{omega}_apt{alpha_pt}"))
     records.append(_run_oracle(omega, label=f"w{omega}_oracle"))
 
-    # Panel 2: sigma0_pt sweep (alpha_pt=1, imperfect code)
-    for sigma0_pt in SIGMA0_PT_LIST:
-        records.append(_run_imperfect(1.0, sigma0_pt, omega, label=f"w{omega}_s0{sigma0_pt}"))
+    # Panel 2: sigma0_pt sweep for each alpha_pt in ALPHA_PT_SIGMA_LIST
+    for apt in ALPHA_PT_SIGMA_LIST:
+        for sigma0_pt in SIGMA0_PT_LIST:
+            records.append(_run_imperfect(apt, sigma0_pt, omega, label=f"w{omega}_apt{apt}_s0{sigma0_pt}"))
 
 df = pd.concat(records, ignore_index=True)
 out_csv = Path(__file__).parent / "replica_quick.csv"
@@ -163,17 +165,21 @@ for row, omega in enumerate(OMEGA_LIST):
     ax.legend(fontsize=7)
     ax.grid(True, alpha=0.3)
 
-    # --- Col 1: sigma0_pt sweep ---
+    # --- Col 1: sigma0_pt sweep for alpha_pt in ALPHA_PT_SIGMA_LIST ---
     ax = axes[row, 1]
-    for i, sigma0_pt in enumerate(SIGMA0_PT_LIST):
-        sub = sub_omega[sub_omega["label"] == f"w{omega}_s0{sigma0_pt}"]
-        x, y = _masked(sub)
-        ax.plot(x, y, color=colors[i], label=f"σ²₀,PT={sigma0_pt}")
+    linestyles = ["-", "--"]
+    for j, apt in enumerate(ALPHA_PT_SIGMA_LIST):
+        ls = linestyles[j % len(linestyles)]
+        for i, sigma0_pt in enumerate(SIGMA0_PT_LIST):
+            sub = sub_omega[sub_omega["label"] == f"w{omega}_apt{apt}_s0{sigma0_pt}"]
+            x, y = _masked(sub)
+            lbl = f"α_PT={apt}, σ²₀={sigma0_pt}"
+            ax.plot(x, y, color=colors[i], linestyle=ls, label=lbl)
     x, y = _masked(sub_or)
-    ax.plot(x, y, "k--", lw=1.5, label="oracle")
+    ax.plot(x, y, "k:", lw=1.5, label="oracle (α_PT=1, σ²₀=0)")
     ax.set_xlabel("α_FT")
-    ax.set_title(f"ω={omega}  — effect of σ²₀,PT  (α_PT=1)")
-    ax.legend(fontsize=7)
+    ax.set_title(f"ω={omega}  — effect of σ²₀,PT  (solid=α_PT=1, dash=α_PT=0.95)")
+    ax.legend(fontsize=6)
     ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
