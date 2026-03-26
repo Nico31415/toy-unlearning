@@ -1,0 +1,131 @@
+# --- Quick-and-dirty replica PT+FT imperfect pretraining sanity check ---
+# Reduced settings (mc=5k, 20 alpha_ft pts, tol=1e-4, max_iters=200) for fast iteration.
+# Sweeps both alpha_pt (panel 1) and sigma0_pt (panel 2) so both imperfect PT axes can be checked.
+# Saves CSV before plotting; prints fwd/bwd gap table after each curve.
+
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).parent))
+import ptft_replica_imperfect_pt as rip
+
+# --- Reduced settings ---
+alphas_ft   = np.unique(np.concatenate([np.linspace(0.01, 0.5, 20), [0.2, 0.3]]))
+MC          = 5_000
+TOL         = 1e-4
+MAX_ITERS   = 200
+DAMP        = 0.25
+SEED        = 0
+
+# --- Fixed params (both panels) ---
+RHO_PT       = 0.10
+RHO_FT       = 0.10
+OMEGA        = 1.0
+C_PT         = 1e-3
+LAMBDA_PT    = 0.0
+GAMMA_REINIT = 0.0
+A_PT         = 1.0
+GAMMA_EXT    = 1e-6
+SIGMA0_2     = 0.0
+
+# --- Panel 1: sweep alpha_pt, sigma0_pt=0 ---
+ALPHA_PT_LIST  = [0.01, 0.2, 0.5, 1.0]
+# --- Panel 2: sweep sigma0_pt, alpha_pt=1 ---
+SIGMA0_PT_LIST = [0.0, 1.0, 10.0]
+
+# ---------------------------------------------------------------------------
+
+def _run_curve(alpha_pt, sigma0_pt, label):
+    print(f"\n=== {label} ===", flush=True)
+    curve, reliability, info = rip.ptft_qk_curve_imperfect_pt(
+        rho_pt=RHO_PT, rho_ft=RHO_FT, omega=OMEGA,
+        alpha_pt=alpha_pt, sigma0_pt=sigma0_pt,
+        gamma_ext=GAMMA_EXT, sigma0_2=SIGMA0_2,
+        alphas=alphas_ft,
+        mc=MC, seed=SEED,
+        a_pt=A_PT, c_pt=C_PT, lambda_pt=LAMBDA_PT, gamma_reinit=GAMMA_REINIT,
+        tol=TOL, max_iters=MAX_ITERS, damp=DAMP,
+    )
+    # --- Print fwd/bwd gap table ---
+    print(f"  {'alpha_ft':>8}  {'mse_best':>9}  {'mse_fwd':>9}  {'mse_bwd':>9}  {'diff_db':>8}")
+    for a, mb, mf, mr, dd in zip(
+        curve["alpha"], curve["mse_best"], curve["mse_fwd"],
+        curve["mse_bwd"], curve["diff_db"]
+    ):
+        print(f"  {a:8.3f}  {mb:9.5f}  {mf:9.5f}  {mr:9.5f}  {dd:8.3f}")
+    print(f"  reliability_score_db = {reliability['score_db']:.2f}", flush=True)
+
+    n = len(curve["alpha"])
+    return pd.DataFrame({
+        "label":            [label] * n,
+        "alpha_pt":         np.full(n, alpha_pt),
+        "sigma0_pt":        np.full(n, sigma0_pt),
+        "alpha":            curve["alpha"],
+        "mse_best":         curve["mse_best"],
+        "mse_fwd":          curve["mse_fwd"],
+        "mse_bwd":          curve["mse_bwd"],
+        "diff_db":          curve["diff_db"],
+        "fp_residual":      curve["fp_residual"],
+        "mse_se":           curve["mse_se"],
+        "reliability_db":   reliability["score_db"],
+        "s2_pt":            info.get("s2_pt", float("nan")),
+        "gp_pt":            info.get("gp_pt", float("nan")),
+        "pt_oracle":        info.get("oracle", True),
+    })
+
+
+records = []
+
+# Panel 1
+for alpha_pt in ALPHA_PT_LIST:
+    records.append(_run_curve(alpha_pt, sigma0_pt=0.0, label=f"alpha_pt={alpha_pt}"))
+
+# Panel 2
+for sigma0_pt in SIGMA0_PT_LIST:
+    records.append(_run_curve(alpha_pt=1.0, sigma0_pt=sigma0_pt, label=f"sigma0_pt={sigma0_pt}"))
+
+df = pd.concat(records, ignore_index=True)
+out_csv = Path(__file__).parent / "replica_quick.csv"
+df.to_csv(out_csv, index=False)
+print(f"\nSaved {len(df)} rows → {out_csv}")
+
+# --- Plot ---
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=False)
+fig.suptitle(
+    f"Quick replica check  (ρ_PT={RHO_PT}, ρ_FT={RHO_FT}, ω={OMEGA}, "
+    f"c_PT={C_PT}, mc={MC}, tol={TOL})",
+    fontsize=9,
+)
+
+# Panel 1 — alpha_pt sweep
+ax = axes[0]
+for alpha_pt in ALPHA_PT_LIST:
+    sub = df[df["label"] == f"alpha_pt={alpha_pt}"]
+    ax.plot(sub["alpha"], sub["mse_best"], label=f"α_PT={alpha_pt}")
+ax.set_xlabel("α_FT")
+ax.set_ylabel("MSE")
+ax.set_title("Effect of α_PT  (σ²₀,PT=0)")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+# Panel 2 — sigma0_pt sweep
+ax = axes[1]
+for sigma0_pt in SIGMA0_PT_LIST:
+    sub = df[df["label"] == f"sigma0_pt={sigma0_pt}"]
+    ax.plot(sub["alpha"], sub["mse_best"], label=f"σ²₀,PT={sigma0_pt}")
+ax.set_xlabel("α_FT")
+ax.set_title("Effect of σ²₀,PT  (α_PT=1)")
+ax.legend()
+ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+out_png = Path(__file__).parent / "replica_quick.png"
+fig.savefig(out_png, dpi=150)
+print(f"Saved figure → {out_png}")
