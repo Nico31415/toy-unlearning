@@ -139,6 +139,11 @@ fig.suptitle(
 )
 
 colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+DIFF_DB_MASK = 5.0  # hide points where fwd/bwd gap exceeds this
+
+def _masked(sub):
+    s = sub[sub["diff_db"] <= DIFF_DB_MASK]
+    return s["alpha"], s["mse_best"]
 
 for row, omega in enumerate(OMEGA_LIST):
     sub_omega = df[df["omega"] == omega]
@@ -146,11 +151,12 @@ for row, omega in enumerate(OMEGA_LIST):
     # --- Col 0: alpha_pt sweep ---
     ax = axes[row, 0]
     for i, alpha_pt in enumerate(ALPHA_PT_LIST):
-        sub = sub_omega[(sub_omega["label"] == f"w{omega}_apt{alpha_pt}")]
-        ax.plot(sub["alpha"], sub["mse_best"], color=colors[i], label=f"α_PT={alpha_pt} (imperfect)")
-    # oracle
+        sub = sub_omega[sub_omega["label"] == f"w{omega}_apt{alpha_pt}"]
+        x, y = _masked(sub)
+        ax.plot(x, y, color=colors[i], label=f"α_PT={alpha_pt} (imperfect)")
     sub_or = sub_omega[sub_omega["label"] == f"w{omega}_oracle"]
-    ax.plot(sub_or["alpha"], sub_or["mse_best"], "k--", lw=1.5, label="α_PT=1 (oracle)")
+    x, y = _masked(sub_or)
+    ax.plot(x, y, "k--", lw=1.5, label="α_PT=1 (oracle)")
     ax.set_xlabel("α_FT")
     ax.set_ylabel("MSE")
     ax.set_title(f"ω={omega}  — effect of α_PT  (σ²₀,PT=0)")
@@ -161,9 +167,10 @@ for row, omega in enumerate(OMEGA_LIST):
     ax = axes[row, 1]
     for i, sigma0_pt in enumerate(SIGMA0_PT_LIST):
         sub = sub_omega[sub_omega["label"] == f"w{omega}_s0{sigma0_pt}"]
-        ax.plot(sub["alpha"], sub["mse_best"], color=colors[i], label=f"σ²₀,PT={sigma0_pt}")
-    sub_or = sub_omega[sub_omega["label"] == f"w{omega}_oracle"]
-    ax.plot(sub_or["alpha"], sub_or["mse_best"], "k--", lw=1.5, label="oracle")
+        x, y = _masked(sub)
+        ax.plot(x, y, color=colors[i], label=f"σ²₀,PT={sigma0_pt}")
+    x, y = _masked(sub_or)
+    ax.plot(x, y, "k--", lw=1.5, label="oracle")
     ax.set_xlabel("α_FT")
     ax.set_title(f"ω={omega}  — effect of σ²₀,PT  (α_PT=1)")
     ax.legend(fontsize=7)
