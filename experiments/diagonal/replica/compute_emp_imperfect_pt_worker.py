@@ -2,6 +2,7 @@
 SLURM-array worker for imperfect-PT empirical experiments.
 
 Each task handles one (pt_mode, alpha_pt_or_sigma0_pt, alpha_ft, seed) combination.
+All tasks append to a single shared CSV (with file locking for parallel safety).
 
 Grid (200 tasks total):
   cases:    ("underdetermined", alpha_pt=0.2) + ("noisy", sigma0_pt=0.01)
@@ -10,17 +11,22 @@ Grid (200 tasks total):
 
 Example launch:
   sbatch --array=0-199 run_emp_imperfect_pt.sh
+  # inside script: python compute_emp_imperfect_pt_worker.py --task-id $SLURM_ARRAY_TASK_ID
 
 Or locally in parallel (e.g. with GNU parallel):
-  seq 0 199 | parallel -j 8 python compute_emp_imperfect_pt_worker.py --task-id {} --output-dir results/emp_imperfect_pt
+  seq 0 199 | parallel -j 8 python compute_emp_imperfect_pt_worker.py --task-id {}
 """
 
 import argparse
+import fcntl
 import itertools
+import random
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 # --- sys.path setup (same as compute_emp_imperfect_pt.py) ---
 _HERE      = Path(__file__).resolve().parent
@@ -60,11 +66,52 @@ def _print_info():
     print("  ...")
 
 
+def _safe_append_row(csv_path: Path, row: dict, key_cols: list) -> None:
+    """Append row to shared CSV under a file lock; skip if key already exists."""
+    csv_path = Path(csv_path)
+    lock_path = Path(str(csv_path) + ".lock")
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    for attempt in range(60):
+        try:
+            with open(lock_path, "w") as lock_f:
+                fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+                if csv_path.exists():
+                    try:
+                        df = pd.read_csv(csv_path)
+                    except Exception:
+                        df = pd.DataFrame()
+                else:
+                    df = pd.DataFrame()
+
+                if not df.empty:
+                    mask = np.ones(len(df), dtype=bool)
+                    for k in key_cols:
+                        if k in df.columns:
+                            mask &= (df[k].astype(str) == str(row.get(k)))
+                    if bool(mask.any()):
+                        print("  Row already exists, skipping.", flush=True)
+                        return
+
+                new_row_df = pd.DataFrame([row])
+                all_cols = sorted(set(df.columns.tolist() + new_row_df.columns.tolist()))
+                out = pd.concat(
+                    [df.reindex(columns=all_cols), new_row_df.reindex(columns=all_cols)],
+                    ignore_index=True,
+                )
+                out.to_csv(csv_path, index=False)
+                return
+        except Exception:
+            if attempt == 59:
+                raise
+            time.sleep(0.1 * (2 ** min(attempt, 6)) + random.uniform(0, 0.05))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Imperfect-PT empirical worker")
     parser.add_argument("--task-id",    type=int,  default=None, help="SLURM array task ID")
     parser.add_argument("--output-dir", type=str,  default="results/emp_imperfect_pt",
-                        help="Directory for per-task CSVs")
+                        help="Directory for the shared output CSV")
     parser.add_argument("--info",       action="store_true", help="Print grid info and exit")
     # Override default training knobs if needed
     parser.add_argument("--inp-dim",    type=int,   default=1000)
@@ -108,14 +155,12 @@ def main():
           f"pt_param_mse={row['pt_param_mse']:.4e}  "
           f"wall={row['wall_s']:.1f}s", flush=True)
 
-    # Save per-task CSV
+    # Append to shared CSV
     out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    fname = (f"emp_ipt_{pt_mode}_apt{alpha_pt}_s0{sigma0_pt}"
-             f"_aft{alpha_ft:.4f}_seed{seed}.csv")
-    import pandas as pd
-    pd.DataFrame([row]).to_csv(out_dir / fname, index=False)
-    print(f"  Saved → {out_dir / fname}", flush=True)
+    csv_path = out_dir / "emp_imperfect_pt.csv"
+    key_cols = ["pt_mode", "alpha_pt", "sigma0_pt", "alpha_ft", "seed"]
+    _safe_append_row(csv_path, row, key_cols)
+    print(f"  Appended → {csv_path}", flush=True)
 
 
 if __name__ == "__main__":
