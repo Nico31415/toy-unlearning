@@ -54,7 +54,7 @@ SGD_MOMENTUM         = 0.9
 
 
 def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, threshold=THRESHOLD,
-               weight_decay=0.0, l2sp_lambda=0.0):
+               weight_decay=0.0, l2sp_lambda=0.0, batch_size=None):
     make_deterministic(seed)
     torch.set_default_dtype(torch.float64)
 
@@ -80,12 +80,17 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
     net = DiagonalNet(INP_DIM, scaling=1.0, lmda=0.0, c=C_PT, c_vec=c_ft, init_method='complex')
     momentum = SGD_MOMENTUM if optimizer_type == 'sgd' else 0.0
 
+    # Effective batch size: min(batch_size, n_train) — None means full batch
+    eff_batch = None if batch_size is None else min(int(batch_size), n_train)
+
     if l2sp_lambda > 0.0:
         label = f"adam_l2sp={l2sp_lambda}"
     elif weight_decay > 0.0:
         label = f"adam_wd={weight_decay}"
+    elif optimizer_type == 'sgd' and eff_batch is not None and eff_batch < n_train:
+        label = f"sgd_bs={eff_batch}"
     elif optimizer_type == 'adam':
-        label = f"adam_lr={lr}"
+        label = f"adam"
     else:
         label = optimizer_type
 
@@ -107,6 +112,7 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
         optimizer_type=optimizer_type,
         weight_decay=weight_decay,
         l2sp_lambda=l2sp_lambda,
+        batch_size=eff_batch,
         save_folder=run_folder,
     )
 
@@ -119,6 +125,7 @@ def run_single(alpha, optimizer_type, lr, seed, save_folder, epochs=EPOCHS, thre
         'lr':             lr,
         'weight_decay':   weight_decay,
         'l2sp_lambda':    l2sp_lambda,
+        'batch_size':     eff_batch,
         'alpha':          alpha,
         'n_train':        n_train,
         'seed':           seed,
@@ -138,6 +145,10 @@ def main():
                         help='If set, run Adam only with lr=1e-3 at these weight_decay values')
     parser.add_argument('--adam_l2sp', type=float, nargs='+', default=None,
                         help='If set, run Adam only with lr=1e-3 at these l2sp_lambda values')
+    parser.add_argument('--batch_size', type=int, default=None,
+                        help='Mini-batch size for SGD (None = full batch). Effective size is min(batch_size, n_train).')
+    parser.add_argument('--clean_sweep', action='store_true',
+                        help='Run the 4-condition clean sweep: SGD bs=32, Adam, Adam+wd=1e-4, Adam+L2SP=1e-4')
     parser.add_argument('--seeds',    type=int, default=3)
     parser.add_argument('--epochs',   type=int, default=EPOCHS)
     parser.add_argument('--threshold',type=float, default=THRESHOLD)
@@ -145,21 +156,27 @@ def main():
 
     Path(args.save_folder).mkdir(parents=True, exist_ok=True)
 
-    # Build list of (optimizer_type, lr, weight_decay, l2sp_lambda) conditions
-    if args.adam_l2sp is not None:
-        # L2-SP sweep: Adam only, lr=1e-3, no weight decay
-        conditions = [('adam', 1e-3, 0.0, lam) for lam in args.adam_l2sp]
+    # Build list of (optimizer_type, lr, weight_decay, l2sp_lambda, batch_size) conditions
+    if args.clean_sweep:
+        # 4-condition comparison: SGD bs=32, Adam, Adam+wd, Adam+L2SP
+        conditions = [
+            ('sgd',  0.5,  0.0,  0.0,  32),
+            ('adam', 1e-3, 0.0,  0.0,  None),
+            ('adam', 1e-3, 1e-4, 0.0,  None),
+            ('adam', 1e-3, 0.0,  1e-4, None),
+        ]
+    elif args.adam_l2sp is not None:
+        conditions = [('adam', 1e-3, 0.0, lam, None) for lam in args.adam_l2sp]
     elif args.adam_wds is not None:
-        # weight-decay sweep: Adam only, lr=1e-3
-        conditions = [('adam', 1e-3, wd, 0.0) for wd in args.adam_wds]
+        conditions = [('adam', 1e-3, wd, 0.0, None) for wd in args.adam_wds]
     else:
         base = []
         if 'full_batch' in args.optimizers:
-            base.append(('full_batch', 0.5, 0.0, 0.0))
+            base.append(('full_batch', 0.5, 0.0, 0.0, None))
         if 'sgd' in args.optimizers:
-            base.append(('sgd', 0.5, 0.0, 0.0))
+            base.append(('sgd', 0.5, 0.0, 0.0, args.batch_size))
         if 'adam' in args.optimizers:
-            base += [('adam', lr, 0.0, 0.0) for lr in args.adam_lrs]
+            base += [('adam', lr, 0.0, 0.0, None) for lr in args.adam_lrs]
         conditions = base
 
     seeds        = list(range(args.seeds))
@@ -172,7 +189,7 @@ def main():
     print("-" * 70)
 
     rows = []
-    for opt, lr, wd, l2sp in conditions:
+    for opt, lr, wd, l2sp, bs in conditions:
         for alpha in alpha_values:
             for seed in seeds:
                 row = run_single(
@@ -182,6 +199,7 @@ def main():
                     threshold=args.threshold,
                     weight_decay=wd,
                     l2sp_lambda=l2sp,
+                    batch_size=bs,
                 )
                 rows.append(row)
                 print(f"{row['label']:>25}  {row['alpha']:>6.2f}  {row['seed']:>4d}  "
