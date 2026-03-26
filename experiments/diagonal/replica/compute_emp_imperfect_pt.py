@@ -269,13 +269,14 @@ def sweep(
 if __name__ == "__main__":
     all_rows = []
 
-    # Case 1: underdetermined PT (alpha_pt=0.2)
-    print("\n=== Case 1: underdetermined PT, alpha_pt=0.2 ===\n")
-    all_rows += sweep(pt_mode="underdetermined", alpha_pt_or_sigma0_pt=0.2)
+    for omega in [1.0, 0.0]:
+        # Case 1: underdetermined PT (alpha_pt=0.2)
+        print(f"\n=== omega={omega} | underdetermined PT, alpha_pt=0.2 ===\n")
+        all_rows += sweep(pt_mode="underdetermined", alpha_pt_or_sigma0_pt=0.2, omega=omega)
 
-    # Case 2: noisy PT (sigma0_pt=0.01)
-    print("\n=== Case 2: noisy PT, sigma0_pt=0.01 ===\n")
-    all_rows += sweep(pt_mode="noisy", alpha_pt_or_sigma0_pt=0.01)
+        # Case 2: noisy PT (sigma0_pt=0.01)
+        print(f"\n=== omega={omega} | noisy PT, sigma0_pt=0.01 ===\n")
+        all_rows += sweep(pt_mode="noisy", alpha_pt_or_sigma0_pt=0.01, omega=omega)
 
     df = pd.DataFrame(all_rows)
     out_csv = _HERE / "emp_imperfect_pt_quick.csv"
