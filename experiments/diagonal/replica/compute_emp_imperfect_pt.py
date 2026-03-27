@@ -98,6 +98,8 @@ def run_one(
     epochs: int = EPOCHS,
     threshold: float = THRESHOLD,
     test_every_n_epochs: int = TEST_EVERY_N_EPOCHS,
+    stop_grad_norm: float = 0.0,
+    stop_pred_mse: float = 0.0,
 ) -> Dict[str, Any]:
     """
     One PT+FT run with imperfect pretraining.
@@ -158,6 +160,8 @@ def run_one(
         epochs=int(epochs),
         lr_tuning=True,
         threshold=float(threshold),
+        stop_grad_norm=float(stop_grad_norm),
+        stop_pred_mse=float(stop_pred_mse) if stop_pred_mse > 0 else None,
     )
 
     with torch.no_grad():
@@ -197,6 +201,8 @@ def run_one(
         epochs=int(epochs),
         lr_tuning=True,
         threshold=float(threshold),
+        stop_grad_norm=float(stop_grad_norm),
+        stop_pred_mse=float(stop_pred_mse) if stop_pred_mse > 0 else None,
     )
 
     ft_test_last = ft_df[ft_df["split"] == "test"].sort_values("epoch").iloc[-1]
