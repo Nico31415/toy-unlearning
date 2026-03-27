@@ -90,6 +90,17 @@ for row, omega in enumerate(OMEGAS):
                     fmt="s", color="red", capsize=3, markersize=5,
                     label="σ₀=0.01 (emp)")
 
+    # empirical: noisy rows (alpha_pt=1, sigma0_pt=0.5)
+    emp_n5 = sub_emp[(sub_emp["pt_mode"] == "noisy") &
+                     (sub_emp["sigma0_pt"].round(2) == 0.5)]
+    if len(emp_n5):
+        grp = emp_n5.groupby("alpha_ft_req")["ft_param_mse"]
+        mu  = grp.mean()
+        se  = grp.sem()
+        ax.errorbar(mu.index, mu.values, yerr=2*se.values,
+                    fmt="^", color="purple", capsize=3, markersize=5,
+                    label="σ₀=0.5 (emp)")
+
     ax.set_xlim(0, 0.5)
     ax.legend(fontsize=7, ncol=2)
 
