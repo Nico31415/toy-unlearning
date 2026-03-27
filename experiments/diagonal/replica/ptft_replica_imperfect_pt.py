@@ -338,6 +338,7 @@ def ptft_qk_curve_imperfect_pt(
     # NEW: pretraining quality parameters
     alpha_pt: float,              # pretraining sample ratio; alpha_pt=1 → oracle
     sigma0_pt: float = 0.0,       # PT label noise std dev  (variance = sigma0_pt**2; default noiseless)
+    s2_pt_manual: Optional[float] = None,  # if set, override AWGN bypass s2_pt (use empirical pt_param_mse)
     # FT noise
     gamma_ext: float = 1e-6,
     sigma0_2: float = 0.0,
@@ -446,7 +447,9 @@ def ptft_qk_curve_imperfect_pt(
         # recovery. The residual channel noise is dominated by the label noise
         # directly, i.e. s2_pt = sigma0_pt^2. This matches empirical pt_param_mse
         # which converges to sigma0_pt^2 at alpha_pt = 1.
-        s2_pt = float(sigma0_pt) ** 2
+        # s2_pt_manual overrides this: pass empirical pt_param_mse to test if the
+        # FT equations are correct and only the s2_pt assumption is wrong.
+        s2_pt = float(s2_pt_manual) if s2_pt_manual is not None else float(sigma0_pt) ** 2
         gp_pt = 1e-6   # near-zero: prox is near-identity
         res_pt = 0.0
         z_pt = beta_pt + math.sqrt(s2_pt) * v_pt
