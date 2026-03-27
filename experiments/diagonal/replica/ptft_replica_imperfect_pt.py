@@ -337,7 +337,7 @@ def ptft_qk_curve_imperfect_pt(
     omega: float = 1.00,
     # NEW: pretraining quality parameters
     alpha_pt: float,              # pretraining sample ratio; alpha_pt=1 → oracle
-    sigma0_pt: float = 0.0,       # PT label noise variance (default noiseless)
+    sigma0_pt: float = 0.0,       # PT label noise std dev  (variance = sigma0_pt**2; default noiseless)
     # FT noise
     gamma_ext: float = 1e-6,
     sigma0_2: float = 0.0,
@@ -427,14 +427,36 @@ def ptft_qk_curve_imperfect_pt(
     k_pt = 4.0 * float(c_pt) ** 2
 
     if float(alpha_pt) >= 1.0 and float(sigma0_pt) == 0.0:
-        # Oracle shortcut: noiseless square system → unique solution = beta*_PT
+        # Oracle shortcut: noiseless square/overdetermined system → exact recovery
         beta_hat_pt = beta_pt.copy()
+    elif float(alpha_pt) >= 1.0:
+        # Step 3: Independent PT noise Z
+        rng_pt = np.random.default_rng(int(seed) ^ 0xDEADBEEF)
+        v_pt = rng_pt.normal(size=int(mc))
+
+        # Step 4 (alpha_pt >= 1, noisy): Direct AWGN model — bypass FP solver.
+        #
+        # When alpha_pt >= 1 (square or overdetermined system), the interpolating
+        # PT fixed-point equations s2 = sigma0_pt^2 + (1/alpha_pt)*mse are
+        # DEGENERATE at alpha_pt = 1 (no finite fixed point for sigma0_pt > 0),
+        # and poorly conditioned for alpha_pt just above 1.
+        #
+        # Physical picture: with alpha_pt >= 1 samples and small label noise
+        # sigma0_pt, the min-norm diagonal-network estimator achieves near-oracle
+        # recovery. The residual channel noise is dominated by the label noise
+        # directly, i.e. s2_pt = sigma0_pt^2. This matches empirical pt_param_mse
+        # which converges to sigma0_pt^2 at alpha_pt = 1.
+        s2_pt = float(sigma0_pt) ** 2
+        gp_pt = 1e-6   # near-zero: prox is near-identity
+        res_pt = 0.0
+        z_pt = beta_pt + math.sqrt(s2_pt) * v_pt
+        beta_hat_pt = _prox_qk_vec(z_pt, gp_pt, k_pt)
     else:
         # Step 3: Independent PT noise Z (must be independent of FT noise U = v_ft)
         rng_pt = np.random.default_rng(int(seed) ^ 0xDEADBEEF)
         v_pt = rng_pt.normal(size=int(mc))
 
-        # Step 4: Solve PT fixed-point equations
+        # Step 4 (alpha_pt < 1): Solve PT fixed-point equations
         # Pretraining estimator: prox_{q_{k_PT}/theta_PT}, k_PT = 4*c_pt^2 (homogeneous)
         # gamma_ext_PT = 0 (interpolating PT, no external regularization)
         #
@@ -444,7 +466,8 @@ def ptft_qk_curve_imperfect_pt(
         _alpha_pt = float(alpha_pt)
         _rho_pt   = float(rho_pt)
         _a_pt     = float(a_pt)
-        s2_pt_init  = (1.0 / _alpha_pt - 1.0) * _rho_pt * (_a_pt ** 2) + float(sigma0_pt)
+        # sigma0_pt is std dev; the FP equations take variance = sigma0_pt**2
+        s2_pt_init  = (1.0 / _alpha_pt - 1.0) * _rho_pt * (_a_pt ** 2) + float(sigma0_pt) ** 2
         gp_pt_init  = 0.01
         k_pt_mc = np.full(int(mc), k_pt)
         _, _, (s2_pt, gp_pt), res_pt, _ = _solve_fp_qk_vec(
@@ -453,7 +476,7 @@ def ptft_qk_curve_imperfect_pt(
             v=v_pt,
             k_mc=k_pt_mc,
             g_mc=None,
-            sigma0_2=float(sigma0_pt),
+            sigma0_2=float(sigma0_pt) ** 2,
             gamma_ext=0.0,
             init_state=(s2_pt_init, gp_pt_init),
             use_grouped_k=False,
