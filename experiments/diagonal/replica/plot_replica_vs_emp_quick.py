@@ -47,17 +47,18 @@ for row, omega in enumerate(OMEGAS):
     if len(oracle):
         ax.plot(oracle["alpha"], oracle["mse_best"], "k--", lw=1.2, label="oracle")
 
-    # Empirical: sigma0_pt=0.01 (any alpha_pt, small noise so diff is negligible)
+    # Empirical: sigma0_pt=0.01, alpha_pt=0.95
     emp_n01 = sub_emp[(sub_emp["pt_mode"] == "noisy") &
-                      (sub_emp["sigma0_pt"].round(4) == 0.01)]
+                      (sub_emp["sigma0_pt"].round(4) == 0.01) &
+                      (sub_emp["alpha_pt"].round(2) == 0.95)]
     if len(emp_n01):
         grp = emp_n01.groupby("alpha_ft_req")["ft_param_mse"]
         mu  = grp.mean(); se = grp.sem()
         ax.errorbar(mu.index, mu.values, yerr=2*se.values,
                     fmt="s", color="red", capsize=3, markersize=5,
-                    label="σ₀=0.01 (emp)")
+                    label="σ₀=0.01, α_PT=0.95 (emp)")
 
-    # Empirical: sigma0_pt=0.5, alpha_pt=0.95 (new runs)
+    # Empirical: sigma0_pt=0.5, alpha_pt=0.95
     emp_n5 = sub_emp[(sub_emp["pt_mode"] == "noisy") &
                      (sub_emp["sigma0_pt"].round(2) == 0.5) &
                      (sub_emp["alpha_pt"].round(2) == 0.95)]
