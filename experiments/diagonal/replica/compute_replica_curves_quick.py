@@ -40,11 +40,12 @@ ALPHA_PT_SIGMA_LIST  = [1.0]   # alpha_pt values to show in sigma0_pt sweep
 
 # ---------------------------------------------------------------------------
 
-def _run_imperfect(alpha_pt, sigma0_pt, omega, label):
+def _run_imperfect(alpha_pt, sigma0_pt, omega, label, s2_pt_manual=None):
     print(f"\n=== {label} (imperfect) ===", flush=True)
     curve, reliability, info = rip.ptft_qk_curve_imperfect_pt(
         rho_pt=RHO_PT, rho_ft=RHO_FT, omega=omega,
         alpha_pt=alpha_pt, sigma0_pt=sigma0_pt,
+        s2_pt_manual=s2_pt_manual,
         gamma_ext=GAMMA_EXT, sigma0_2=SIGMA0_2,
         alphas=alphas_ft, mc=MC, seed=SEED,
         a_pt=A_PT, c_pt=C_PT, lambda_pt=LAMBDA_PT, gamma_reinit=GAMMA_REINIT,
@@ -67,6 +68,7 @@ def _run_imperfect(alpha_pt, sigma0_pt, omega, label):
         "reliability_db": reliability["score_db"],
         "s2_pt":          info.get("s2_pt", float("nan")),
         "gp_pt":          info.get("gp_pt", float("nan")),
+        "s2_pt_manual":   float(s2_pt_manual) if s2_pt_manual is not None else float("nan"),
     })
 
 
@@ -96,6 +98,7 @@ def _run_oracle(omega, label):
         "reliability_db": reliability["score_db"],
         "s2_pt":          float("nan"),
         "gp_pt":          float("nan"),
+        "s2_pt_manual":   float("nan"),
     })
 
 
@@ -123,6 +126,13 @@ for omega in OMEGA_LIST:
     for apt in ALPHA_PT_SIGMA_LIST:
         for sigma0_pt in SIGMA0_PT_LIST:
             records.append(_run_imperfect(apt, sigma0_pt, omega, label=f"w{omega}_apt{apt}_s0{sigma0_pt}"))
+
+    # Option A diagnostic: sigma0_pt=0.5 but with empirical pt_param_mse as s2_pt
+    # Empirical mean pt_param_mse for sigma0_pt=0.5 runs = 0.562 (vs sigma0_pt^2 = 0.25)
+    S2_PT_EMP_05 = 0.562
+    records.append(_run_imperfect(1.0, 0.5, omega,
+                                  label=f"w{omega}_apt1.0_s0{0.5}_s2emp",
+                                  s2_pt_manual=S2_PT_EMP_05))
 
 df = pd.concat(records, ignore_index=True)
 out_csv = Path(__file__).parent / "replica_quick.csv"

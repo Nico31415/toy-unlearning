@@ -101,6 +101,13 @@ for row, omega in enumerate(OMEGAS):
                     fmt="^", color="purple", capsize=3, markersize=5,
                     label="σ₀=0.5 (emp)")
 
+    # Option A: theory curve using empirical s2_pt=0.562 instead of σ₀²=0.25
+    lbl_s2emp = f"w{omega}_apt1.0_s0{0.5}_s2emp"
+    sub_s2emp = sub_rep[sub_rep["label"] == lbl_s2emp]
+    if len(sub_s2emp):
+        ax.plot(sub_s2emp["alpha"], sub_s2emp["mse_best"], color="purple",
+                linestyle="--", lw=1.5, label="σ₀=0.5 s2=emp (theory)")
+
     ax.set_xlim(0, 0.5)
     ax.legend(fontsize=7, ncol=2)
 
