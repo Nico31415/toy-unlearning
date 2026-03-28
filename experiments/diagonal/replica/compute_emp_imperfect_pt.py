@@ -100,6 +100,8 @@ def run_one(
     test_every_n_epochs: int = TEST_EVERY_N_EPOCHS,
     stop_grad_norm: float = 0.0,
     stop_pred_mse: float = 0.0,
+    pt_stop_pred_mse: float = 0.0,  # if >0, use this as standalone train_pred_mse target for PT phase
+                                     # (overrides stop_grad_norm for PT; use for noisy labels)
 ) -> Dict[str, Any]:
     """
     One PT+FT run with imperfect pretraining.
@@ -131,10 +133,7 @@ def run_one(
     emp_omega   = n_overlap / max(1, n_ft_active)
 
     # --- PT phase ---
-    if pt_mode == "underdetermined":
-        n_train_pt = _alpha_to_n_train(alpha_pt, inp_dim)
-    else:  # noisy
-        n_train_pt = inp_dim  # fully determined (alpha_pt=1 in theory)
+    n_train_pt = _alpha_to_n_train(alpha_pt, inp_dim)  # works for both modes
 
     # PT data (replica scaling: X ~ N(0, 1/d))
     x_pt_train = torch.randn(n_train_pt, inp_dim, generator=gen_pt_train_x) / math.sqrt(inp_dim)
@@ -150,6 +149,14 @@ def run_one(
     # Train PT network
     pt_net = DiagonalNet(inp_dim, scaling=1.0, lmda=float(lambda_pt), c=float(c_pt),
                          c_vec=None, init_method="complex")
+    if pt_stop_pred_mse > 0:
+        # Standalone train_pred_mse target for noisy PT: run until near-interpolation
+        _pt_stop_pred_mse_arg = float(pt_stop_pred_mse)
+        _pt_stop_grad_norm_arg = 0.0  # disable grad_norm gate
+    else:
+        _pt_stop_pred_mse_arg = float(stop_pred_mse) if stop_pred_mse > 0 else None
+        _pt_stop_grad_norm_arg = float(stop_grad_norm)
+
     pt_df, pt_net, _, pt_stop, pt_epoch = train(
         pt_net,
         (x_pt_train, y_pt_train),
@@ -160,8 +167,8 @@ def run_one(
         epochs=int(epochs),
         lr_tuning=True,
         threshold=float(threshold),
-        stop_grad_norm=float(stop_grad_norm),
-        stop_pred_mse=float(stop_pred_mse) if stop_pred_mse > 0 else None,
+        stop_grad_norm=_pt_stop_grad_norm_arg,
+        stop_pred_mse=_pt_stop_pred_mse_arg,
     )
 
     with torch.no_grad():
@@ -209,7 +216,7 @@ def run_one(
 
     return {
         "pt_mode":       pt_mode,
-        "alpha_pt":      float(alpha_pt) if pt_mode == "underdetermined" else 1.0,
+        "alpha_pt":      float(alpha_pt),
         "sigma0_pt":     0.0 if pt_mode == "underdetermined" else float(sigma0_pt),
         "alpha_ft":      float(alpha_ft_eff),
         "alpha_ft_req":  float(alpha_ft),
