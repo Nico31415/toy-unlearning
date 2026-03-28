@@ -3,17 +3,19 @@
 Custom diagonal-network experiment driver (SLURM-array friendly).
 One SLURM task = one parameter-config × (all alphas) × (all seeds).
 
-This script runs TWO experiment types:
-  1) Single-task BG (no PT+FT): experiments/diagonal/diagonal_network_pretrain_bg.py
-  2) PT+FT oracle:            experiments/diagonal/diagonal_ptft_oracle.py
+This script is primarily used for the PT+FT *oracle* diagonal-network runs:
+  - experiments/diagonal/diagonal_ptft_oracle.py
 
-User-requested alpha grid:
+The config grid below is intentionally curated for throughput (not a full Cartesian
+product of every imaginable knob). Update `_make_configs()` to change what is run.
+
+Alpha grid:
   alpha ∈ {0.05, 0.1, 0.2, 0.3, 0.4, 0.5}
 Seeds:
   seed ∈ {0, 1, 2}
 
 Output strategy:
-  - Each (config, alpha, seed) writes into a unique save_folder.
+  - Each (config, alpha, seed, optimizer condition) writes into a unique save_folder.
   - A single master CSV is appended-to safely under a file lock.
   - Idempotent: reruns do NOT overwrite; existing runs are skipped; existing master rows are not duplicated.
 
@@ -208,119 +210,60 @@ def _make_configs() -> List[Config]:
             cfg_set.add(c)
             cfgs.append(c)
 
-    # ---- Family A: single-task BG ----
-    for c in [1.0, 1e-3, 1e-6, 1e-9]:
-        add(
-            "bg",
-            rho=0.1,
-            c=float(c),
-            lmda=0.0,
-        )
-
-    # ---- PT+FT oracle families (updated to match final agreed grid) ----
+    # ---- PT+FT oracle grid (user-requested) ----
+    # Goal: fast-ish grid for optimizer comparisons while varying:
+    #   - overlap omega in {0, 1}
+    #   - lambda_pt in {-0.99*c_pt, 0, +0.99*c_pt}
+    #   - c_pt in {1e-6, 1e-3, 1}
+    #   - gamma_reinit in {0, 1, 10}
+    #
+    # We keep the two regimes used previously:
+    #   - Dense PT regime: rho_pt=0.9999, omega fixed to 1.0, rho_ft in {0.1, 0.9}
+    #   - Sparse PT overlap regime: rho_pt=0.1, rho_ft=0.1, omega endpoints {0, 1}
     a_pt = 1.0
+    c_pts = [1e-6, 1e-3, 1.0]
+    gammas = [0.0, 1.0, 10.0]
+    omega_endpoints = [0.0, 1.0]
 
-    # A) Full-overlap (omega fixed = 1.0), dense PT: rho_pt=0.9999
+    def lambda_choices(c_pt: float) -> List[float]:
+        c_pt = float(c_pt)
+        return [-0.99 * c_pt, 0.0, 0.99 * c_pt]
+
+    # Dense PT regime (full overlap only)
     rho_pt_dense = 0.9999
     omega_full = 1.0
-
-    # A1) Full overlap, rho_ft=0.1, lambda sweep (gamma=0, c_pt=0.001)
-    for lambda_pt in [-0.00099, -0.0005, 0.0, 0.0005, 0.00099]:
-        add(
-            "ptft_oracle",
-            rho_pt=rho_pt_dense,
-            rho_ft=0.1,
-            omega=omega_full,
-            a_pt=a_pt,
-            c_pt=0.001,
-            lambda_pt=float(lambda_pt),
-            gamma_reinit=0.0,
-        )
-
-    # A2) Full overlap, rho_ft=0.1, gamma sweep (lambda=0, c_pt=0.001)
-    for gamma_reinit in [0.0, 0.1, 1.0]:
-        add(
-            "ptft_oracle",
-            rho_pt=rho_pt_dense,
-            rho_ft=0.1,
-            omega=omega_full,
-            a_pt=a_pt,
-            c_pt=0.001,
-            lambda_pt=0.0,
-            gamma_reinit=float(gamma_reinit),
-        )
-
-    # A3) Full overlap, rho_ft=0.1, c_pt sweep (lambda=0, gamma=0)
-    for c_pt in [1e-6, 1e-3, 1e-1, 1.0]:
-        add(
-            "ptft_oracle",
-            rho_pt=rho_pt_dense,
-            rho_ft=0.1,
-            omega=omega_full,
-            a_pt=a_pt,
-            c_pt=float(c_pt),
-            lambda_pt=0.0,
-            gamma_reinit=0.0,
-        )
-
-    # A4) Full overlap, rho_ft ∈ {0.1, 0.9}, lambda sweep (gamma=0, c_pt=0.001)
     for rho_ft in [0.1, 0.9]:
-        for lambda_pt in [-0.00099, -0.0005, 0.0, 0.0005, 0.00099]:
-            add(
-                "ptft_oracle",
-                rho_pt=rho_pt_dense,
-                rho_ft=float(rho_ft),
-                omega=omega_full,
-                a_pt=a_pt,
-                c_pt=0.001,
-                lambda_pt=float(lambda_pt),
-                gamma_reinit=0.0,
-            )
+        for c_pt in c_pts:
+            for lambda_pt in lambda_choices(c_pt):
+                for gamma_reinit in gammas:
+                    add(
+                        "ptft_oracle",
+                        rho_pt=float(rho_pt_dense),
+                        rho_ft=float(rho_ft),
+                        omega=float(omega_full),
+                        a_pt=float(a_pt),
+                        c_pt=float(c_pt),
+                        lambda_pt=float(lambda_pt),
+                        gamma_reinit=float(gamma_reinit),
+                    )
 
-    # B) Overlap-varying families: rho_pt=0.1 everywhere omega varies, and rho_ft=0.1 only
+    # Sparse PT overlap regime (omega endpoints)
     rho_pt_sparse = 0.1
-    rho_ft_overlap = 0.1
-
-    # B1) Omega sweep (fine grid), lambda=0, gamma=0
-    for omega in [0.0, 0.25, 0.5, 0.75, 1.0]:
-        add(
-            "ptft_oracle",
-            rho_pt=rho_pt_sparse,
-            rho_ft=rho_ft_overlap,
-            omega=float(omega),
-            a_pt=a_pt,
-            c_pt=0.001,
-            lambda_pt=0.0,
-            gamma_reinit=0.0,
-        )
-
-    # B2) Omega endpoints {0,1} × lambda sweep (gamma=0)
-    for omega in [0.0, 1.0]:
-        for lambda_pt in [-0.00099, -0.0005, 0.0, 0.0005, 0.00099]:
-            add(
-                "ptft_oracle",
-                rho_pt=rho_pt_sparse,
-                rho_ft=rho_ft_overlap,
-                omega=float(omega),
-                a_pt=a_pt,
-                c_pt=0.001,
-                lambda_pt=float(lambda_pt),
-                gamma_reinit=0.0,
-            )
-
-    # B3) Omega endpoints {0,1} × gamma sweep (lambda=0)
-    for omega in [0.0, 1.0]:
-        for gamma_reinit in [0.0, 0.1, 1.0]:
-            add(
-                "ptft_oracle",
-                rho_pt=rho_pt_sparse,
-                rho_ft=rho_ft_overlap,
-                omega=float(omega),
-                a_pt=a_pt,
-                c_pt=0.001,
-                lambda_pt=0.0,
-                gamma_reinit=float(gamma_reinit),
-            )
+    rho_ft_sparse = 0.1
+    for omega in omega_endpoints:
+        for c_pt in c_pts:
+            for lambda_pt in lambda_choices(c_pt):
+                for gamma_reinit in gammas:
+                    add(
+                        "ptft_oracle",
+                        rho_pt=float(rho_pt_sparse),
+                        rho_ft=float(rho_ft_sparse),
+                        omega=float(omega),
+                        a_pt=float(a_pt),
+                        c_pt=float(c_pt),
+                        lambda_pt=float(lambda_pt),
+                        gamma_reinit=float(gamma_reinit),
+                    )
 
     # Stable ordering: bg first (by c), then ptft (by rho_pt, rho_ft, omega, c_pt, lambda_pt, gamma_reinit)
     def sort_key(c: Config) -> Tuple:
@@ -407,6 +350,13 @@ def _run_ptft_one(
     c_pt: float,
     lambda_pt: float,
     gamma_reinit: float,
+    optimizer: str,
+    lr: float,
+    weight_decay: float,
+    epochs: int,
+    fixed_point_beta_rate: float,
+    fixed_point_consecutive_evals: int,
+    fixed_point_grad_norm: float,
 ) -> Dict[str, Any]:
     n_train = _alpha_to_n_train(alpha, INP_DIM_PTFT)
     alpha_eff = n_train / float(INP_DIM_PTFT)
@@ -454,12 +404,19 @@ def _run_ptft_one(
             "--omega", str(float(omega)),
             "--a_pt", str(float(a_pt)),
             "--c_pt", str(float(c_pt)),
-            "--lambda_pt", str(float(lambda_pt)),
+            # NOTE: for negative floats, use --flag=value so argparse does not
+            # misinterpret the next token as another option.
+            f"--lambda_pt={float(lambda_pt)}",
             "--gamma_reinit", str(float(gamma_reinit)),
-            "--lr", str(float(LR)),
-            "--epochs", str(int(EPOCHS_PTFT)),
+            "--lr", str(float(lr)),
+            "--epochs", str(int(epochs)),
             "--threshold", str(float(THRESHOLD)),
             "--test_every_n_epochs", str(int(TEST_EVERY_N_EPOCHS)),
+            "--optimizer", str(optimizer),
+            "--weight_decay", str(float(weight_decay)),
+            "--fixed_point_beta_rate", str(float(fixed_point_beta_rate)),
+            "--fixed_point_consecutive_evals", str(int(fixed_point_consecutive_evals)),
+            "--fixed_point_grad_norm", str(float(fixed_point_grad_norm)),
         ]
         if NO_TUNING:
             argv.append("--no_tuning")
@@ -485,6 +442,9 @@ def _run_ptft_one(
         "c_pt": float(c_pt),
         "lambda_pt": float(lambda_pt),
         "gamma_reinit": float(gamma_reinit),
+        "optimizer": str(optimizer),
+        "lr": float(lr),
+        "weight_decay": float(weight_decay),
         "test_pred_mse": meta.get("final_test_pred_mse", np.nan),
         "train_pred_mse": meta.get("final_train_pred_mse", np.nan),
         "param_mse": meta.get("final_param_mse", np.nan),
@@ -507,6 +467,14 @@ def main() -> int:
     )
     p.add_argument("--list", action="store_true", help="List configs (with feasibility) and exit")
     p.add_argument("--dry_run", action="store_true", help="Print what would run for array_id then exit")
+    # Training overrides (useful for optimizer comparisons via env-var passthrough from SLURM)
+    p.add_argument("--optimizer", type=str, default="full_batch", choices=["full_batch", "sgd", "adam", "adamw"])
+    p.add_argument("--lr", type=float, default=LR)
+    p.add_argument("--weight_decay", type=float, default=0.0)
+    p.add_argument("--epochs", type=int, default=EPOCHS_PTFT)
+    p.add_argument("--fixed_point_beta_rate", type=float, default=1e-6)
+    p.add_argument("--fixed_point_consecutive_evals", type=int, default=2)
+    p.add_argument("--fixed_point_grad_norm", type=float, default=0.0)
     args = p.parse_args()
 
     cfgs = _make_configs()
@@ -546,6 +514,11 @@ def main() -> int:
     print(f"run_dir: {base_dir}")
     print(f"master_csv: {master_csv}")
     print(f"config: exp={cfg.exp} params={cfg_dict}")
+    print(f"training: optimizer={args.optimizer} lr={args.lr} weight_decay={args.weight_decay}")
+    print(
+        f"stopping: epochs={args.epochs} fixed_point_beta_rate={args.fixed_point_beta_rate} "
+        f"fixed_point_consecutive_evals={args.fixed_point_consecutive_evals} fixed_point_grad_norm={args.fixed_point_grad_norm}"
+    )
     print("=" * 80)
 
     key_cols = ["row_id"]
@@ -564,8 +537,18 @@ def main() -> int:
             alpha_eff = n_train / float(INP_DIM_BG if cfg.exp == "bg" else INP_DIM_PTFT)
 
             # Unique row key and save folder
-            row_id = f"{cfg.exp}__cfg={cfg_id:02d}__alpha={alpha_eff:.6f}__seed={seed}"
-            run_subdir = base_dir / "empirical_runs" / cfg.exp / f"cfg={cfg_id:02d}"
+            row_id = (
+                f"{cfg.exp}__cfg={cfg_id:02d}"
+                f"__opt={args.optimizer}__wd={float(args.weight_decay):.6g}__lr={float(args.lr):.6g}"
+                f"__alpha={alpha_eff:.6f}__seed={seed}"
+            )
+            run_subdir = (
+                base_dir
+                / "empirical_runs"
+                / cfg.exp
+                / f"opt={args.optimizer}__wd={float(args.weight_decay):.6g}__lr={float(args.lr):.6g}"
+                / f"cfg={cfg_id:02d}"
+            )
             save_folder = run_subdir / f"alpha={alpha_eff:.6f}__seed={seed}"
 
             if cfg.exp == "bg":
@@ -610,6 +593,13 @@ def main() -> int:
                     c_pt=float(cfg_dict["c_pt"]),
                     lambda_pt=float(cfg_dict["lambda_pt"]),
                     gamma_reinit=float(cfg_dict["gamma_reinit"]),
+                    optimizer=str(args.optimizer),
+                    lr=float(args.lr),
+                    weight_decay=float(args.weight_decay),
+                    epochs=int(args.epochs),
+                    fixed_point_beta_rate=float(args.fixed_point_beta_rate),
+                    fixed_point_consecutive_evals=int(args.fixed_point_consecutive_evals),
+                    fixed_point_grad_norm=float(args.fixed_point_grad_norm),
                 )
                 row = {
                     "row_id": row_id,
@@ -626,6 +616,9 @@ def main() -> int:
                     "c_pt": res["c_pt"],
                     "lambda_pt": res["lambda_pt"],
                     "gamma_reinit": res["gamma_reinit"],
+                    "optimizer": res.get("optimizer", str(args.optimizer)),
+                    "lr": res.get("lr", float(args.lr)),
+                    "weight_decay": res.get("weight_decay", float(args.weight_decay)),
                     "status": res["status"],
                     "infeasible_reason": res.get("infeasible_reason", None),
                     "ran_now": res["ran_now"],

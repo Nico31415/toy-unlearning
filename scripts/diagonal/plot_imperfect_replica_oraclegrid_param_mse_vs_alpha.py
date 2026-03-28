@@ -6,9 +6,10 @@ overlaying different alpha_pt values on the same axes (linestyle encodes alpha_p
 Inputs:
   results/replica_imperfect_pt_oraclegrid/master.csv
   plus the per-task CSVs referenced by master.csv "out_csv".
-Optionally, include the alpha_pt=1.0 ("oracle PT") baseline from an oracle sweep
-master.csv (empirical runs) produced by the custom oracle driver, e.g.:
-  results/diagonal/custom_oracle_sweeps/oracle_ptft_grid_opt3_mar25__adam/master.csv
+Optionally, include the alpha_pt=1.0 ("oracle PT") baseline from cached *replica-theory*
+curves (not empirical training runs). In this repo those are available for the
+rho_pt=0.1 overlap-endpoints families via:
+  results/replica_ptft_parallel/*.csv
 
 Outputs:
   figures/replica_imperfect_pt_oraclegrid/*.png and *.pdf
@@ -234,36 +235,34 @@ def _read_master_and_tasks(in_dir: Path) -> pd.DataFrame:
     return pd.concat(dfs, ignore_index=True)
 
 
-def _read_oracle_empirical_baseline(master_csv: Path, *, metric_col: str) -> pd.DataFrame:
+def _read_oracle_replica_baseline_from_dir(oracle_replica_dir: Path) -> pd.DataFrame:
     """
-    Load oracle sweep master.csv (empirical), convert to the same schema as the replica curves,
-    and tag as alpha_pt=1.0 so it appears as the solid linestyle.
+    Load cached oracle (alpha_pt=1) replica theory curves from a directory of CSVs.
+    Expected schema includes: rho_pt,rho_ft,omega,c_pt,lambda_pt,gamma_reinit,alpha,mse_best,...
     """
-    if not master_csv.exists():
-        raise SystemExit(f"Oracle baseline master not found: {master_csv}")
-    df = pd.read_csv(master_csv)
-    if "status" in df.columns:
-        df = df[df["status"] == "ok"].copy()
-    if "exp" in df.columns:
-        df = df[df["exp"] == "ptft_oracle"].copy()
+    if not oracle_replica_dir.exists():
+        raise SystemExit(f"Oracle replica dir not found: {oracle_replica_dir}")
 
-    if "param_mse" not in df.columns:
-        raise SystemExit(f"Oracle baseline missing 'param_mse' column: {master_csv}")
+    files = sorted([p for p in oracle_replica_dir.glob("*.csv")])
+    if not files:
+        raise SystemExit(f"No CSVs found in oracle replica dir: {oracle_replica_dir}")
 
-    out = pd.DataFrame(
-        {
-            "rho_pt": df["rho_pt"],
-            "rho_ft": df["rho_ft"],
-            "omega": df["omega"],
-            "c_pt": df["c_pt"],
-            "lambda_pt": df["lambda_pt"],
-            "gamma_reinit": df["gamma_reinit"],
-            "alpha": df["alpha"],
-            "alpha_pt": 1.0,
-            metric_col: df["param_mse"],
-        }
-    )
-    return out
+    dfs = []
+    for fp in files:
+        try:
+            df = pd.read_csv(fp)
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        df = df.copy()
+        df["alpha_pt"] = 1.0
+        dfs.append(df)
+
+    if not dfs:
+        raise SystemExit(f"Failed to read any oracle replica CSVs from: {oracle_replica_dir}")
+
+    return pd.concat(dfs, ignore_index=True)
 
 
 def main() -> int:
@@ -273,10 +272,10 @@ def main() -> int:
     p.add_argument("--in_dir", type=str, default="results/replica_imperfect_pt_oraclegrid")
     p.add_argument("--out_dir", type=str, default="figures/replica_imperfect_pt_oraclegrid")
     p.add_argument(
-        "--oracle_empirical_master",
+        "--oracle_replica_dir",
         type=str,
-        default="results/diagonal/custom_oracle_sweeps/oracle_ptft_grid_opt3_mar25__adam/master.csv",
-        help="Oracle sweep master.csv to overlay as alpha_pt=1.0 (solid linestyle).",
+        default="results/replica_ptft_parallel",
+        help="Directory of cached oracle (alpha_pt=1) replica CSV curves to overlay.",
     )
     p.add_argument("--no_oracle", action="store_true", help="Do not overlay alpha_pt=1 oracle baseline.")
     p.add_argument("--metric", type=str, default="mse_best", choices=["mse_best", "mse_fwd", "mse_bwd"])
@@ -290,7 +289,8 @@ def main() -> int:
 
     df = _read_master_and_tasks(in_dir)
     if not bool(args.no_oracle):
-        df_orc = _read_oracle_empirical_baseline(Path(args.oracle_empirical_master), metric_col=metric)
+        # IMPORTANT: this is a *replica-theory* oracle baseline (alpha_pt=1), not empirical runs.
+        df_orc = _read_oracle_replica_baseline_from_dir(Path(args.oracle_replica_dir))
         df = pd.concat([df, df_orc], ignore_index=True)
 
     df = _ensure_float_cols(

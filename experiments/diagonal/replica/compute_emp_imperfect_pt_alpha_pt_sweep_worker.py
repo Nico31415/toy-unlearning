@@ -36,11 +36,11 @@ import pandas as pd
 _HERE      = Path(__file__).resolve().parent
 _DIAG_DIR  = _HERE.parent
 _REPO_ROOT = _HERE.parents[2]
-for _p in (_REPO_ROOT, _DIAG_DIR):
+for _p in (_REPO_ROOT, _DIAG_DIR, _HERE):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-import compute_emp_imperfect_pt as emp
+import ptft_replica_imperfect_pt as rep
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ CONFIGS = [
     dict(rho_pt=0.1, rho_ft=0.01, omega=1.0, c_pt=_C_PT, lambda_pt= 0.99 * _C_PT, gamma_reinit=0.0),
 ]
 
-ALPHA_PT_LIST = [0.2, 0.5]
+ALPHA_PT_LIST = [0.01]
 ALPHA_FT_LIST = np.linspace(0.01, 0.5, 11).tolist()
 SEEDS         = list(range(14))
 
