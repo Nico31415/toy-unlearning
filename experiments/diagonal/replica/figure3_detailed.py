@@ -246,7 +246,7 @@ rep_all = ensure_numeric(rep_all_df.copy(), num_cols_rep)
 emp_all = ensure_numeric(emp_all_df.copy(), num_cols_emp)
 
 # -----------------------
-# Panel A: vary c_PT (exp1; rho_pt=rho_ft=0.1; lambda=0; gamma=0; omega in {0,1})
+# Panel A: vary c_PT (exp1; rho_pt=rho_ft=0.1; lambda=0; gamma=0; omega in {0,0.5,1})
 # -----------------------
 def panel_cpt(ax, rep_all, emp_all):
     EXPERIMENT = "exp1"
@@ -271,10 +271,11 @@ def panel_cpt(ax, rep_all, emp_all):
     emp = emp[np.isclose(emp["lambda_pt"], 0.0)]
     rep = rep[np.isclose(rep["gamma_reinit"], 0.0)]
     emp = emp[np.isclose(emp["gamma_reinit"], 0.0)]
+    # robust float matching for omega
     rep = rep[isclose_any(rep["omega"], omega_order, atol=1e-12, rtol=0.0)]
     emp = emp[isclose_any(emp["omega"], omega_order, atol=1e-12, rtol=0.0)]
 
-    base_cols = [c for c in ["rho_pt","rho_ft","c_pt","lambda_pt","gamma_reinit"]
+    base_cols = [c for c in ["rho_pt","rho_ft","c_pt","lambda_pt","gamma_reinit","ft_teacher_norm"]
                  if c in rep.columns and c in emp.columns]
 
     rep["base_key"] = make_combo_key(rep, base_cols)
@@ -284,16 +285,14 @@ def panel_cpt(ax, rep_all, emp_all):
 
     tmp = emp.groupby("base_key", as_index=False).first()
     base_to_cpt = dict(zip(tmp["base_key"], tmp["c_pt"]))
-    
-    # Merge base_keys from both rep and emp for complete color mapping
-    all_base_keys = sorted(set(rep["base_key"].unique()) | set(emp_stats["base_key"].unique()))
-    ordered_base_keys = sorted(all_base_keys, key=lambda k: base_to_cpt.get(k, 0.0))
+    base_keys = sorted(emp_stats["base_key"].unique())
+    ordered_base_keys = sorted(base_keys, key=lambda k: base_to_cpt[k])
 
     color_map = viridis_map(ordered_base_keys)
 
     # replica curves
     for om in omega_order:
-        rep_o = rep[np.isclose(rep["omega"], om, atol=1e-12, rtol=0.0)]
+        rep_o = rep[rep["omega"] == om]
         for bk, d in rep_o.groupby("base_key"):
             if bk not in color_map:
                 continue
@@ -303,7 +302,7 @@ def panel_cpt(ax, rep_all, emp_all):
 
     # empirical points
     for om in omega_order:
-        s = emp_stats[np.isclose(emp_stats["omega"], om, atol=1e-12, rtol=0.0)]
+        s = emp_stats[emp_stats["omega"] == om]
         for bk, d in s.groupby("base_key"):
             if bk not in color_map:
                 continue
@@ -320,7 +319,7 @@ def panel_cpt(ax, rep_all, emp_all):
     add_top_legend(ax, handles, labels, title=r"$c_{PT}$", ncol=len(labels), y=1.24)
 
 # -----------------------
-# Panel B: vary gamma_reinit (exp1; rho_pt=rho_ft=0.1; c_pt=1e-3; lambda=0; omega in {0,1})
+# Panel B: vary gamma_reinit (exp1; rho_pt=rho_ft=0.1; c_pt=1e-3; lambda=0; omega in {0,0.5,1})
 # -----------------------
 def panel_gamma(ax, rep_all, emp_all):
     EXPERIMENT = "exp1"
@@ -475,8 +474,8 @@ def panel_rhoft_cpt(ax, rep_all, emp_all):
     EXPERIMENT = "exp2"
     OMEGA = 0.0
     RHO_PT = 0.1
-    RHO_FT_VALUES = [0.1, 0.9]
-    ls_map = {0.1: ":", 0.9: "-"}  # rho_ft style
+    RHO_FT_VALUES = [0.01, 0.1, 0.9]
+    ls_map = {0.01: ":", 0.1: "--", 0.9: "-"}  # rho_ft style
 
     rep = rep_all.copy()
     emp = emp_all.copy()
@@ -498,7 +497,7 @@ def panel_rhoft_cpt(ax, rep_all, emp_all):
     emp = filt(emp)
 
     # color by "base combo" excluding rho_ft (c_pt drives ordering)
-    candidate_base_cols = ["omega","rho_pt","c_pt","lambda_pt","gamma_reinit"]
+    candidate_base_cols = ["omega","rho_pt","c_pt","lambda_pt","gamma_reinit","ft_teacher_norm"]
     base_cols = [c for c in candidate_base_cols if (c in rep.columns and c in emp.columns)]
     rep["base_key"] = make_combo_key(rep, base_cols)
     emp["base_key"] = make_combo_key(emp, base_cols)
@@ -513,10 +512,8 @@ def panel_rhoft_cpt(ax, rep_all, emp_all):
 
     tmp = emp.dropna(subset=["base_key","c_pt"]).groupby("base_key", as_index=False).first()
     base_to_cpt = dict(zip(tmp["base_key"], tmp["c_pt"]))
-    
-    # Merge base_keys from both rep and emp for complete color mapping
-    all_base_keys = sorted(set(rep["base_key"].unique()) | set(emp_stats["base_key"].unique()))
-    ordered_base_keys = sorted(all_base_keys, key=lambda bk: float(base_to_cpt.get(bk, np.inf)))
+    base_keys = sorted(emp_stats["base_key"].unique())
+    ordered_base_keys = sorted(base_keys, key=lambda bk: float(base_to_cpt.get(bk, np.inf)))
     color_map = viridis_map(ordered_base_keys)
 
     for rf in RHO_FT_VALUES:
@@ -547,10 +544,10 @@ def panel_gamma_rhoft(ax, rep_all, emp_all):
     EXPERIMENT = "exp2"
     OMEGA = 0.0
     RHO_PT = 0.1
-    RHO_FT_VALUES = [0.1, 0.9]
+    RHO_FT_VALUES = [0.01, 0.1, 0.9]
     C_PT = 1e-3
     LAMBDA = 0.0
-    ls_map = {0.1: ":", 0.9: "-"}
+    ls_map = {0.01: ":", 0.1: "--", 0.9: "-"}
 
     rep = rep_all.copy()
     emp = emp_all.copy()
@@ -677,44 +674,18 @@ def panel_lambda_rhoft(ax, rep_all, emp_all):
 # -----------------------
 # Build the 2x3 figure
 # -----------------------
-def build_figure3_grid(save_path="figure3.png", dpi=300):
-    fig, axes = plt.subplots(2, 3, figsize=(17.5, 8.5))
+fig, axes = plt.subplots(2, 3, figsize=(17.5, 7.5))
 
-    # spacing tuned so top-row per-axes legends fit + right-side legends fit
-    # Increased figsize height from 7.5 to 8.5 and top margin to 0.88 to fit legends
-    fig.subplots_adjust(left=0.06, right=0.88, bottom=0.10, top=0.88, wspace=0.35, hspace=0.45)
+# spacing tuned so top-row per-axes legends fit + right-side legends fit
+# fig.subplots_adjust(left=0.06, right=0.88, bottom=0.10, top=0.88, wspace=0.35, hspace=0.35)
+fig.subplots_adjust(left=0.06, right=0.88, bottom=0.10, top=0.92, wspace=0.35, hspace=0.35)
 
-    # a, b, c / d, e, f
-    panel_cpt(axes[0, 0], rep_all, emp_all)
-    panel_gamma(axes[0, 1], rep_all, emp_all)
-    panel_lambda_omega(axes[0, 2], rep_all, emp_all)
+panel_cpt(axes[0, 0], rep_all, emp_all)
+panel_gamma(axes[0, 1], rep_all, emp_all)
+panel_lambda_omega(axes[0, 2], rep_all, emp_all)
 
-    panel_rhoft_cpt(axes[1, 0], rep_all, emp_all)
-    panel_gamma_rhoft(axes[1, 1], rep_all, emp_all)
-    panel_lambda_rhoft(axes[1, 2], rep_all, emp_all)
+panel_rhoft_cpt(axes[1, 0], rep_all, emp_all)
+panel_gamma_rhoft(axes[1, 1], rep_all, emp_all)
+panel_lambda_rhoft(axes[1, 2], rep_all, emp_all)
 
-    plt.savefig(save_path, dpi=dpi)
-    return fig, axes
-
-
-def build_figure3_row(save_path="figure3_row.png", dpi=300):
-    """
-    Build a 1x6 row figure with panel order: a, b, e, c, d, f.
-    """
-    fig, axes = plt.subplots(1, 6, figsize=(20.0, 3.2))
-    fig.subplots_adjust(left=0.05, right=0.98, bottom=0.18, top=0.88, wspace=0.35)
-
-    # a, b, e, c, d, f
-    panel_cpt(axes[0], rep_all, emp_all)          # a
-    panel_gamma(axes[1], rep_all, emp_all)        # b
-    panel_lambda_omega(axes[2], rep_all, emp_all) # e
-    panel_rhoft_cpt(axes[3], rep_all, emp_all)    # c
-    panel_gamma_rhoft(axes[4], rep_all, emp_all)  # d
-    panel_lambda_rhoft(axes[5], rep_all, emp_all) # f
-
-    plt.savefig(save_path, dpi=dpi)
-    return fig, axes
-
-
-if __name__ == "__main__":
-    build_figure3_grid(save_path="figure3.png", dpi=300)
+plt.savefig("figure3_detailed.png", dpi=300)
