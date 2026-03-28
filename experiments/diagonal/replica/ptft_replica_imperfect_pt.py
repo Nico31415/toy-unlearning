@@ -114,7 +114,8 @@ def _solve_fp_qk_vec(
     sigma0_2 = float(sigma0_2)
     gamma_ext = float(gamma_ext)
 
-    s2 = float(max(sigma0_2, init_state[0])) if init_state else float(max(sigma0_2, sigma0_2))
+    noise_floor = beta * sigma0_2
+    s2 = float(max(noise_floor, init_state[0])) if init_state else float(noise_floor)
     gp = float(max(gamma_ext, init_state[1], 1e-14)) if init_state else float(max(gamma_ext, 1e-14))
 
     x = np.asarray(x, float)
@@ -167,7 +168,7 @@ def _solve_fp_qk_vec(
         mse = float(err2.mean())
         mean_sig2 = float(sig2.mean())
 
-        s2_new = float(sigma0_2 + beta * mse)
+        s2_new = float(beta * (sigma0_2 + mse))
         gp_new = float(gamma_ext + beta * mean_sig2)
 
         res = max(abs(s2_new - s2), abs(gp_new - gp))
@@ -179,7 +180,7 @@ def _solve_fp_qk_vec(
 
         s2 = (1.0 - damp) * s2 + damp * s2_new
         gp = (1.0 - damp) * gp + damp * gp_new
-        s2 = float(max(s2, sigma0_2))
+        s2 = float(max(s2, noise_floor))
         gp = float(max(gp, gamma_ext, 1e-14))
 
     active = float(np.mean(np.abs(xhat) > float(eps_active)))
@@ -470,7 +471,7 @@ def ptft_qk_curve_imperfect_pt(
         _rho_pt   = float(rho_pt)
         _a_pt     = float(a_pt)
         # sigma0_pt is std dev; the FP equations take variance = sigma0_pt**2
-        s2_pt_init  = (1.0 / _alpha_pt - 1.0) * _rho_pt * (_a_pt ** 2) + float(sigma0_pt) ** 2
+        s2_pt_init  = (1.0 / _alpha_pt - 1.0) * _rho_pt * (_a_pt ** 2) + (1.0 / _alpha_pt) * float(sigma0_pt) ** 2
         gp_pt_init  = 0.01
         k_pt_mc = np.full(int(mc), k_pt)
         _, _, (s2_pt, gp_pt), res_pt, _ = _solve_fp_qk_vec(

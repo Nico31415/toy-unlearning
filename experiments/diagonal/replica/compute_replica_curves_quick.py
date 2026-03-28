@@ -36,7 +36,7 @@ SIGMA0_2     = 0.0
 OMEGA_LIST     = [1.0, 0.0]
 ALPHA_PT_LIST  = [0.01, 0.2, 0.5, 1.0]
 SIGMA0_PT_LIST       = [0.0, 0.01, 0.05, 0.1, 0.5, 1.0, 10.0]
-ALPHA_PT_SIGMA_LIST  = [1.0]   # alpha_pt values to show in sigma0_pt sweep
+ALPHA_PT_SIGMA_LIST  = [0.95]  # alpha_pt values to show in sigma0_pt sweep (< 1: underdetermined, FP equations apply)
 
 # ---------------------------------------------------------------------------
 
@@ -178,13 +178,13 @@ for row, omega in enumerate(OMEGA_LIST):
     # --- Col 1: sigma0_pt sweep (alpha_pt=1) ---
     ax = axes[row, 1]
     for i, sigma0_pt in enumerate(SIGMA0_PT_LIST):
-        sub = sub_omega[sub_omega["label"] == f"w{omega}_apt1.0_s0{sigma0_pt}"]
+        sub = sub_omega[sub_omega["label"] == f"w{omega}_apt0.95_s0{sigma0_pt}"]
         x, y = _masked(sub)
         ax.plot(x, y, color=colors[i], label=f"σ²₀,PT={sigma0_pt}")
     x, y = _masked(sub_or)
     ax.plot(x, y, "k--", lw=1.5, label="oracle")
     ax.set_xlabel("α_FT")
-    ax.set_title(f"ω={omega}  — effect of σ²₀,PT  (α_PT=1)")
+    ax.set_title(f"ω={omega}  — effect of σ²₀,PT  (α_PT=0.95)")
     ax.legend(fontsize=7)
     ax.grid(True, alpha=0.3)
 
