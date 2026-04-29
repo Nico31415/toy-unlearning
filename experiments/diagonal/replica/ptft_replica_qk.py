@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 import itertools
 from dataclasses import dataclass
-from typing import Optional, Dict, Tuple, List, Union
+from typing import NamedTuple, Optional, Dict, Tuple, List, Union
 
 
 # -------------------------
@@ -166,13 +166,14 @@ def sample_ptft_oracle_mc(
     seed: int,
     p: PTFTOracleParams,
     ft_teacher_norm: str = "unit_total_var",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict]:
     """
     Returns:
       x    : FT ground truth (teacher) [mc]
       k_mc : per-coordinate k [mc]
       g_mc : group labels in {0,1,2,3} [mc]
       v    : N(0,1) noise [mc]
+      x_pt : PT ground truth (teacher) [mc]  -- for forgetting computation
       info : diagnostics
     """
     rho_pt = float(p.rho_pt)
@@ -235,12 +236,43 @@ def sample_ptft_oracle_mc(
         "rho_pt_emp": float(np.mean(pt_active)),
         "k_by_group": {int(i): float(np.mean(k_mc[g_mc == i])) for i in range(4) if np.any(g_mc == i)},
     }
-    return x, k_mc, g_mc, v, info
+    return x, k_mc, g_mc, v, beta_pt, info
 
 
 # -------------------------
 # Fixed-point solver (one beta) with explicit init_state
 # -------------------------
+
+class FPResult(NamedTuple):
+    """Result of a single fixed-point solve for one (beta, gamma) point.
+
+    Attributes
+    ----------
+    mse : float
+        MSE E[(xhat - x)^2] on the FT task.
+    active : float
+        Fraction of MC samples with |xhat| > eps_active.
+    state : Tuple[float, float]
+        Converged (s2, gp) fixed-point state — use as warm start for nearby betas.
+    fp_residual : float
+        Max absolute change in (s2, gp) at convergence (< tol if converged).
+    mse_se : float
+        Monte-Carlo standard error of mse (batch-means).
+    forgetting : float
+        Total forgetting F = E[(xhat - x_pt)^2]. Zero if x_pt is None.
+    forgetting_by_group : np.ndarray
+        Shape [4] per-group conditional mean F^(g), g in {0,1,2,3}:
+          0 = overlap (PT+FT active), 1 = new FT, 2 = PT-only, 3 = none.
+        Zeros if x_pt is None.
+    """
+    mse: float
+    active: float
+    state: Tuple[float, float]
+    fp_residual: float
+    mse_se: float
+    forgetting: float
+    forgetting_by_group: np.ndarray
+
 
 def solve_fp_qk_one(
     *,
@@ -258,10 +290,19 @@ def solve_fp_qk_one(
     eps_active: float = 1e-6,
     use_grouped_k: bool = True,
     n_batches_se: int = 50,
-) -> Tuple[float, float, Tuple[float, float], float, float]:
-    """
-    Returns:
-      mse, active_frac, (s2, gp), fp_residual, mse_mc_se
+    x_pt: Optional[np.ndarray] = None,
+) -> FPResult:
+    """Solve the replica fixed-point equations for one (beta, gamma_ext) point.
+
+    Returns an FPResult NamedTuple — see FPResult docstring for field descriptions.
+
+    The forgetting is a post-hoc observable (Theorem 2): no new FP equations are
+    required. It reuses the same converged xhat as the MSE, substituting x_pt for x.
+    Group mapping (same as sample_ptft_oracle_mc):
+      g=0: overlap  (PT+FT active)
+      g=1: new FT   (FT active only)
+      g=2: PT-only  (PT active only)  ← primary forgetting group
+      g=3: none     (both inactive)
     """
     beta = float(beta)
     sigma0_2 = float(sigma0_2)
@@ -285,6 +326,22 @@ def solve_fp_qk_one(
     else:
         g = None
         uniq_g = None
+
+    # Pre-process PT teacher for forgetting (Theorem 2, eq. 73/78)
+    _x_pt = np.asarray(x_pt, float) if x_pt is not None else None
+
+    def _forgetting(xhat_):
+        """Compute total forgetting and per-group forgetting from current xhat."""
+        if _x_pt is None:
+            return 0.0, np.zeros(4, dtype=float)
+        fgt_total = float(((xhat_ - _x_pt) ** 2).mean())
+        fgt_groups = np.zeros(4, dtype=float)
+        if g is not None:
+            for lab in range(4):
+                idx = (g == lab)
+                if idx.sum() > 0:
+                    fgt_groups[lab] = float(((xhat_[idx] - _x_pt[idx]) ** 2).mean())
+        return fgt_total, fgt_groups
 
     last_res = float("inf")
     for _ in range(int(max_iters)):
@@ -332,7 +389,8 @@ def solve_fp_qk_one(
         if res < float(tol):
             active = float(np.mean(np.abs(xhat) > float(eps_active)))
             mse_se = _batch_means_se(err2, n_batches=int(n_batches_se))
-            return mse, active, (s2_new, gp_new), res, mse_se
+            fgt, fgt_g = _forgetting(xhat)
+            return FPResult(mse, active, (s2_new, gp_new), res, mse_se, fgt, fgt_g)
 
         s2 = (1.0 - damp) * s2 + damp * s2_new
         gp = (1.0 - damp) * gp + damp * gp_new
@@ -342,7 +400,8 @@ def solve_fp_qk_one(
     # not converged: return last iter stats
     active = float(np.mean(np.abs(xhat) > float(eps_active)))
     mse_se = _batch_means_se(err2, n_batches=int(n_batches_se))
-    return float(mse), active, (float(s2), float(gp)), float(last_res), float(mse_se)
+    fgt, fgt_g = _forgetting(xhat)
+    return FPResult(float(mse), active, (float(s2), float(gp)), float(last_res), float(mse_se), fgt, fgt_g)
 
 
 # -------------------------
@@ -397,6 +456,7 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
     use_grouped_k: bool,
     n_batches_se: int,
     mse_floor_for_db_se: float,
+    x_pt: Optional[np.ndarray] = None,
 ) -> Dict[str, np.ndarray]:
     """
     Runs forward/backward continuation at each gamma in schedule, *reusing per-index states*
@@ -404,7 +464,8 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
 
     Returns curve dict with:
       alpha, mse_best, active_best, mse_fwd, mse_bwd, diff_db,
-      fp_residual, mse_se, mse_se_db, mse_rel_se
+      fp_residual, mse_se, mse_se_db, mse_rel_se,
+      forgetting_best, forgetting_fwd, forgetting_bwd, forgetting_by_group_best
     """
     alphas = np.asarray(alphas, float)
     betas = 1.0 / alphas
@@ -426,6 +487,8 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
     # We will store only the final gamma's curves, but we need intermediate states.
     mse_fwd = act_fwd = res_fwd = se_fwd = None
     mse_bwd = act_bwd = res_bwd = se_bwd = None
+    fgt_fwd = fgt_bwd = None
+    fgt_g_fwd = fgt_g_bwd = None
 
     for gamma_ext in gamma_schedule:
         # --- forward ---
@@ -433,12 +496,14 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
         act_fwd = np.empty_like(betas)
         res_fwd = np.empty_like(betas)
         se_fwd = np.empty_like(betas)
+        fgt_fwd = np.empty_like(betas)
+        fgt_g_fwd = np.zeros((betas.size, 4), dtype=float)
 
         prev_state = None
         for i, b in enumerate(betas):
             # Prefer the per-index warm state from previous gamma; fallback to continuation prev_state.
             init = fwd_states[i] if fwd_states[i] is not None else prev_state
-            mse, act, st, res, mse_se = solve_fp_qk_one(
+            r = solve_fp_qk_one(
                 beta=float(b),
                 x=x, v=v,
                 k_mc=k_mc, g_mc=g_mc,
@@ -451,25 +516,30 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
                 eps_active=float(eps_active),
                 use_grouped_k=bool(use_grouped_k),
                 n_batches_se=int(n_batches_se),
+                x_pt=x_pt,
             )
-            mse_fwd[i] = mse
-            act_fwd[i] = act
-            res_fwd[i] = res
-            se_fwd[i] = mse_se
-            fwd_states[i] = st
-            prev_state = st
+            mse_fwd[i] = r.mse
+            act_fwd[i] = r.active
+            res_fwd[i] = r.fp_residual
+            se_fwd[i] = r.mse_se
+            fgt_fwd[i] = r.forgetting
+            fgt_g_fwd[i] = r.forgetting_by_group
+            fwd_states[i] = r.state
+            prev_state = r.state
 
         # --- backward ---
         mse_bwd_r = np.empty_like(betas)
         act_bwd_r = np.empty_like(betas)
         res_bwd_r = np.empty_like(betas)
         se_bwd_r = np.empty_like(betas)
+        fgt_bwd_r = np.empty_like(betas)
+        fgt_g_bwd_r = np.zeros((betas.size, 4), dtype=float)
 
         prev_state = None
         for j, b in enumerate(betas[::-1]):
             i = betas.size - 1 - j
             init = bwd_states[i] if bwd_states[i] is not None else prev_state
-            mse, act, st, res, mse_se = solve_fp_qk_one(
+            r = solve_fp_qk_one(
                 beta=float(b),
                 x=x, v=v,
                 k_mc=k_mc, g_mc=g_mc,
@@ -482,18 +552,23 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
                 eps_active=float(eps_active),
                 use_grouped_k=bool(use_grouped_k),
                 n_batches_se=int(n_batches_se),
+                x_pt=x_pt,
             )
-            mse_bwd_r[j] = mse
-            act_bwd_r[j] = act
-            res_bwd_r[j] = res
-            se_bwd_r[j] = mse_se
-            bwd_states[i] = st
-            prev_state = st
+            mse_bwd_r[j] = r.mse
+            act_bwd_r[j] = r.active
+            res_bwd_r[j] = r.fp_residual
+            se_bwd_r[j] = r.mse_se
+            fgt_bwd_r[j] = r.forgetting
+            fgt_g_bwd_r[j] = r.forgetting_by_group
+            bwd_states[i] = r.state
+            prev_state = r.state
 
         mse_bwd = mse_bwd_r[::-1]
         act_bwd = act_bwd_r[::-1]
         res_bwd = res_bwd_r[::-1]
         se_bwd = se_bwd_r[::-1]
+        fgt_bwd = fgt_bwd_r[::-1]
+        fgt_g_bwd = fgt_g_bwd_r[::-1]
 
         # loop continues: next gamma reuses states arrays
 
@@ -504,6 +579,9 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
     act_best = np.where(choose_fwd, act_fwd, act_bwd)
     res_best = np.where(choose_fwd, res_fwd, res_bwd)
     se_best = np.where(choose_fwd, se_fwd, se_bwd)
+    fgt_best = np.where(choose_fwd, fgt_fwd, fgt_bwd)
+    # per-group forgetting: shape [n_alpha, 4], broadcast choose_fwd to [n_alpha, 1]
+    fgt_g_best = np.where(choose_fwd[:, None], fgt_g_fwd, fgt_g_bwd)
 
     # Relative SE in linear space (robust near MSE→0 if floored)
     mse_floor = float(max(mse_floor_for_db_se, 1e-300))
@@ -525,6 +603,12 @@ def solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
         "mse_rel_se": rel_se,
         "mse_se_db": se_db,
         "gamma_schedule": np.array(gamma_schedule, dtype=float),
+        # Forgetting observables (Theorem 2 of forgetting replica derivation)
+        # F = E[(β̂_FT - β*_PT)^2] — no new FP solve needed.
+        "forgetting_best": fgt_best,
+        "forgetting_fwd": fgt_fwd,
+        "forgetting_bwd": fgt_bwd,
+        "forgetting_by_group_best": fgt_g_best,  # shape [n_alpha, 4]
     }
 
 
@@ -582,11 +666,11 @@ def ptft_qk_curve(
         rho_pt=float(rho_pt), rho_ft=float(rho_ft), omega=float(omega),
         a_pt=float(a_pt), c_pt=float(c_pt), lambda_pt=float(lambda_pt), gamma_reinit=float(gamma_reinit)
     )
-    x, k_mc, g_mc, v, info = sample_ptft_oracle_mc(int(mc), int(seed), params, ft_teacher_norm=ft_teacher_norm)
+    x, k_mc, g_mc, v, x_pt, info = sample_ptft_oracle_mc(int(mc), int(seed), params, ft_teacher_norm=ft_teacher_norm)
 
     curve = solve_curve_with_gamma_homotopy_best_of_fwd_bwd(
         alphas=alphas,
-        x=x, v=v,
+        x=x, v=v, x_pt=x_pt,
         k_mc=k_mc,
         g_mc=g_mc if use_grouped_k else None,
         sigma0_2=float(sigma0_2),
@@ -838,6 +922,10 @@ def build_ptft_curves_dataframe(
             n = len(alphas_arr)
             
             # Create one row per (parameter combo, alpha) pair
+            # forgetting_best / forgetting_by_group_best are always present (filled with 0
+            # when x_pt is None, which doesn't happen in ptft_qk_curve since x_pt is always
+            # passed from sample_ptft_oracle_mc)
+            fg_g = curve["forgetting_by_group_best"]   # shape [n_alpha, 4]
             for i in range(n):
                 row = {
                     # Parameter values
@@ -866,6 +954,15 @@ def build_ptft_curves_dataframe(
                     # Sampling info
                     "rho_pt_emp": sampling_info["rho_pt_emp"],
                     "rho_ft_emp": sampling_info["rho_ft_emp"],
+                    # Forgetting observables (Theorem 2) -- F = E[(β̂_FT - β*_PT)^2]
+                    # g=0: overlap, g=1: new FT, g=2: PT-only (primary forgetting), g=3: none
+                    "forgetting_best": curve["forgetting_best"][i],
+                    "forgetting_fwd": curve["forgetting_fwd"][i],
+                    "forgetting_bwd": curve["forgetting_bwd"][i],
+                    "forgetting_g0_overlap": fg_g[i, 0],
+                    "forgetting_g1_new":     fg_g[i, 1],
+                    "forgetting_g2_ptonly":  fg_g[i, 2],
+                    "forgetting_g3_none":    fg_g[i, 3],
                 }
                 results.append(row)
                 
@@ -993,5 +1090,94 @@ def build_single_task_curves_dataframe(
         except Exception as e:
             print(f"Warning: Failed for params (rho={rho_val}, c={c_val}): {e}")
             continue
-    
+
     return pd.DataFrame(results)
+
+
+# -------------------------
+# Public API: forgetting curve (Theorem 2 convenience wrapper)
+# -------------------------
+
+def ptft_forgetting_curve(
+    *,
+    rho_pt: float = 0.10,
+    rho_ft: float = 0.10,
+    omega: float = 0.50,
+    gamma_ext: float = 1e-6,
+    sigma0_2: float = 0.0,
+    alphas: Optional[np.ndarray] = None,
+    alpha_min: float = 0.01,
+    alpha_max: float = 0.5,
+    n_alpha: int = 21,
+    mc: int = 80_000,
+    seed: int = 0,
+    a_pt: float = 1.0,
+    c_pt: float = 0.001,
+    lambda_pt: float = 0.0,
+    gamma_reinit: float = 0.0,
+    max_iters: int = 900,
+    tol: float = 1e-10,
+    damp: float = 0.25,
+    eps_active: float = 1e-6,
+    use_grouped_k: bool = True,
+    n_batches_se: int = 50,
+    gamma_schedule: Optional[List[float]] = None,
+    mse_floor_for_db_se: float = 1e-12,
+    ft_teacher_norm: str = "unit_total_var",
+) -> Dict[str, np.ndarray]:
+    """
+    Compute the forgetting curve F(alpha_FT) alongside the generalisation error curve p_FT.
+
+    F = E[(β̂_FT - β*_PT)^2] = how much fine-tuning forgets the pretraining teacher.
+    p_FT = E[(β̂_FT - β*_FT)^2] = generalisation error on the FT task.
+
+    Both are computed at the same fixed point — no additional solve needed.
+
+    Returns a dict with:
+      alpha           : array of alpha_FT values
+      forgetting      : F(alpha_FT)          -- total forgetting
+      mse             : p_FT(alpha_FT)        -- generalisation error (for comparison)
+      forgetting_g0   : F^(g=0) overlap group
+      forgetting_g1   : F^(g=1) new FT group
+      forgetting_g2   : F^(g=2) PT-only group  <- primary forgetting
+      forgetting_g3   : F^(g=3) none group
+      mse_g0..g3      : per-group generalisation error
+      (plus all keys from ptft_qk_curve for diagnostics)
+
+    Group interpretation (Section 18.13 of the derivation):
+      g=0 (overlap, PT+FT active):  forgetting-generalisation trade-off locus
+      g=1 (new FT, FT active only): intrusion forgetting (moving into PT-inactive dims)
+      g=2 (PT-only, PT active only): PRIMARY forgetting term — signal erased from PT
+      g=3 (none, both inactive):    spurious activations
+    """
+    curve, reliability, info = ptft_qk_curve(
+        rho_pt=rho_pt, rho_ft=rho_ft, omega=omega,
+        gamma_ext=gamma_ext, sigma0_2=sigma0_2,
+        alphas=alphas, alpha_min=alpha_min, alpha_max=alpha_max, n_alpha=n_alpha,
+        mc=mc, seed=seed,
+        a_pt=a_pt, c_pt=c_pt, lambda_pt=lambda_pt, gamma_reinit=gamma_reinit,
+        max_iters=max_iters, tol=tol, damp=damp, eps_active=eps_active,
+        use_grouped_k=use_grouped_k, n_batches_se=n_batches_se,
+        gamma_schedule=gamma_schedule, mse_floor_for_db_se=mse_floor_for_db_se,
+        ft_teacher_norm=ft_teacher_norm,
+    )
+
+    fg = curve.get("forgetting_by_group_best")  # shape [n_alpha, 4] or None
+    out = {
+        "alpha": curve["alpha"],
+        "forgetting": curve["forgetting_best"],
+        "mse": curve["mse_best"],
+        "forgetting_g0_overlap": fg[:, 0] if fg is not None else np.full(curve["alpha"].shape, float("nan")),
+        "forgetting_g1_new":     fg[:, 1] if fg is not None else np.full(curve["alpha"].shape, float("nan")),
+        "forgetting_g2_ptonly":  fg[:, 2] if fg is not None else np.full(curve["alpha"].shape, float("nan")),
+        "forgetting_g3_none":    fg[:, 3] if fg is not None else np.full(curve["alpha"].shape, float("nan")),
+        # diagnostics
+        "fp_residual": curve["fp_residual"],
+        "diff_db": curve["diff_db"],
+        "reliability_score_db": float(reliability["score_db"]),
+    }
+    # Also expose raw curve for full access
+    out["_curve"] = curve
+    out["_reliability"] = reliability
+    out["_sampling_info"] = info
+    return out
