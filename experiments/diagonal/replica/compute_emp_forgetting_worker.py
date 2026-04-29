@@ -21,8 +21,9 @@ Fixed: rho_pt=rho_ft=0.1, omega=0.5, inp_dim=5000, a_pt=1.0
 """
 
 REGIMES = [
-    ("regime_II", 1e-3,  0.0,     0.0),   # (name, c_pt, lambda_pt, gamma_reinit)
-    ("regime_IV", 1e-3, -0.99e-3, 0.0),
+    ("regime_II",  1e-3,  0.0,     0.0),   # (name, c_pt, lambda_pt, gamma_reinit)
+    ("regime_IV",  1e-3, -0.99e-3, 0.0),
+    ("regime_III", 1e-3,  0.0,    10.0),
 ]
 
 ALPHAS = list(np.linspace(0.01, 0.5, 11))
