@@ -218,14 +218,23 @@ def sample_ft_teacher_with_overlap(
     support_pt: torch.Tensor,
     generator: torch.Generator,
     ft_teacher_norm: str = DEFAULT_FT_TEACHER_NORM,
+    beta_pt: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     FT teacher: Bernoulli-Gaussian with controlled overlap with PT support.
     Overlap definition: omega = |S_pt ∩ S_ft| / |S_ft|.
 
     ft_teacher_norm:
-      - "unit_total_var": nonzeros ~ Normal(0, 1/rho_ft) so that E[beta_i^2]=1  (DEFAULT / current)
-      - "unit_nonzero_var": nonzeros ~ Normal(0, 1) so that Var(nonzero)=1
+      - "unit_total_var":    nonzeros ~ Normal(0, 1/rho_ft)  (DEFAULT)
+      - "unit_nonzero_var":  nonzeros ~ Normal(0, 1)
+      - "aligned_overlap":   overlap coords get beta_pt value (same sign/magnitude as PT),
+                             new-FT coords get Normal(0, 1/rho_ft)
+      - "opposite_overlap":  overlap coords get -beta_pt value (flipped sign),
+                             new-FT coords get Normal(0, 1/rho_ft)
+      - "zero_overlap":      overlap coords are 0 (FT ignores shared features),
+                             new-FT coords get Normal(0, 1/rho_ft)
+
+    beta_pt is required for aligned_overlap / opposite_overlap / zero_overlap.
     """
     inp_dim = int(inp_dim)
     rho_ft = float(rho_ft)
@@ -250,16 +259,35 @@ def sample_ft_teacher_with_overlap(
     support_ft[new_idx] = True
 
     beta_ft = torch.zeros(inp_dim, dtype=torch.float64)
-    k = int(support_ft.sum().item())
-    if k > 0:
-        ft_teacher_norm = str(ft_teacher_norm)
-        if ft_teacher_norm == "unit_total_var":
-            z = torch.randn(k, generator=generator, dtype=torch.float64) / math.sqrt(rho_ft)
-        elif ft_teacher_norm == "unit_nonzero_var":
-            z = torch.randn(k, generator=generator, dtype=torch.float64)
-        else:
-            raise ValueError(f"Unknown ft_teacher_norm={ft_teacher_norm!r}")
-        beta_ft[support_ft] = z
+    ft_teacher_norm = str(ft_teacher_norm)
+
+    n_new_act = int(new_idx.numel())
+    sigma_new = 1.0 / math.sqrt(rho_ft)
+
+    if ft_teacher_norm == "unit_total_var":
+        k = int(support_ft.sum().item())
+        if k > 0:
+            beta_ft[support_ft] = torch.randn(k, generator=generator, dtype=torch.float64) / math.sqrt(rho_ft)
+    elif ft_teacher_norm == "unit_nonzero_var":
+        k = int(support_ft.sum().item())
+        if k > 0:
+            beta_ft[support_ft] = torch.randn(k, generator=generator, dtype=torch.float64)
+    elif ft_teacher_norm in ("aligned_overlap", "opposite_overlap", "zero_overlap"):
+        if beta_pt is None:
+            raise ValueError(f"ft_teacher_norm={ft_teacher_norm!r} requires beta_pt to be passed")
+        # New-FT coords (g=1): always independent normal
+        if n_new_act > 0:
+            beta_ft[new_idx] = torch.randn(n_new_act, generator=generator, dtype=torch.float64) * sigma_new
+        # Overlap coords (g=0): depends on convention
+        if int(overlap_idx.numel()) > 0:
+            if ft_teacher_norm == "aligned_overlap":
+                beta_ft[overlap_idx] = beta_pt[overlap_idx].to(torch.float64)
+            elif ft_teacher_norm == "opposite_overlap":
+                beta_ft[overlap_idx] = -beta_pt[overlap_idx].to(torch.float64)
+            # zero_overlap: leave beta_ft[overlap_idx] = 0 (already initialised)
+    else:
+        raise ValueError(f"Unknown ft_teacher_norm={ft_teacher_norm!r}")
+
     return beta_ft, support_ft
 
 
@@ -600,7 +628,8 @@ def run_one(
 
         gen_ft = torch.Generator(device="cpu").manual_seed(seed + 1)
         beta_ft, support_ft = sample_ft_teacher_with_overlap(
-            inp_dim, rho_ft, omega, support_pt, gen_ft, ft_teacher_norm=ft_teacher_norm
+            inp_dim, rho_ft, omega, support_pt, gen_ft,
+            ft_teacher_norm=ft_teacher_norm, beta_pt=beta_pt,
         )
 
         y_train = x_train @ beta_ft
@@ -659,6 +688,8 @@ def run_one(
             torch.save(beta_pt, os.path.join(save_folder, "beta_pt.pt"))
             torch.save(beta_ft, os.path.join(save_folder, "beta_ft.pt"))
             torch.save(net.state_dict(), os.path.join(save_folder, "model.pt"))
+            torch.save(support_pt, os.path.join(save_folder, "support_pt.pt"))
+            torch.save(support_ft, os.path.join(save_folder, "support_ft.pt"))
             # Save initial-state diagnostics
             np.save(os.path.join(save_folder, "beta0.npy"), beta0)
             with open(os.path.join(save_folder, "config.json"), "w") as f:
