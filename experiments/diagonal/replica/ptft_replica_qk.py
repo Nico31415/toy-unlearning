@@ -215,14 +215,44 @@ def sample_ptft_oracle_mc(
         # FT teacher amplitude convention (default preserves existing behavior):
         # - "unit_total_var": Var(nonzero)=1/rho_ft so that E[x_i^2]=1 regardless of rho_ft
         # - "unit_nonzero_var": Var(nonzero)=1 so that typical active feature has O(1) magnitude
+        # - "aligned_overlap": selective machine unlearning setup:
+        #     g=0 (overlap): x = a_pt (FT teacher agrees with PT teacher on shared features)
+        #     g=1 (new FT): x ~ N(0, 1/sqrt(rho_ft))  (independent new-task signal)
+        #   => perfect FT would give F^(overlap)->0, F^(ptonly)->a_pt^2 (desired for unlearning)
         ft_teacher_norm = str(ft_teacher_norm)
         if ft_teacher_norm == "unit_total_var":
             sigma_ft = 1.0 / math.sqrt(rho_ft)
+            x[ft_nonzero] = rng.normal(0.0, sigma_ft, size=n_ft)
         elif ft_teacher_norm == "unit_nonzero_var":
             sigma_ft = 1.0
+            x[ft_nonzero] = rng.normal(0.0, sigma_ft, size=n_ft)
+        elif ft_teacher_norm == "aligned_overlap":
+            # Selective unlearning: FT teacher agrees with PT teacher on shared features.
+            # g=0 -> x = +a_pt,  g=1 -> x ~ N(0, sigma_ft)
+            sigma_ft = 1.0 / math.sqrt(rho_ft)
+            g0_mask = g_mc == 0
+            g1_mask = g_mc == 1
+            x[g0_mask] = float(p.a_pt)
+            x[g1_mask] = rng.normal(0.0, sigma_ft, size=int(g1_mask.sum()))
+        elif ft_teacher_norm == "opposite_overlap":
+            # Sanity check: FT teacher has OPPOSITE sign to PT teacher on shared features.
+            # g=0 -> x = -a_pt,  g=1 -> x ~ N(0, sigma_ft)
+            # Expect F^overlap -> (2*a_pt)^2 = 4,  p_FT -> 0 as alpha->inf
+            sigma_ft = 1.0 / math.sqrt(rho_ft)
+            g0_mask = g_mc == 0
+            g1_mask = g_mc == 1
+            x[g0_mask] = -float(p.a_pt)
+            x[g1_mask] = rng.normal(0.0, sigma_ft, size=int(g1_mask.sum()))
+        elif ft_teacher_norm == "zero_overlap":
+            # Sanity check: FT teacher has ZERO signal on shared features.
+            # g=0 -> x = 0,  g=1 -> x ~ N(0, sigma_ft)
+            # Expect F^overlap -> a_pt^2 = 1,  p_FT -> rho_ov * a_pt^2 / rho_ft as alpha->inf
+            sigma_ft = 1.0 / math.sqrt(rho_ft)
+            g1_mask = g_mc == 1
+            # x[g0] stays 0 (initialised above)
+            x[g1_mask] = rng.normal(0.0, sigma_ft, size=int(g1_mask.sum()))
         else:
             raise ValueError(f"Unknown ft_teacher_norm={ft_teacher_norm!r}")
-        x[ft_nonzero] = rng.normal(0.0, sigma_ft, size=n_ft)
 
     c_ft = compute_c_ft_from_pt(beta_pt, p.c_pt, p.lambda_pt, p.gamma_reinit)
     k_mc = 4.0 * (c_ft ** 2)
