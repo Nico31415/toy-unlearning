@@ -32,7 +32,7 @@ import ptft_replica_qk as rep
 RESULTS_DIR   = Path("results/forgetting")
 OUT_DIR       = RESULTS_DIR
 MC            = 50_000
-ALPHAS        = np.linspace(0.01, 0.8, 31)
+ALPHAS        = np.linspace(0.01, 0.5, 21)  # matches existing cache grid
 C_PT          = 1e-3
 
 LAMBDA_FRACS  = [0.0, -0.1, -0.3, -0.5, -0.7, -0.9, -0.95, -0.99]  # λ / c_pt
