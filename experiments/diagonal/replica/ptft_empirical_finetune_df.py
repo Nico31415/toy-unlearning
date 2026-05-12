@@ -39,6 +39,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -233,6 +234,9 @@ def sample_ft_teacher_with_overlap(
                              new-FT coords get Normal(0, 1/rho_ft)
       - "zero_overlap":      overlap coords are 0 (FT ignores shared features),
                              new-FT coords get Normal(0, 1/rho_ft)
+      - "correlated_overlap_q{q}":
+                             overlap coords get q * beta_pt + sqrt(1-q^2) * N(0, a_pt^2),
+                             with q encoded as e.g. correlated_overlap_q0p50
 
     beta_pt is required for aligned_overlap / opposite_overlap / zero_overlap.
     """
@@ -272,7 +276,7 @@ def sample_ft_teacher_with_overlap(
         k = int(support_ft.sum().item())
         if k > 0:
             beta_ft[support_ft] = torch.randn(k, generator=generator, dtype=torch.float64)
-    elif ft_teacher_norm in ("aligned_overlap", "opposite_overlap", "zero_overlap"):
+    elif ft_teacher_norm in ("aligned_overlap", "opposite_overlap", "zero_overlap") or ft_teacher_norm.startswith("correlated_overlap_q"):
         if beta_pt is None:
             raise ValueError(f"ft_teacher_norm={ft_teacher_norm!r} requires beta_pt to be passed")
         # New-FT coords (g=1): always independent normal
@@ -284,6 +288,22 @@ def sample_ft_teacher_with_overlap(
                 beta_ft[overlap_idx] = beta_pt[overlap_idx].to(torch.float64)
             elif ft_teacher_norm == "opposite_overlap":
                 beta_ft[overlap_idx] = -beta_pt[overlap_idx].to(torch.float64)
+            elif ft_teacher_norm.startswith("correlated_overlap_q"):
+                m = re.fullmatch(r"correlated_overlap_q([0-9]+(?:p[0-9]+)?)", ft_teacher_norm)
+                if m is None:
+                    raise ValueError(
+                        "correlated overlap teacher must be named like "
+                        "'correlated_overlap_q0p50'"
+                    )
+                q = float(m.group(1).replace("p", "."))
+                if not (0.0 <= q <= 1.0):
+                    raise ValueError(f"correlated overlap q must be in [0,1], got {q}")
+                beta_pt_overlap = beta_pt[overlap_idx].to(torch.float64)
+                # Keep the overlap second moment on the same scale as beta_pt while
+                # making FT only partially aligned with PT.
+                noise_scale = float(torch.sqrt(torch.mean(beta_pt_overlap ** 2)).item())
+                noise = torch.randn(int(overlap_idx.numel()), generator=generator, dtype=torch.float64)
+                beta_ft[overlap_idx] = q * beta_pt_overlap + math.sqrt(max(0.0, 1.0 - q * q)) * noise_scale * noise
             # zero_overlap: leave beta_ft[overlap_idx] = 0 (already initialised)
     else:
         raise ValueError(f"Unknown ft_teacher_norm={ft_teacher_norm!r}")
