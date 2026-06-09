@@ -1,62 +1,121 @@
 #!/bin/bash
-#SBATCH --job-name=submit_unlearn
-#SBATCH --time=00:05:00
+#SBATCH --job-name=unlearn_all
+#SBATCH --time=02:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=1G
-#SBATCH --array=0-11
+#SBATCH --mem=16G
+#SBATCH --array=0-7985%100
 set -euo pipefail
 
-if ! command -v sbatch >/dev/null 2>&1; then
-  echo "ERROR: sbatch not found. Run this script on a Slurm login node." >&2
+if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+  echo "ERROR: submit this script with sbatch, not bash:" >&2
+  echo "  sbatch $0" >&2
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-SUBMIT_SCRIPTS=(
-  # Experiment 1: main empirical forgetting sweep.
-  submit_emp_forgetting.sh
-  # Experiment 2: empirical sanity checks and omega/lambda variants.
-  submit_emp_sanity_check_omega00.sh
-  submit_emp_sanity_check_omega01.sh
-  submit_emp_sanity_check_omega05.sh
-  submit_emp_sanity_check_omega09.sh
-  submit_emp_sanity_check_omega1.sh
-  submit_emp_sanity_check_omega05_lam099.sh
-  # Experiment 3: replica sanity curves.
-  submit_replica_sanity_check_omega05.sh
-  # Experiment 4: correlated-overlap q sweep.
-  submit_emp_correlated_overlap_q_sweep.sh
-  # Experiment 5: scratch FT baseline.
-  submit_emp_correlated_overlap_scratch.sh
-  # Experiment 6: PT recovery assays.
-  submit_readout_recovery_correlated_overlap.sh
-  submit_gd_recovery_correlated_overlap.sh
-)
-
-submit() {
-  local script="$1"
-  echo "[submit] $script"
-  sbatch "$SCRIPT_DIR/$script"
-}
-
-if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
-  task_id="$SLURM_ARRAY_TASK_ID"
-  if (( task_id < 0 || task_id >= ${#SUBMIT_SCRIPTS[@]} )); then
-    echo "ERROR: SLURM_ARRAY_TASK_ID=$task_id out of range 0..$((${#SUBMIT_SCRIPTS[@]} - 1))" >&2
-    exit 1
-  fi
-  submit "${SUBMIT_SCRIPTS[$task_id]}"
-else
-  for script in "${SUBMIT_SCRIPTS[@]}"; do
-    submit "$script"
-  done
+REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+PY="${PY:-/home/na658/.conda/envs/mtl_ft/bin/python}"
+if [[ ! -x "$PY" ]]; then
+  PY="python"
 fi
 
-# Post-hoc metric generation. This should run after the correlated-overlap and
-# scratch arrays have completed; submit it now if your Slurm dependency policy
-# or manual workflow handles ordering externally.
-echo
-echo "Not auto-submitting submit_correlated_overlap_with_scratch_metrics.sh because it depends on q-sweep and scratch artifacts."
-echo "Run it after those arrays complete:"
-echo "  sbatch $SCRIPT_DIR/submit_correlated_overlap_with_scratch_metrics.sh"
+cd "$REPO_ROOT"
+mkdir -p results logs
+
+task_id="$SLURM_ARRAY_TASK_ID"
+
+run() {
+  echo "[unlearn_all] global_task_id=$task_id"
+  echo "[unlearn_all] command: $PY $*"
+  "$PY" "$@"
+}
+
+# Segment sizes:
+#   forgetting                       330    global 0..329
+#   sanity omega/lambda variants   6*495   global 330..3299
+#   replica sanity                    30    global 3300..3329
+#   correlated q sweep               495    global 3330..3824
+#   scratch baseline                 165    global 3825..3989
+#   readout recovery                 108    global 3990..4097
+#   GD recovery                     3888    global 4098..7985
+
+if (( task_id < 330 )); then
+  run experiments/diagonal/replica/compute_emp_forgetting_worker.py \
+    --task-id "$task_id" \
+    --output-dir results/forgetting
+elif (( task_id < 825 )); then
+  local_id=$((task_id - 330))
+  run experiments/diagonal/replica/compute_emp_sanity_check_worker.py \
+    --task-id "$local_id" \
+    --omega 0.0 \
+    --regime-iv-lambda-mult -0.95 \
+    --output-dir results/sanity_check_omega00
+elif (( task_id < 1320 )); then
+  local_id=$((task_id - 825))
+  run experiments/diagonal/replica/compute_emp_sanity_check_worker.py \
+    --task-id "$local_id" \
+    --omega 0.1 \
+    --regime-iv-lambda-mult -0.95 \
+    --output-dir results/sanity_check_omega01
+elif (( task_id < 1815 )); then
+  local_id=$((task_id - 1320))
+  run experiments/diagonal/replica/compute_emp_sanity_check_worker.py \
+    --task-id "$local_id" \
+    --omega 0.5 \
+    --regime-iv-lambda-mult -0.95 \
+    --output-dir results/sanity_check
+elif (( task_id < 2310 )); then
+  local_id=$((task_id - 1815))
+  run experiments/diagonal/replica/compute_emp_sanity_check_worker.py \
+    --task-id "$local_id" \
+    --omega 0.9 \
+    --regime-iv-lambda-mult -0.95 \
+    --output-dir results/sanity_check_omega09
+elif (( task_id < 2805 )); then
+  local_id=$((task_id - 2310))
+  run experiments/diagonal/replica/compute_emp_sanity_check_worker.py \
+    --task-id "$local_id" \
+    --omega 1.0 \
+    --regime-iv-lambda-mult -0.95 \
+    --output-dir results/sanity_check_omega1
+elif (( task_id < 3300 )); then
+  local_id=$((task_id - 2805))
+  run experiments/diagonal/replica/compute_emp_sanity_check_worker.py \
+    --task-id "$local_id" \
+    --omega 0.5 \
+    --regime-iv-lambda-mult -0.99 \
+    --output-dir results/sanity_check_lam099
+elif (( task_id < 3330 )); then
+  local_id=$((task_id - 3300))
+  run experiments/diagonal/replica/compute_replica_sanity_check_worker.py \
+    --task-id "$local_id" \
+    --omega 0.5 \
+    --output-dir results/replica_sanity_check_omega05 \
+    --n-alpha-chunks 5 \
+    --mc 80000
+elif (( task_id < 3825 )); then
+  local_id=$((task_id - 3330))
+  run experiments/diagonal/replica/compute_emp_correlated_overlap_worker.py \
+    --task-id "$local_id" \
+    --omega 0.5 \
+    --output-dir results/sanity_check_correlated_overlap_q_sweep
+elif (( task_id < 3990 )); then
+  local_id=$((task_id - 3825))
+  run experiments/diagonal/replica/compute_emp_correlated_overlap_scratch_worker.py \
+    --task-id "$local_id" \
+    --omega 0.5 \
+    --output-dir results/sanity_check_correlated_overlap_scratch
+elif (( task_id < 4098 )); then
+  local_id=$((task_id - 3990))
+  run experiments/diagonal/replica/compute_readout_recovery_worker.py \
+    --task-id "$local_id" \
+    --output-dir results/readout_recovery_correlated_overlap
+elif (( task_id < 7986 )); then
+  local_id=$((task_id - 4098))
+  run experiments/diagonal/replica/compute_gd_recovery_worker.py \
+    --task-id "$local_id" \
+    --output-dir results/gd_recovery_correlated_overlap \
+    --variants all
+else
+  echo "ERROR: task_id=$task_id outside configured range 0..7985" >&2
+  exit 1
+fi
