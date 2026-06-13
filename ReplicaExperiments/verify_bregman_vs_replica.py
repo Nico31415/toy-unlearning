@@ -21,7 +21,7 @@ import math, sys
 from pathlib import Path
 
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, brentq
 
 import matplotlib
 matplotlib.use("Agg")
@@ -118,20 +118,68 @@ def make_problem(D, rho_pt, p_forget, alpha, seed, sigma0_sq=1e-5):
 # Replica reference (single-alpha, forward iteration from prior-MSE init)
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _prox_qk_newton(v, lam, k, n_iter=80):
+    lam = float(max(lam, 1e-14)); k = float(max(k, _EPS_K))
+    sqk = math.sqrt(k); coeff = lam / 2.0
+    v = np.asarray(v, dtype=float); x = v / (1.0 + 2.0 * coeff / sqk)
+    for _ in range(n_iter):
+        t = 2.0 * x / sqk; r = x + coeff * np.arcsinh(t) - v
+        drdx = 1.0 + coeff * 2.0 / sqk / np.sqrt(1.0 + t**2); x = x - r / drdx
+    return x
+
+
 def bregman_prox_np(z, lam, k, beta0):
-    shift = lam * 0.5 * np.arcsinh(2.0 * beta0 / math.sqrt(max(k, _EPS_K)))
-    return prox_qk_safeguarded(z + shift, lam, k)
+    lam = float(max(lam, 1e-14)); k = float(max(k, _EPS_K))
+    shift = lam * 0.5 * np.arcsinh(2.0 * np.asarray(beta0) / math.sqrt(k))
+    return _prox_qk_newton(np.asarray(z, dtype=float) + shift, lam, k)
 
 
-def replica_one(alpha, target_mc, center_mc, v_mc, k, sigma0_sq=0.001, gamma_ext=1e-9):
-    s2  = max(sigma0_sq + alpha * float(np.mean((target_mc - center_mc)**2)), 1e-6)
-    gp  = max(gamma_ext + alpha * float(np.mean(sigma2_qk(center_mc, 1.0, k))), 1e-14)
-    damp = 0.25
+def _oracle_gp(alpha, k, var_nz, n_mc=20_000, seed=0):
+    """Find gp s.t. E[(bregman_prox(0,gp,k,β)−β)²] = α·var_nz (DECREASING in gp)."""
+    rng = np.random.default_rng(seed)
+    betas = rng.normal(0.0, math.sqrt(var_nz), n_mc)
+    target = alpha * var_nz
+    def err_at(gp):
+        return float(np.mean((bregman_prox_np(np.zeros(n_mc), gp, k, betas) - betas)**2))
+    e_lo = err_at(1e-8); e_hi = err_at(1e4)
+    if target >= e_lo or target <= e_hi:
+        return None
+    return float(brentq(lambda g: err_at(g) - target, 1e-8, 1e4, xtol=1e-5, rtol=1e-5))
 
-    state_f = None  # fwd
-    state_b = None  # bwd (unused, just use single sweep here)
 
-    def _run(s2i, gpi):
+def stage2_oracle_curve_v(alphas, beta_pt_mc, eff_ul_mc, mask_F_mc, n_mc,
+                           rho_pt, p_forget, sigma0_sq, k, seed=42):
+    """Oracle-gp SE for Stage 2; returns err_F array over alphas (α ≤ 1 only)."""
+    var_nz = 1.0 / rho_pt
+    rng = np.random.default_rng(seed)
+    errs = np.full(len(alphas), float('nan'))
+    for i, alpha in enumerate(alphas):
+        if alpha > 1.0:
+            continue
+        gp = _oracle_gp(alpha, k, var_nz, n_mc=n_mc, seed=seed + i + 1)
+        if gp is None:
+            continue
+        s2 = sigma0_sq
+        v  = rng.standard_normal(n_mc)
+        for _ in range(2000):
+            z    = eff_ul_mc + math.sqrt(max(s2, 1e-20)) * v
+            xhat = bregman_prox_np(z, gp, k, beta_pt_mc)
+            mse  = float(np.mean((xhat - eff_ul_mc)**2))
+            s2n  = sigma0_sq + alpha * mse
+            if abs(s2n - s2) < 1e-12: break
+            s2 = 0.9 * s2 + 0.1 * s2n; s2 = max(s2, sigma0_sq)
+        v    = rng.standard_normal(n_mc)
+        z    = eff_ul_mc + math.sqrt(max(s2, 1e-20)) * v
+        xhat = bregman_prox_np(z, gp, k, beta_pt_mc)
+        errs[i] = float(np.mean((xhat[mask_F_mc] - beta_pt_mc[mask_F_mc])**2))
+    return errs
+
+
+def replica_sweep(alphas, target_mc, center_mc, v_mc, k, sigma0_sq=0.001, gamma_ext=1e-9):
+    """
+    Forward + backward sweep returning (xhat_fwd, xhat_bwd) arrays of shape (n_alpha, n_mc).
+    """
+    def _run_one(alpha, s2i, gpi):
         s2_, gp_ = s2i, gpi
         for _ in range(1000):
             z    = target_mc + math.sqrt(max(s2_, 1e-15)) * v_mc
@@ -147,22 +195,43 @@ def replica_one(alpha, target_mc, center_mc, v_mc, k, sigma0_sq=0.001, gamma_ext
         xhat = bregman_prox_np(z, gp_, k, center_mc)
         return xhat, s2_, gp_
 
-    xf, s2f, gpf = _run(s2, gp)
-    # backward: start from large alpha state (try large init)
-    xb, s2b, gpb = _run(float(np.mean((target_mc-center_mc)**2)) * max(alpha,0.5) + sigma0_sq,
-                         max(alpha * float(np.mean(sigma2_qk(target_mc, 1.0, k))), 1e-4))
-    # pick minimum mse (physical = lower free energy proxy)
-    mf = float(np.mean((target_mc - xf)**2))
-    mb = float(np.mean((target_mc - xb)**2))
-    return xf if mf <= mb else xb
+    n = len(alphas)
+    prior_mse = float(np.mean((target_mc - center_mc)**2))
+
+    # Forward sweep: start from small (s2, gp) at smallest alpha
+    xhat_fwd = []
+    s2, gp = max(sigma0_sq + alphas[0]*prior_mse, 1e-6), max(gamma_ext, 1e-14)
+    for a in alphas:
+        xhat, s2, gp = _run_one(a, s2, gp)
+        xhat_fwd.append(xhat)
+
+    # Backward sweep: start from large (s2, gp) at largest alpha, sweep down
+    xhat_bwd_rev = []
+    s2 = max(sigma0_sq + alphas[-1]*prior_mse, 1e-6)
+    gp = max(gamma_ext + alphas[-1]*float(np.mean(sigma2_qk(center_mc, 1.0, k))), 1e-4)
+    for a in alphas[::-1]:
+        xhat, s2, gp = _run_one(a, s2, gp)
+        xhat_bwd_rev.append(xhat)
+    xhat_bwd = list(reversed(xhat_bwd_rev))
+
+    return xhat_fwd, xhat_bwd
 
 
 def replica_curve(alphas, target_mc, center_mc, v_mc, k, mask_F, beta_ref,
-                  sigma0_sq=0.001):
+                  sigma0_sq=0.001, pick='max'):
+    """
+    pick='max': higher target-MSE branch (nontrivial FP, xhat→center) — correct for Stage 2
+    pick='min': lower  target-MSE branch (trivial   FP, xhat→target) — for Stage 3
+    """
+    xhat_fwd, xhat_bwd = replica_sweep(alphas, target_mc, center_mc, v_mc, k, sigma0_sq)
     errs = []
-    state = None
-    for a in alphas:
-        xhat = replica_one(a, target_mc, center_mc, v_mc, k, sigma0_sq)
+    for xf, xb in zip(xhat_fwd, xhat_bwd):
+        mf = float(np.mean((target_mc - xf)**2))
+        mb = float(np.mean((target_mc - xb)**2))
+        if pick == 'max':
+            xhat = xb if mb > mf else xf
+        else:
+            xhat = xb if mb < mf else xf
         errs.append(float(np.mean((xhat[mask_F] - beta_ref[mask_F])**2)))
     return np.array(errs)
 
@@ -229,10 +298,10 @@ def main():
         k = 4.0 * c_pt**2
         print(f"\n-- c_PT={c_pt:.0e}  k={k:.2e} --")
 
-        # Replica curve for Stage 2
-        rep = replica_curve(
-            alpha_vals, eff_ul_mc, beta_pt_mc, v_ul_mc, k,
-            mask_F_mc, beta_pt_mc, sigma0_sq=0.001
+        # Replica curve for Stage 2 — oracle-gp SE (physical FP, α ≤ 1)
+        rep = stage2_oracle_curve_v(
+            alpha_vals, beta_pt_mc, eff_ul_mc, mask_F_mc, n_mc,
+            rho_pt, p_forget, sigma0_sq=0.001, k=k, seed=9999,
         )
         stage2_rep[c_pt] = rep
 

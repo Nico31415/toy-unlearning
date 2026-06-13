@@ -30,20 +30,220 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from scipy.optimize import brentq
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fixed_lambda_all import prox_qk_safeguarded, sigma2_qk
 
+_EPS_K = 1e-30
+
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Bregman proximal operator
+# Bregman proximal operator (Newton, vectorized)
 # ──────────────────────────────────────────────────────────────────────────────
+
+def _prox_qk_newton(v: np.ndarray, lam: float, k: float,
+                    n_iter: int = 80) -> np.ndarray:
+    lam = float(max(lam, 1e-14))
+    k   = float(max(k, _EPS_K))
+    sqk = math.sqrt(k)
+    coeff = lam / 2.0
+    x = v / (1.0 + 2.0 * coeff / sqk)
+    for _ in range(n_iter):
+        t    = 2.0 * x / sqk
+        r    = x + coeff * np.arcsinh(t) - v
+        drdx = 1.0 + coeff * 2.0 / sqk / np.sqrt(1.0 + t ** 2)
+        x    = x - r / drdx
+    return x
+
 
 def bregman_prox(z: np.ndarray, lam: float, k: float,
                  beta0: np.ndarray) -> np.ndarray:
     """prox_{λ D_{q_k}(·, β₀)}(z) = prox_{λ q_k}(z + λ q'_k(β₀))"""
-    shift = lam * 0.5 * np.arcsinh(2.0 * beta0 / math.sqrt(max(k, 1e-30)))
-    return prox_qk_safeguarded(z + shift, lam, k)
+    lam   = float(max(lam, 1e-14))
+    k     = float(max(k, _EPS_K))
+    shift = lam * 0.5 * np.arcsinh(2.0 * np.asarray(beta0) / math.sqrt(k))
+    return _prox_qk_newton(np.asarray(z, dtype=float) + shift, lam, k)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Stage 2: oracle-gp SE
+#
+# Physical insight: at D→∞ with exact forget labels y_F=0, the Bregman
+# minimiser gives err_F = α·var_nz (linear in α, independent of k).
+# We find the unique gp(α,k) such that
+#     E_{β~N(0,var_nz)}[(prox_{gp·q_k(·-β)}(0) − β)²] = α·var_nz
+# and then evaluate the full SE at that fixed gp.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _oracle_gp(alpha: float, k: float, var_nz: float,
+               n_mc: int = 20_000, seed: int = 0) -> float | None:
+    """Return gp s.t. E[(bregman_prox(0,gp,k,β)−β)²] = α·var_nz."""
+    rng   = np.random.default_rng(seed)
+    betas = rng.normal(0.0, math.sqrt(var_nz), n_mc)
+    target = alpha * var_nz
+
+    def err_at(gp: float) -> float:
+        return float(np.mean((bregman_prox(np.zeros(n_mc), gp, k, betas) - betas) ** 2))
+
+    e_lo = err_at(1e-8)   # ≈ var_nz  (gp→0: prox→0, far from β)
+    e_hi = err_at(1e4)    # ≈ 0       (gp→∞: prox→β)
+    if target >= e_lo or target <= e_hi:
+        return None
+    return float(brentq(lambda g: err_at(g) - target, 1e-8, 1e4,
+                        xtol=1e-5, rtol=1e-5))
+
+
+def _oracle_gp_rl(alpha_rl: float, k: float, var_nz: float,
+                   n_mc: int = 20_000, seed: int = 0) -> float:
+    """Return gp s.t. E[(bregman_prox(β*_PT,gp,k,0)−β*_PT)²] = (1−α_rl)·var_nz.
+
+    err_at is INCREASING in gp:
+      gp→0: prox→β*_PT → err→0 (adversary recovers)
+      gp→∞: prox→0    → err→var_nz (adversary fails)
+    """
+    rng   = np.random.default_rng(seed)
+    betas = rng.normal(0.0, math.sqrt(var_nz), n_mc)
+    target = (1.0 - alpha_rl) * var_nz
+
+    def err_at(gp: float) -> float:
+        xhat = bregman_prox(betas, gp, k, np.zeros(n_mc))
+        return float(np.mean((xhat - betas) ** 2))
+
+    e_lo = err_at(1e-8)   # ≈ 0      (gp→0: prox→betas)
+    e_hi = err_at(1e4)    # ≈ var_nz (gp→∞: prox→0)
+
+    if target <= e_lo:
+        return 1e-8   # α_rl ≈ 1: adversary recovers, gp ≈ 0
+    if target >= e_hi:
+        return 1e4    # α_rl ≈ 0: adversary fails, gp large
+    return float(brentq(lambda g: err_at(g) - target, 1e-8, 1e4,
+                        xtol=1e-5, rtol=1e-5))
+
+
+def stage3_oracle_curve(
+    alphas: np.ndarray,
+    rho_pt: float,
+    p_forget: float,
+    sigma0_sq: float,
+    k: float,
+    n_mc: int = 20_000,
+    seed: int = 42,
+) -> np.ndarray:
+    """
+    Stage 3 oracle-gp SE curve for α ≤ 1.
+
+    At D→∞ the adversary's err_RL_F = (1-α)·var_nz.  We find gp_RL(α,k) s.t.
+        E[(bregman_prox(β*_PT_F, gp_RL, k, 0) - β*_PT_F)²] = (1-α)·var_nz
+    and evaluate the SE at that fixed gp.
+
+    Returns err_RL_F array over alphas.
+    """
+    var_nz = 1.0 / rho_pt
+    rho_ft = rho_pt * p_forget
+    rho_rt = rho_pt * (1.0 - p_forget)
+
+    rng  = np.random.default_rng(seed)
+    n_f  = int(round(n_mc * rho_ft))
+    n_r  = int(round(n_mc * rho_rt))
+    n_0  = n_mc - n_f - n_r
+
+    bF = rng.normal(0.0, math.sqrt(var_nz), n_f)
+    bR = rng.normal(0.0, math.sqrt(var_nz), n_r)
+
+    # Stage 3: target = β*_PT, center = β̂_UL (0 for F, β*_PT for R)
+    beta_eff = np.concatenate([bF, bR, np.zeros(n_0)])              # β*_PT
+    beta_ctr = np.concatenate([np.zeros(n_f), bR, np.zeros(n_0)])  # β̂_UL
+
+    err_RL_out = np.zeros(len(alphas))
+
+    for i, alpha in enumerate(alphas):
+        gp = _oracle_gp_rl(alpha, k, var_nz, n_mc=n_mc, seed=seed + i + 1)
+
+        # iterate s2 to self-consistency with fixed gp
+        s2 = sigma0_sq
+        v  = rng.standard_normal(n_mc)
+        for _ in range(2000):
+            z    = beta_eff + math.sqrt(max(s2, 1e-20)) * v
+            xhat = bregman_prox(z, gp, k, beta_ctr)
+            mse  = float(np.mean((xhat - beta_eff) ** 2))
+            s2_new = sigma0_sq + alpha * mse
+            if abs(s2_new - s2) < 1e-12:
+                break
+            s2 = 0.9 * s2 + 0.1 * s2_new
+            s2 = max(s2, sigma0_sq)
+
+        v    = rng.standard_normal(n_mc)
+        z    = beta_eff + math.sqrt(max(s2, 1e-20)) * v
+        xhat = bregman_prox(z, gp, k, beta_ctr)
+        err_RL_out[i] = float(np.mean((xhat[:n_f] - bF) ** 2))
+
+    return err_RL_out
+
+
+def stage2_oracle_curve(
+    alphas: np.ndarray,
+    rho_pt: float,
+    p_forget: float,
+    sigma0_sq: float,
+    k: float,
+    n_mc: int = 20_000,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Stage 2 oracle-gp SE curve.
+
+    Returns (err_F, err_R) arrays over alphas.
+    err_F = E[(β̂_UL_F − β*_PT_F)²]  (forget group, ↑ means more forgetting)
+    err_R = E[(β̂_UL_R − β*_PT_R)²]  (retain group, should ≈ 0)
+    """
+    var_nz = 1.0 / rho_pt
+    rho_ft = rho_pt * p_forget
+    rho_rt = rho_pt * (1.0 - p_forget)
+
+    rng  = np.random.default_rng(seed)
+    n_f  = int(round(n_mc * rho_ft))
+    n_r  = int(round(n_mc * rho_rt))
+    n_0  = n_mc - n_f - n_r
+
+    bF = rng.normal(0.0, math.sqrt(var_nz), n_f)
+    bR = rng.normal(0.0, math.sqrt(var_nz), n_r)
+
+    # Stage 2: target = β_eff_UL (0 for forget, β*_PT for retain)
+    #          center = β*_PT
+    beta_eff = np.concatenate([np.zeros(n_f), bR, np.zeros(n_0)])
+    beta_ctr = np.concatenate([bF,            bR, np.zeros(n_0)])
+
+    err_F_out = np.zeros(len(alphas))
+    err_R_out = np.zeros(len(alphas))
+
+    for i, alpha in enumerate(alphas):
+        gp = _oracle_gp(alpha, k, var_nz, n_mc=n_mc, seed=seed + i + 1)
+        if gp is None:
+            err_F_out[i] = float("nan")
+            err_R_out[i] = float("nan")
+            continue
+
+        # iterate s2 to self-consistency
+        s2 = sigma0_sq
+        v  = rng.standard_normal(n_mc)
+        for _ in range(2000):
+            z    = beta_eff + math.sqrt(max(s2, 1e-20)) * v
+            xhat = bregman_prox(z, gp, k, beta_ctr)
+            mse  = float(np.mean((xhat - beta_eff) ** 2))
+            s2_new = sigma0_sq + alpha * mse
+            if abs(s2_new - s2) < 1e-12:
+                break
+            s2 = 0.9 * s2 + 0.1 * s2_new
+            s2 = max(s2, sigma0_sq)
+
+        v    = rng.standard_normal(n_mc)
+        z    = beta_eff + math.sqrt(max(s2, 1e-20)) * v
+        xhat = bregman_prox(z, gp, k, beta_ctr)
+        err_F_out[i] = float(np.mean((xhat[:n_f] - bF) ** 2))
+        err_R_out[i] = float(np.mean((xhat[n_f:n_f + n_r] - bR) ** 2))
+
+    return err_F_out, err_R_out
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -116,11 +316,20 @@ def solve_curve(
     sigma0_sq: float,
     mask_eval: np.ndarray,
     beta_ref_mc: np.ndarray,
+    pick: str = "min",
     **fp_kw,
 ):
     """
     Compute gen_err = E[(xhat - beta_ref)²] on mask_eval, for each alpha.
-    Uses forward + backward sweeps; picks lower mse_target (physical FP).
+    Uses forward + backward sweeps.
+
+    pick='min': lower target-MSE branch  (trivial FP, xhat→target)
+    pick='max': higher target-MSE branch (nontrivial FP, xhat→center)
+
+    Stage 2 (unlearning) uses pick='max': at small α the data is scarce, so the
+    Bregman minimizer stays close to the center (β*_PT) rather than jumping to
+    the target.  The max-MSE branch tracks this physically correct nontrivial FP.
+    Stage 3 (relearning) uses pick='min'.
     """
     n = len(alphas)
 
@@ -143,12 +352,15 @@ def solve_curve(
         xhat_b_rev[j] = xhat
     xhat_b = xhat_b_rev[::-1]
 
-    # Pointwise: pick branch with LOWER target-MSE (minimise free energy proxy)
+    # Pointwise: pick branch according to 'pick'
     gen_err = np.zeros(n)
     for i in range(n):
         mse_f = float(np.mean((target_mc - xhat_f[i]) ** 2))
         mse_bwd = float(np.mean((target_mc - xhat_b[i]) ** 2))
-        xhat = xhat_b[i] if mse_bwd < mse_f else xhat_f[i]
+        if pick == "max":
+            xhat = xhat_b[i] if mse_bwd > mse_f else xhat_f[i]
+        else:  # "min"
+            xhat = xhat_b[i] if mse_bwd < mse_f else xhat_f[i]
         if mask_eval.any():
             gen_err[i] = float(np.mean((xhat[mask_eval] - beta_ref_mc[mask_eval]) ** 2))
 
@@ -232,28 +444,24 @@ def main():
     print(f"var_nz={var_nz:.2f}, rho_ft={rho_ft:.3f}, sigma0_sq={sigma0_sq}")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Stage 2: Unlearning
+    # Stage 2: Unlearning  (oracle-gp SE)
     # ─────────────────────────────────────────────────────────────────────────
+    alpha_ul_s2 = alpha_ul[alpha_ul <= 1.0]   # restrict to α ≤ 1
+
     stage2 = {}   # c_pt → (err_F, err_R)
     for c_pt in c_pt_list:
         k = 4.0 * c_pt ** 2
         print(f"\n=== Stage 2: c_PT={c_pt}  k={k:.2e} ===")
 
-        # For Stage 2: target = β_eff_UL, center = β*_PT (oracle)
-        # gen_err_F = E[(β̂_UL_F - β*_PT_F)²] on mask_F
-        err_F = solve_curve(
-            alpha_ul, eff_ul, beta_pt, v_ul, k, sigma0_sq,
-            mask_F, beta_pt, **fp_kw
-        )
-        err_R = solve_curve(
-            alpha_ul, eff_ul, beta_pt, v_ul, k, sigma0_sq,
-            mask_R, beta_pt, **fp_kw
+        err_F, err_R = stage2_oracle_curve(
+            alpha_ul_s2, rho_pt, p_forget, sigma0_sq, k,
+            n_mc=40_000, seed=seed,
         )
         stage2[c_pt] = (err_F, err_R)
 
-        for i in [0, 5, 10, 20, 29, 35, 45]:
-            if i < len(alpha_ul):
-                print(f"  α={alpha_ul[i]:.3f}  err_F={err_F[i]:.4f}  err_R={err_R[i]:.4f}")
+        for i in [0, 5, 10, 20, len(alpha_ul_s2) - 1]:
+            if i < len(alpha_ul_s2):
+                print(f"  α={alpha_ul_s2[i]:.3f}  err_F={err_F[i]:.4f}  err_R={err_R[i]:.4f}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Stage 3: Relearning from fully-unlearned model
@@ -268,15 +476,31 @@ def main():
         np.zeros((group == 0).sum()),
     ])
 
-    stage3 = {}   # c_pt → err_RL
+    # split α_RL sweep: oracle for ≤1, PMAP for >1
+    alpha_rl_s3 = alpha_rl[alpha_rl <= 1.0]
+    alpha_rl_hi = alpha_rl[alpha_rl > 1.0]
+
+    stage3 = {}   # c_pt → err_RL (full alpha_rl array)
     for c_pt in c_pt_list:
         k = 4.0 * c_pt ** 2
         print(f"\n=== Stage 3: c_PT={c_pt}  k={k:.2e} ===")
 
-        err_RL = solve_curve(
-            alpha_rl, eff_rl, center_rl_analytic, v_rl, k, sigma0_sq,
-            mask_F, beta_pt, **fp_kw
+        # oracle region α ≤ 1
+        err_RL_lo = stage3_oracle_curve(
+            alpha_rl_s3, rho_pt, p_forget, sigma0_sq, k,
+            n_mc=40_000, seed=seed,
         )
+
+        # PMAP region α > 1 (trivial FP unstable here)
+        if len(alpha_rl_hi) > 0:
+            err_RL_hi = solve_curve(
+                alpha_rl_hi, eff_rl, center_rl_analytic, v_rl, k, sigma0_sq,
+                mask_F, beta_pt, **fp_kw
+            )
+        else:
+            err_RL_hi = np.array([])
+
+        err_RL = np.concatenate([err_RL_lo, err_RL_hi])
         stage3[c_pt] = err_RL
 
         for i in [0, 5, 10, 20, 29, 35, 45]:
@@ -302,8 +526,8 @@ def main():
         k = 4 * c_pt**2
         err_F, err_R = stage2[c_pt]
         lbl = fr"$c_{{\rm PT}}={c_pt:.0e}$ ($k={k:.1e}$)"
-        ax1.plot(alpha_ul, err_F, '-o', ms=2.5, color=col, label=lbl)
-        ax2.plot(alpha_ul, err_R, '-o', ms=2.5, color=col, label=lbl)
+        ax1.plot(alpha_ul_s2, err_F, '-o', ms=2.5, color=col, label=lbl)
+        ax2.plot(alpha_ul_s2, err_R, '-o', ms=2.5, color=col, label=lbl)
 
     ax1.axhline(var_nz, color='k', ls='--', lw=0.8, label=f'$1/\\rho_{{PT}}={var_nz}$ (perfect forget)')
     ax1.set_xlabel(r'$\alpha_{\rm UL} = N_{\rm UL}/D$')
