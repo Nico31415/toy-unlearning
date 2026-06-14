@@ -172,6 +172,7 @@ def stage3_oracle_curve(
     alpha_out: float = 1.0,
     n_mc: int = 20_000,
     seed: int = 42,
+    max_se_iters: int = 2000,
 ) -> np.ndarray:
     """
     Stage 3 oracle-gp SE curve for α ≤ 1.
@@ -209,12 +210,12 @@ def stage3_oracle_curve(
 
         s2 = sigma0_sq
         v  = rng.standard_normal(n_mc)
-        for _ in range(2000):
+        for _ in range(max_se_iters):
             z    = beta_eff + math.sqrt(max(s2, 1e-20)) * v
             xhat = bregman_prox(z, gp, k_all, beta_ctr)
             mse  = float(np.mean((xhat - beta_eff) ** 2))
             s2_new = sigma0_sq + alpha * mse
-            if abs(s2_new - s2) < 1e-12:
+            if abs(s2_new - s2) < 1e-6 * s2:
                 break
             s2 = 0.9 * s2 + 0.1 * s2_new
             s2 = max(s2, sigma0_sq)
@@ -239,6 +240,7 @@ def stage2_oracle_curve(
     t_forget: float = 0.0,
     n_mc: int = 20_000,
     seed: int = 42,
+    max_se_iters: int = 2000,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Stage 2 oracle-gp SE curve with per-coord k.
@@ -284,12 +286,12 @@ def stage2_oracle_curve(
 
         s2 = sigma0_sq
         v  = rng.standard_normal(n_mc)
-        for _ in range(2000):
+        for _ in range(max_se_iters):
             z    = beta_eff + math.sqrt(max(s2, 1e-20)) * v
             xhat = bregman_prox(z, gp, k_all, beta_ctr)
             mse  = float(np.mean((xhat - beta_eff) ** 2))
             s2_new = sigma0_sq + alpha * mse
-            if abs(s2_new - s2) < 1e-12:
+            if abs(s2_new - s2) < 1e-6 * s2:
                 break
             s2 = 0.9 * s2 + 0.1 * s2_new
             s2 = max(s2, sigma0_sq)
@@ -571,6 +573,49 @@ def main():
                 print(f"  α={alpha_rl[i]:.3f}  err_RL_F={err_RL[i]:.4f}")
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Extra sweeps: lambda_PT and (alpha_in, alpha_out) at fixed c_PT=0.1
+    # ─────────────────────────────────────────────────────────────────────────
+    c_fixed = 0.1
+
+    # Sweep 1: vary lambda_PT, equal scaling
+    lambda_configs = [
+        dict(label=r"$\lambda_{\rm PT}=0$",      lambda_PT=0.0,    alpha_in=1.0, alpha_out=1.0),
+        dict(label=r"$\lambda_{\rm PT}=0.5c$",   lambda_PT=0.05,   alpha_in=1.0, alpha_out=1.0),
+        dict(label=r"$\lambda_{\rm PT}=0.95c$",  lambda_PT=0.095,  alpha_in=1.0, alpha_out=1.0),
+    ]
+
+    # Sweep 2: vary (alpha_in, alpha_out), lambda_PT=0
+    scale_configs = [
+        dict(label=r"$\alpha_{\rm in}=\alpha_{\rm out}=1$  ($s=1$)",   alpha_in=1.0, alpha_out=1.0),
+        dict(label=r"$\alpha_{\rm in}=\alpha_{\rm out}=2$  ($s=4$)",   alpha_in=2.0, alpha_out=2.0),
+        dict(label=r"$\alpha_{\rm in}=\alpha_{\rm out}=0.5$ ($s=0.25$)", alpha_in=0.5, alpha_out=0.5),
+        dict(label=r"$\alpha_{\rm in}=2,\,\alpha_{\rm out}=0.5$ ($s=1$, unequal)", alpha_in=2.0, alpha_out=0.5),
+    ]
+
+    # Extra sweeps show oracle region only (α ≤ 1); PMAP with heterogeneous k is
+    # unreliable and slow, so we cap at α = 1.
+    alpha_sweep = alpha_rl[alpha_rl <= 1.0]
+
+    def _run_stage3(lam, ain, aout):
+        return stage3_oracle_curve(
+            alpha_sweep, rho_pt, p_forget, sigma0_sq,
+            c_PT=c_fixed, lambda_PT=lam, alpha_in=ain, alpha_out=aout,
+            n_mc=20_000, seed=seed, max_se_iters=300,
+        )
+
+    print(f"\n=== Lambda sweep (c_PT={c_fixed}) ===")
+    lam_results = []
+    for cfg in lambda_configs:
+        print(f"  {cfg['label']} ...", flush=True)
+        lam_results.append(_run_stage3(cfg["lambda_PT"], cfg["alpha_in"], cfg["alpha_out"]))
+
+    print(f"\n=== Scale sweep (c_PT={c_fixed}, lambda_PT=0) ===")
+    scale_results = []
+    for cfg in scale_configs:
+        print(f"  {cfg['label']} ...", flush=True)
+        scale_results.append(_run_stage3(0.0, cfg["alpha_in"], cfg["alpha_out"]))
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Figures
     # ─────────────────────────────────────────────────────────────────────────
     cmap   = plt.cm.plasma
@@ -636,6 +681,57 @@ def main():
     ax.set_ylim([-0.5, var_nz + 1])
     plt.tight_layout()
     p = out_dir / "stage3_relearning.png"
+    fig.savefig(p, dpi=150)
+    plt.close(fig)
+    print(f"Saved: {p}")
+
+
+    # --- Figure 3: Stage 3 — lambda_PT sweep ---
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.set_title(
+        fr"Stage 3 — Effect of $\lambda_{{\rm PT}}$   "
+        fr"($c_{{\rm PT}}={c_fixed}$, $\alpha_{{\rm in}}=\alpha_{{\rm out}}=1$)",
+        fontsize=11,
+    )
+    lam_colors = [plt.cm.viridis(v) for v in [0.15, 0.50, 0.85]]
+    for col, cfg, res in zip(lam_colors, lambda_configs, lam_results):
+        ax.plot(alpha_sweep, res, '-o', ms=2.5, color=col, label=cfg["label"])
+    ax.axhline(var_nz, color='k', ls='--', lw=0.8,
+               label=fr'$1/\rho_{{PT}}={var_nz}$ (adversary fails)')
+    ax.axhline(sigma0_sq, color='gray', ls=':', lw=0.8,
+               label=fr'$\sigma_0^2={sigma0_sq}$ (perfect relearning)')
+    ax.set_xlabel(r'$\alpha_{\rm RL} = N_{\rm RL}/D$')
+    ax.set_ylabel(r'$\mathcal{E}_{\rm RL,F}$')
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim([-0.5, var_nz + 1])
+    plt.tight_layout()
+    p = out_dir / "stage3_lambda_sweep.png"
+    fig.savefig(p, dpi=150)
+    plt.close(fig)
+    print(f"Saved: {p}")
+
+    # --- Figure 4: Stage 3 — (alpha_in, alpha_out) sweep ---
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.set_title(
+        fr"Stage 3 — Effect of layer rescaling   "
+        fr"($c_{{\rm PT}}={c_fixed}$, $\lambda_{{\rm PT}}=0$)",
+        fontsize=11,
+    )
+    scale_colors = [plt.cm.cool(v) for v in [0.1, 0.4, 0.7, 0.95]]
+    for col, cfg, res in zip(scale_colors, scale_configs, scale_results):
+        ax.plot(alpha_sweep, res, '-o', ms=2.5, color=col, label=cfg["label"])
+    ax.axhline(var_nz, color='k', ls='--', lw=0.8,
+               label=fr'$1/\rho_{{PT}}={var_nz}$ (adversary fails)')
+    ax.axhline(sigma0_sq, color='gray', ls=':', lw=0.8,
+               label=fr'$\sigma_0^2={sigma0_sq}$ (perfect relearning)')
+    ax.set_xlabel(r'$\alpha_{\rm RL} = N_{\rm RL}/D$')
+    ax.set_ylabel(r'$\mathcal{E}_{\rm RL,F}$')
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim([-0.5, var_nz + 1])
+    plt.tight_layout()
+    p = out_dir / "stage3_scale_sweep.png"
     fig.savefig(p, dpi=150)
     plt.close(fig)
     print(f"Saved: {p}")
