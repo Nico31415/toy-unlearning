@@ -205,8 +205,14 @@ def stage3_oracle_curve(
     err_RL_out = np.zeros(len(alphas))
 
     for i, alpha in enumerate(alphas):
+        if alpha >= 1.0:
+            err_RL_out[i] = 0.0
+            continue
         # Oracle uses forget-group betas to find gp targeting (1-α)·var_nz
         gp = _oracle_gp_rl(alpha, bF, k_F, var_nz)
+        if gp is None:
+            err_RL_out[i] = float("nan")
+            continue
 
         s2 = sigma0_sq
         v  = rng.standard_normal(n_mc)
@@ -223,7 +229,7 @@ def stage3_oracle_curve(
         v    = rng.standard_normal(n_mc)
         z    = beta_eff + math.sqrt(max(s2, 1e-20)) * v
         xhat = bregman_prox(z, gp, k_all, beta_ctr)
-        err_RL_out[i] = float(np.mean((xhat[:n_f] - bF) ** 2))
+        err_RL_out[i] = float(np.mean((xhat - beta_eff) ** 2))
 
     return err_RL_out
 
@@ -376,6 +382,7 @@ def solve_curve(
     mask_eval: np.ndarray,
     beta_ref_mc: np.ndarray,
     pick: str = "min",
+    trivial_bwd_init: bool = False,
     **fp_kw,
 ):
     """
@@ -385,14 +392,16 @@ def solve_curve(
     pick='min': lower target-MSE branch  (trivial FP, xhat→target)
     pick='max': higher target-MSE branch (nontrivial FP, xhat→center)
 
-    Stage 2 (unlearning) uses pick='max': at small α the data is scarce, so the
-    Bregman minimizer stays close to the center (β*_PT) rather than jumping to
-    the target.  The max-MSE branch tracks this physically correct nontrivial FP.
-    Stage 3 (relearning) uses pick='min'.
+    Stage 2 (unlearning) uses pick='max'.
+    Stage 3 (relearning) uses pick='min' + trivial_bwd_init=True:
+      the backward sweep starts from s2=sigma0_sq so it can find the low-s2 FP
+      (adversary successfully relearns) where it exists, while the forward sweep
+      starts from the prior-MSE warm start and tracks the high-s2 FP.
     """
     n = len(alphas)
+    gamma_ext = fp_kw.get("gamma_ext", 1e-9)
 
-    # Forward sweep
+    # Forward sweep — prior-MSE warm start (finds high-s2 / nontrivial FP)
     state = None
     xhat_f = np.zeros((n, len(target_mc)))
     for i, a in enumerate(alphas):
@@ -401,8 +410,12 @@ def solve_curve(
         state = (s2, gp)
         xhat_f[i] = xhat
 
-    # Backward sweep
-    state = None
+    # Backward sweep — optionally start from trivial (s2=sigma0_sq) init
+    # so it can track the low-s2 FP (pick='min' then selects it when stable)
+    if trivial_bwd_init:
+        state = (max(sigma0_sq, 1e-15), max(gamma_ext, 1e-14))
+    else:
+        state = None
     xhat_b_rev = np.zeros((n, len(target_mc)))
     for j, a in enumerate(alphas[::-1]):
         xhat, _, s2, gp = solve_fp(a, target_mc, center_mc, v_mc, k,
@@ -536,41 +549,21 @@ def main():
         np.zeros((group == 0).sum()),
     ])
 
-    # split α_RL sweep: oracle for ≤1, PMAP for >1
-    alpha_rl_s3 = alpha_rl[alpha_rl <= 1.0]
-    alpha_rl_hi = alpha_rl[alpha_rl > 1.0]
-
-    stage3 = {}   # c_pt → err_RL (full alpha_rl array)
+    stage3 = {}   # c_pt → mse array (overall MSE vs β*_PT)
     for c_pt in c_pt_list:
         k_scalar = 4.0 * c_pt ** 2
         print(f"\n=== Stage 3: c_PT={c_pt}  k={k_scalar:.2e} ===")
 
-        # Per-coord k for the PMAP region (uses beta_pt MC samples)
-        k_mc = compute_k_eff(beta_pt, c_pt, lambda_PT=0.0,
-                             alpha_in=1.0, alpha_out=1.0)
-
-        # oracle region α ≤ 1
-        err_RL_lo = stage3_oracle_curve(
-            alpha_rl_s3, rho_pt, p_forget, sigma0_sq,
+        mse_rl = stage3_oracle_curve(
+            alpha_rl, rho_pt, p_forget, sigma0_sq,
             c_PT=c_pt, lambda_PT=0.0, alpha_in=1.0, alpha_out=1.0,
             n_mc=40_000, seed=seed,
         )
-
-        # PMAP region α > 1 (trivial FP unstable here)
-        if len(alpha_rl_hi) > 0:
-            err_RL_hi = solve_curve(
-                alpha_rl_hi, eff_rl, center_rl_analytic, v_rl, k_mc, sigma0_sq,
-                mask_F, beta_pt, **fp_kw
-            )
-        else:
-            err_RL_hi = np.array([])
-
-        err_RL = np.concatenate([err_RL_lo, err_RL_hi])
-        stage3[c_pt] = err_RL
+        stage3[c_pt] = mse_rl
 
         for i in [0, 5, 10, 20, 29, 35, 45]:
             if i < len(alpha_rl):
-                print(f"  α={alpha_rl[i]:.3f}  err_RL_F={err_RL[i]:.4f}")
+                print(f"  α={alpha_rl[i]:.3f}  mse={mse_rl[i]:.4f}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Extra sweeps: lambda_PT and (alpha_in, alpha_out) at fixed c_PT=0.1
@@ -669,16 +662,10 @@ def main():
         lbl = fr"$c_{{\rm PT}}={c_pt:.0e}$"
         ax.plot(alpha_rl, stage3[c_pt], '-o', ms=2.5, color=col, label=lbl)
 
-    ax.axhline(var_nz, color='k', ls='--', lw=0.8,
-               label=fr'Signal variance $1/\rho_{{PT}}={var_nz}$ (adversary fails)')
-    ax.axhline(sigma0_sq, color='gray', ls=':', lw=0.8,
-               label=fr'$\sigma_0^2={sigma0_sq}$ (perfect relearning)')
-
     ax.set_xlabel(r'$\alpha_{\rm RL} = N_{\rm RL}/D$')
-    ax.set_ylabel(r'$\mathcal{E}_{\rm RL,F}$ (per active forget feature)')
+    ax.set_ylabel(r'$\frac{1}{D}\|\hat\beta - \beta^*\|^2$')
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
-    ax.set_ylim([-0.5, var_nz + 1])
     plt.tight_layout()
     p = out_dir / "stage3_relearning.png"
     fig.savefig(p, dpi=150)
@@ -696,15 +683,10 @@ def main():
     lam_colors = [plt.cm.viridis(v) for v in [0.15, 0.50, 0.85]]
     for col, cfg, res in zip(lam_colors, lambda_configs, lam_results):
         ax.plot(alpha_sweep, res, '-o', ms=2.5, color=col, label=cfg["label"])
-    ax.axhline(var_nz, color='k', ls='--', lw=0.8,
-               label=fr'$1/\rho_{{PT}}={var_nz}$ (adversary fails)')
-    ax.axhline(sigma0_sq, color='gray', ls=':', lw=0.8,
-               label=fr'$\sigma_0^2={sigma0_sq}$ (perfect relearning)')
     ax.set_xlabel(r'$\alpha_{\rm RL} = N_{\rm RL}/D$')
-    ax.set_ylabel(r'$\mathcal{E}_{\rm RL,F}$')
+    ax.set_ylabel(r'$\frac{1}{D}\|\hat\beta - \beta^*\|^2$')
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
-    ax.set_ylim([-0.5, var_nz + 1])
     plt.tight_layout()
     p = out_dir / "stage3_lambda_sweep.png"
     fig.savefig(p, dpi=150)
@@ -721,15 +703,10 @@ def main():
     scale_colors = [plt.cm.cool(v) for v in [0.1, 0.4, 0.7, 0.95]]
     for col, cfg, res in zip(scale_colors, scale_configs, scale_results):
         ax.plot(alpha_sweep, res, '-o', ms=2.5, color=col, label=cfg["label"])
-    ax.axhline(var_nz, color='k', ls='--', lw=0.8,
-               label=fr'$1/\rho_{{PT}}={var_nz}$ (adversary fails)')
-    ax.axhline(sigma0_sq, color='gray', ls=':', lw=0.8,
-               label=fr'$\sigma_0^2={sigma0_sq}$ (perfect relearning)')
     ax.set_xlabel(r'$\alpha_{\rm RL} = N_{\rm RL}/D$')
-    ax.set_ylabel(r'$\mathcal{E}_{\rm RL,F}$')
+    ax.set_ylabel(r'$\frac{1}{D}\|\hat\beta - \beta^*\|^2$')
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
-    ax.set_ylim([-0.5, var_nz + 1])
     plt.tight_layout()
     p = out_dir / "stage3_scale_sweep.png"
     fig.savefig(p, dpi=150)

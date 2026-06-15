@@ -432,8 +432,9 @@ def run_relearning_replica(
         state_fwd = (s2, gp)
         xhat_fwd_rl[i] = xhat
 
-    # Backward sweep
-    state_bwd = None
+    # Backward sweep — start from trivial init (s2=sigma0_sq) so it finds
+    # the low-s2 FP (adversary relearns) where it exists.
+    state_bwd = (max(cfg.sigma0_sq, 1e-15), max(cfg.gamma_ext, 1e-14))
     xhat_bwd_rev_rl = np.zeros((n_alpha, cfg.mc_samples))
     for j, alpha in enumerate(cfg.alpha_rl[::-1]):
         xhat, mse, s2, gp = solve_bregman_fp(
@@ -443,10 +444,10 @@ def run_relearning_replica(
         xhat_bwd_rev_rl[j] = xhat
     xhat_bwd_rl = xhat_bwd_rev_rl[::-1]
 
-    # Pick branch with higher target-MSE (nontrivial / physical FP)
+    # Pick branch with LOWER target-MSE (adversary picks best relearning strategy)
     mse_fwd_rl = np.array([float(np.mean((eff_rl - xhat_fwd_rl[i]) ** 2)) for i in range(n_alpha)])
     mse_bwd_rl = np.array([float(np.mean((eff_rl - xhat_bwd_rl[i]) ** 2)) for i in range(n_alpha)])
-    use_bwd_rl = mse_bwd_rl > mse_fwd_rl
+    use_bwd_rl = mse_bwd_rl < mse_fwd_rl  # min-MSE branch
 
     for i in range(n_alpha):
         xhat = xhat_bwd_rl[i] if use_bwd_rl[i] else xhat_fwd_rl[i]

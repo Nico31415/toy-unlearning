@@ -135,7 +135,7 @@ def bregman_prox_np(z, lam, k, beta0):
 
 
 def _oracle_gp(alpha, k, var_nz, n_mc=20_000, seed=0):
-    """Find gp s.t. E[(bregman_prox(0,gp,k,β)−β)²] = α·var_nz (DECREASING in gp)."""
+    """Find gp s.t. E[(bregman_prox(0,gp,k,β)−β)²] = α·var_nz (Stage 2 calibration)."""
     rng = np.random.default_rng(seed)
     betas = rng.normal(0.0, math.sqrt(var_nz), n_mc)
     target = alpha * var_nz
@@ -147,17 +147,37 @@ def _oracle_gp(alpha, k, var_nz, n_mc=20_000, seed=0):
     return float(brentq(lambda g: err_at(g) - target, 1e-8, 1e4, xtol=1e-5, rtol=1e-5))
 
 
+def _oracle_gp_rl(alpha, k, var_nz, n_mc=20_000, seed=0):
+    """Find gp s.t. E[(prox(β,gp,k,0)−β)²] = (1−α)·var_nz (Stage 3 calibration).
+
+    At gp=0: prox→z=β so error from β=0. At gp→∞: prox→center=0 so error=var_nz.
+    LHS INCREASES from 0 to var_nz. Target=(1−α)·var_nz ∈ (0,var_nz) for α∈(0,1).
+    """
+    rng = np.random.default_rng(seed)
+    betas = rng.normal(0.0, math.sqrt(var_nz), n_mc)
+    zeros = np.zeros(n_mc)
+    target = (1.0 - alpha) * var_nz
+    def err_at(gp):
+        return float(np.mean((bregman_prox_np(betas, gp, k, zeros) - betas)**2))
+    e_lo = err_at(1e-8); e_hi = err_at(1e4)
+    if target <= e_lo or target >= e_hi:
+        return None
+    return float(brentq(lambda g: err_at(g) - target, 1e-8, 1e4, xtol=1e-5, rtol=1e-5))
+
+
 def stage2_oracle_curve_v(alphas, beta_pt_mc, eff_ul_mc, mask_F_mc, n_mc,
                            rho_pt, p_forget, sigma0_sq, k, seed=42):
-    """Oracle-gp SE for Stage 2; returns err_F array over alphas (α ≤ 1 only)."""
+    """Oracle-gp SE for Stage 2; returns overall MSE = E[(xhat - eff_ul)^2] over alphas."""
     var_nz = 1.0 / rho_pt
     rng = np.random.default_rng(seed)
-    errs = np.full(len(alphas), float('nan'))
+    errs = np.full(len(alphas), 0.0)  # 0 for alpha>1 (overdetermined → MSE→0)
     for i, alpha in enumerate(alphas):
         if alpha > 1.0:
+            errs[i] = 0.0
             continue
         gp = _oracle_gp(alpha, k, var_nz, n_mc=n_mc, seed=seed + i + 1)
         if gp is None:
+            errs[i] = 0.0
             continue
         s2 = sigma0_sq
         v  = rng.standard_normal(n_mc)
@@ -171,13 +191,51 @@ def stage2_oracle_curve_v(alphas, beta_pt_mc, eff_ul_mc, mask_F_mc, n_mc,
         v    = rng.standard_normal(n_mc)
         z    = eff_ul_mc + math.sqrt(max(s2, 1e-20)) * v
         xhat = bregman_prox_np(z, gp, k, beta_pt_mc)
-        errs[i] = float(np.mean((xhat[mask_F_mc] - beta_pt_mc[mask_F_mc])**2))
+        errs[i] = float(np.mean((xhat - eff_ul_mc)**2))  # overall MSE
     return errs
 
 
-def replica_sweep(alphas, target_mc, center_mc, v_mc, k, sigma0_sq=0.001, gamma_ext=1e-9):
+def stage3_oracle_curve_v(alphas, beta_pt_mc, eff_ul_mc, n_mc,
+                           rho_pt, p_forget, sigma0_sq, k, seed=42):
+    """Oracle-gp SE for Stage 3 (relearning); returns overall MSE = E[(xhat - beta_pt)^2].
+
+    Symmetric to Stage 2: calibrate gp via E[(prox(bF, gp, k, 0))^2] = alpha*var_nz,
+    then run SE with center=eff_ul, target=beta_pt. For alpha>=1: return 0.
+    """
+    var_nz = 1.0 / rho_pt
+    rng = np.random.default_rng(seed)
+    errs = np.full(len(alphas), 0.0)
+    for i, alpha in enumerate(alphas):
+        if alpha >= 1.0:
+            errs[i] = 0.0
+            continue
+        gp = _oracle_gp_rl(alpha, k, var_nz, n_mc=n_mc, seed=seed + i + 1)
+        if gp is None:
+            errs[i] = 0.0
+            continue
+        s2 = sigma0_sq
+        v  = rng.standard_normal(n_mc)
+        for _ in range(2000):
+            z    = beta_pt_mc + math.sqrt(max(s2, 1e-20)) * v
+            xhat = bregman_prox_np(z, gp, k, eff_ul_mc)
+            mse  = float(np.mean((xhat - beta_pt_mc)**2))
+            s2n  = sigma0_sq + alpha * mse
+            if abs(s2n - s2) < 1e-12: break
+            s2 = 0.9 * s2 + 0.1 * s2n; s2 = max(s2, sigma0_sq)
+        v    = rng.standard_normal(n_mc)
+        z    = beta_pt_mc + math.sqrt(max(s2, 1e-20)) * v
+        xhat = bregman_prox_np(z, gp, k, eff_ul_mc)
+        errs[i] = float(np.mean((xhat - beta_pt_mc)**2))
+    return errs
+
+
+def replica_sweep(alphas, target_mc, center_mc, v_mc, k, sigma0_sq=0.001,
+                  gamma_ext=1e-9, trivial_bwd_init=False):
     """
     Forward + backward sweep returning (xhat_fwd, xhat_bwd) arrays of shape (n_alpha, n_mc).
+
+    trivial_bwd_init=True: backward sweep starts from (s2=sigma0_sq, gp=gamma_ext)
+    so it can track the low-s2 FP (needed for Stage 3 relearning with pick='min').
     """
     def _run_one(alpha, s2i, gpi):
         s2_, gp_ = s2i, gpi
@@ -198,17 +256,22 @@ def replica_sweep(alphas, target_mc, center_mc, v_mc, k, sigma0_sq=0.001, gamma_
     n = len(alphas)
     prior_mse = float(np.mean((target_mc - center_mc)**2))
 
-    # Forward sweep: start from small (s2, gp) at smallest alpha
+    # Forward sweep: prior-MSE warm start (finds high-s2 / nontrivial FP)
     xhat_fwd = []
     s2, gp = max(sigma0_sq + alphas[0]*prior_mse, 1e-6), max(gamma_ext, 1e-14)
     for a in alphas:
         xhat, s2, gp = _run_one(a, s2, gp)
         xhat_fwd.append(xhat)
 
-    # Backward sweep: start from large (s2, gp) at largest alpha, sweep down
+    # Backward sweep
+    if trivial_bwd_init:
+        # High gp → xhat≈target → MSE≈0 (trivial FP where adversary succeeds)
+        s2 = max(sigma0_sq, 1e-15)
+        gp = 1.0 / max(sigma0_sq, 1e-15)
+    else:
+        s2 = max(sigma0_sq + alphas[-1]*prior_mse, 1e-6)
+        gp = max(gamma_ext + alphas[-1]*float(np.mean(sigma2_qk(center_mc, 1.0, k))), 1e-4)
     xhat_bwd_rev = []
-    s2 = max(sigma0_sq + alphas[-1]*prior_mse, 1e-6)
-    gp = max(gamma_ext + alphas[-1]*float(np.mean(sigma2_qk(center_mc, 1.0, k))), 1e-4)
     for a in alphas[::-1]:
         xhat, s2, gp = _run_one(a, s2, gp)
         xhat_bwd_rev.append(xhat)
@@ -218,12 +281,19 @@ def replica_sweep(alphas, target_mc, center_mc, v_mc, k, sigma0_sq=0.001, gamma_
 
 
 def replica_curve(alphas, target_mc, center_mc, v_mc, k, mask_F, beta_ref,
-                  sigma0_sq=0.001, pick='max'):
+                  sigma0_sq=0.001, pick='max', trivial_bwd_init=False,
+                  gamma_ext=1e-9):
     """
-    pick='max': higher target-MSE branch (nontrivial FP, xhat→center) — correct for Stage 2
-    pick='min': lower  target-MSE branch (trivial   FP, xhat→target) — for Stage 3
+    pick='max': higher target-MSE branch (nontrivial FP, xhat→center) — Stage 2
+    pick='min': lower  target-MSE branch (trivial   FP, xhat→target)  — Stage 3
+
+    trivial_bwd_init=True: backward sweep starts from s2=sigma0_sq so it can
+    find the low-s2 FP where it exists (needed for Stage 3 relearning).
     """
-    xhat_fwd, xhat_bwd = replica_sweep(alphas, target_mc, center_mc, v_mc, k, sigma0_sq)
+    xhat_fwd, xhat_bwd = replica_sweep(
+        alphas, target_mc, center_mc, v_mc, k, sigma0_sq,
+        trivial_bwd_init=trivial_bwd_init, gamma_ext=gamma_ext,
+    )
     errs = []
     for xf, xb in zip(xhat_fwd, xhat_bwd):
         mf = float(np.mean((target_mc - xf)**2))
@@ -282,6 +352,7 @@ def main():
 
     c_pt_list = [1e-3, 1.0]
     colors = {1e-3: 'C0', 1.0: 'C3'}
+    mask_all = np.ones(n_mc, dtype=bool)
 
     out_dir = Path(__file__).parent / "verify_bregman_figures"
     out_dir.mkdir(exist_ok=True)
@@ -298,17 +369,17 @@ def main():
         k = 4.0 * c_pt**2
         print(f"\n-- c_PT={c_pt:.0e}  k={k:.2e} --")
 
-        # Replica curve for Stage 2 — oracle-gp SE (physical FP, α ≤ 1)
+        # Replica curve for Stage 2 — oracle SE, overall MSE against eff_ul
         rep = stage2_oracle_curve_v(
             alpha_vals, beta_pt_mc, eff_ul_mc, mask_F_mc, n_mc,
             rho_pt, p_forget, sigma0_sq=0.001, k=k, seed=9999,
         )
         stage2_rep[c_pt] = rep
 
-        # Bregman minimizer experiments
-        means_F, stds_F = [], []
+        # Bregman minimizer experiments — overall MSE against eff_ul
+        means, stds = [], []
         for alpha in alpha_vals:
-            errs_F = []
+            errs = []
             for trial in range(n_trials):
                 beta_star, beta_eff_ul, forget_idx, retain_idx, X_ul = make_problem(
                     D, rho_pt, p_forget, alpha, seed=trial*1000+1,
@@ -317,17 +388,14 @@ def main():
                 y_ul = X_ul @ beta_eff_ul
                 beta_hat_ul = bregman_minimizer(X_ul, y_ul, beta_star, k,
                                                 sigma0_sq=sigma0_sq_bregman)
+                mse = float(np.mean((beta_hat_ul - beta_eff_ul)**2))
+                errs.append(mse)
+                print(f"  α={alpha:.2f}  trial={trial}  mse={mse:.3f}")
 
-                # Check convergence
-                train_res = float(np.mean((X_ul @ beta_hat_ul - y_ul)**2))
-                eF = float(np.mean((beta_hat_ul[forget_idx] - beta_star[forget_idx])**2))
-                errs_F.append(eF)
-                print(f"  α={alpha:.2f}  trial={trial}  err_F={eF:.3f}  train_res={train_res:.2e}")
+            means.append(float(np.mean(errs)))
+            stds.append(float(np.std(errs)))
 
-            means_F.append(float(np.mean(errs_F)))
-            stds_F.append(float(np.std(errs_F)))
-
-        stage2_bm[c_pt] = (np.array(means_F), np.array(stds_F))
+        stage2_bm[c_pt] = (np.array(means), np.array(stds))
 
     # ─── Stage 3: Relearning ─────────────────────────────────────────────────
     print("\n" + "="*60)
@@ -343,29 +411,27 @@ def main():
         k = 4.0 * c_pt**2
         print(f"\n-- c_PT={c_pt:.0e}  k={k:.2e} --")
 
-        # Replica curve for Stage 3
-        rep = replica_curve(
-            alpha_vals, eff_rl_mc, center_rl_mc, v_rl_mc, k,
-            mask_F_mc, beta_pt_mc, sigma0_sq=0.001
+        # Replica curve for Stage 3 — oracle SE, overall MSE against beta_pt
+        rep = stage3_oracle_curve_v(
+            alpha_vals, beta_pt_mc, eff_ul_mc, n_mc,
+            rho_pt, p_forget, sigma0_sq=0.001, k=k, seed=9999,
         )
         stage3_rep[c_pt] = rep
 
-        # Bregman minimizer experiments
-        means_F, stds_F = [], []
+        # Bregman minimizer experiments — overall MSE
+        means, stds = [], []
         for alpha_rl in alpha_vals:
-            errs_F = []
+            errs = []
             for trial in range(n_trials):
                 beta_star, beta_eff_ul, forget_idx, retain_idx, _ = make_problem(
                     D, rho_pt, p_forget, alpha_ul_fixed, seed=trial*1000+1
                 )
-                # Stage 2: compute β̂_UL (use large alpha_ul = 2 → β̂_UL ≈ β_eff_UL)
                 X_ul = np.random.default_rng(trial*1000+100).standard_normal((
                     max(1, int(alpha_ul_fixed*D)), D)) / math.sqrt(D)
                 y_ul  = X_ul @ beta_eff_ul
                 beta_ul = bregman_minimizer(X_ul, y_ul, beta_star, k,
                                             sigma0_sq=sigma0_sq_bregman)
 
-                # Stage 3: adversary relearns from β̂_UL
                 N_rl = max(1, int(round(alpha_rl * D)))
                 rng_rl = np.random.default_rng(trial*1000+200)
                 X_rl   = rng_rl.standard_normal((N_rl, D)) / math.sqrt(D)
@@ -373,15 +439,14 @@ def main():
                 beta_rl = bregman_minimizer(X_rl, y_rl, beta_ul, k,
                                             sigma0_sq=sigma0_sq_bregman)
 
-                train_res = float(np.mean((X_rl @ beta_rl - y_rl)**2))
-                eF = float(np.mean((beta_rl[forget_idx] - beta_star[forget_idx])**2))
-                errs_F.append(eF)
-                print(f"  α_RL={alpha_rl:.2f}  trial={trial}  err_F={eF:.3f}  train_res={train_res:.2e}")
+                mse = float(np.mean((beta_rl - beta_star)**2))
+                errs.append(mse)
+                print(f"  α_RL={alpha_rl:.2f}  trial={trial}  mse={mse:.3f}")
 
-            means_F.append(float(np.mean(errs_F)))
-            stds_F.append(float(np.std(errs_F)))
+            means.append(float(np.mean(errs)))
+            stds.append(float(np.std(errs)))
 
-        stage3_bm[c_pt] = (np.array(means_F), np.array(stds_F))
+        stage3_bm[c_pt] = (np.array(means), np.array(stds))
 
     # ─── Figures ─────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
@@ -390,15 +455,15 @@ def main():
         fontsize=11
     )
 
-    # Analytical baselines for Stage 3
-    alpha_fine = np.linspace(0.02, 3.0, 200)
-    ridge_curve = np.array([ridge_relearn_theory(a, var_nz, rho_ft) for a in alpha_fine])
-
-    for ax, stage, bm_data, rep_data, xlabel, title, add_ridge in [
-        (axes[0], "Stage 2 UL", stage2_bm, stage2_rep,
-         r"$\alpha_{\rm UL}$", "Forget error after unlearning", False),
-        (axes[1], "Stage 3 RL", stage3_bm, stage3_rep,
-         r"$\alpha_{\rm RL}$", "Forget error after adversarial relearning", True),
+    for ax, bm_data, rep_data, xlabel, ylabel, title in [
+        (axes[0], stage2_bm, stage2_rep,
+         r"$\alpha_{\rm UL}$",
+         r"$\frac{1}{D}\|\hat\beta - \beta_{\rm eff}\|^2$",
+         "Overall MSE after unlearning"),
+        (axes[1], stage3_bm, stage3_rep,
+         r"$\alpha_{\rm RL}$",
+         r"$\frac{1}{D}\|\hat\beta - \beta^*\|^2$",
+         "Overall MSE after adversarial relearning"),
     ]:
         for c_pt in c_pt_list:
             col = colors[c_pt]
@@ -411,18 +476,12 @@ def main():
             ax.errorbar(alpha_vals, m, yerr=s, fmt='o', color=col, ms=5,
                         capsize=3, label=f"Bregman {lbl}")
 
-        if add_ridge:
-            ax.plot(alpha_fine, ridge_curve, 'k--', lw=1.2,
-                    label=r"Ridge theory: $(1-\alpha)\cdot v_{\rm nz}$")
-
-        ax.axhline(var_nz, color='gray', ls=':', lw=0.8,
-                   label=f"Signal var {var_nz}")
         ax.set_xlabel(xlabel)
-        ax.set_ylabel(r"$\mathcal{E}_F$ (per active forget feature)")
+        ax.set_ylabel(ylabel)
         ax.set_title(title)
         ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
-        ax.set_ylim([-0.3, var_nz + 0.5])
+        ax.set_ylim(bottom=-0.02)
 
     plt.tight_layout()
     p = out_dir / "bregman_vs_replica.png"
