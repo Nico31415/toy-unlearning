@@ -1,0 +1,2117 @@
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+
+\DeclareMathOperator{\arcsinh}{arcsinh}
+
+\title{Nonzero Initialization, Bregman Implicit Bias, and a Toy Theory of Relearning-Resistant Unlearning}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction and Concept Map}
+
+The organizing distinction in this note is
+\begin{equation}
+    \begin{aligned}
+    \text{target} &= \text{what is fit},\\
+    \text{center} &= \text{where fine-tuning is pulled},\\
+    \text{geometry} &= \text{how movement is penalized}.
+    \end{aligned}
+\end{equation}
+In the notation below these are
+\begin{equation}
+    \text{target} \quad \beta_{\mathrm{eff}},
+    \qquad
+    \text{center} \quad \beta_0,
+    \qquad
+    \text{geometry} \quad Q_k \text{ or } k_i .
+\end{equation}
+The unlearning loss chooses the interpolation target or constraint. The warm start chooses the Bregman center. The parameterization and layer scaling choose the geometry. The central message is:
+\begin{quote}
+Unlearning and relearning resistance require controlling not only the target, but also the Bregman center and the geometry of future fine-tuning.
+\end{quote}
+The goal is not cryptographic deletion; it is to increase relearning sample complexity under an inherited-geometry threat model.
+
+The main theorem is a conditional implicit-bias characterization. For the diagonal linear network studied here, if gradient flow converges to a finite interpolating predictor, then
+\begin{equation}
+    \beta(\infty)
+    =
+    \arg\min_{\beta:\,X^\top\beta=y}
+    D_{Q_k}(\beta,\beta_0).
+\end{equation}
+Thus nonzero initialization changes the implicit bias from ordinary \(Q_k\)-minimization to a Bregman projection around the initial predictor \(\beta_0\). This matters for unlearning: output-level forgetting may remove forget-set behavior at the current predictor while leaving the model centered near the forget-set solution, making relearning sample-efficient.
+
+The central novelty of the nonzero-initialization setting is that \(\beta_0\) and \(Q_k\) can be changed independently. A function reset changes the center, while a parameter reset or layer rescaling can change the geometry.
+
+Later, we define a unified update-coordinate \(\ell\)-order and pretraining dependence directly in terms of the pretrained coordinate, the inherited Bregman center, and the final fine-tuned coordinate. This recovers the zero-center Anguita definitions when \(\beta_{0,i}=0\) and exposes a center-based analogue when \(\beta_{0,i}\neq0\).
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Claim} & \textbf{Status} \\
+\midrule
+Nonzero initialization gives Bregman projection & theorem, conditional on convergence \\
+Effective-teacher reduction for squared losses & exact algebraic identity \\
+Target/center/geometry decomposition & theorem-level consequence \\
+Layer-rescaling formulas & algebra under balanced/gauge assumptions \\
+Rich/lazy relearning sample complexity & heuristic random-design benchmark \\
+Geometry can slow bad-actor relearning & threat-model-dependent design hypothesis \\
+\bottomrule
+\end{tabular}
+\end{center}
+The main note can be read independently; the appendices record the predictor-dynamics derivation, rescaling algebra, and heuristic sample-complexity benchmarks.
+
+\section{Diagonal Network Setup}
+
+Consider the two-layer diagonal linear network
+\begin{equation}
+    f(x;w^+,w^-,v^+,v^-)=\beta^\top x,
+    \qquad
+    \beta=w^+\circ v^+ - w^-\circ v^- .
+\end{equation}
+Coordinatewise,
+\begin{equation}
+    \beta_i=w_i^+v_i^+ - w_i^-v_i^- .
+\end{equation}
+Let \(X=[x^{(1)},\ldots,x^{(N)}]\in\mathbb R^{d\times N}\), with labels \(y\in\mathbb R^N\). Since samples are columns of \(X\), the vector of predictions is \(X^\top\beta\). We train by gradient flow on the square loss
+\begin{equation}
+    L(\beta)
+    =
+    \frac12\sum_{n=1}^N
+    \left(y^{(n)}-\beta^\top x^{(n)}\right)^2 .
+\end{equation}
+Define residuals and coordinate residual correlations by
+\begin{equation}
+    r^{(n)}(t)=y^{(n)}-\beta(t)^\top x^{(n)},
+    \qquad
+    s_i(t)=\sum_{n=1}^N x_i^{(n)}r^{(n)}(t).
+\end{equation}
+
+For each coordinate \(i\), define the initialization invariants
+\begin{equation}
+    c_i
+    =
+    w_i^+(0)w_i^-(0)+v_i^+(0)v_i^-(0),
+\end{equation}
+\begin{equation}
+    \lambda_{e,+,i}
+    =
+    \bigl(w_i^+(0)\bigr)^2-\bigl(v_i^+(0)\bigr)^2,
+    \qquad
+    \lambda_{e,-,i}
+    =
+    \bigl(w_i^-(0)\bigr)^2-\bigl(v_i^-(0)\bigr)^2.
+\end{equation}
+The geometry parameter is
+\begin{equation}
+    k_i
+    =
+    (\lambda_{e,+,i}-\lambda_{e,-,i})^2+4c_i^2.
+\end{equation}
+For \(k>0\), define
+\begin{equation}
+    q_k(z)
+    =
+    \frac{\sqrt{k}}{4}
+    \left(
+        1-
+        \sqrt{1+\frac{4z^2}{k}}
+        +
+        \frac{2z}{\sqrt{k}}
+        \operatorname{arcsinh}\left(\frac{2z}{\sqrt{k}}\right)
+    \right),
+\end{equation}
+so that
+\begin{equation}
+    q_k'(z)=\frac12\operatorname{arcsinh}\left(\frac{2z}{\sqrt{k}}\right),
+    \qquad
+    q_k''(z)=\frac{1}{\sqrt{k+4z^2}}.
+\end{equation}
+In particular, \(q_{k_i}''(z)>0\) for \(k_i>0\), so each coordinate potential is strictly convex.
+Let
+\begin{equation}
+    Q_k(\beta)=\sum_i q_{k_i}(\beta_i).
+\end{equation}
+The Bregman divergence generated by \(Q_k\) is
+\begin{equation}
+    D_{Q_k}(\beta,\beta_0)
+    =
+    Q_k(\beta)-Q_k(\beta_0)
+    -
+    \langle\nabla Q_k(\beta_0),\beta-\beta_0\rangle .
+\end{equation}
+
+\section{Main Theorem: Nonzero Initialization Gives a Bregman Projection}
+
+\begin{theorem}[Nonzero-initialization implicit bias]
+Let \(\beta_0=\beta(0)\). Assume \(k_i>0\) for every coordinate. If gradient flow converges to a finite interpolating predictor \(\beta(\infty)\) with
+\begin{equation}
+    X^\top\beta(\infty)=y,
+\end{equation}
+and the improper residual integral \(\int_0^\infty r(t)\,dt\) exists, then
+\begin{equation}
+    \boxed{
+    \beta(\infty)
+    =
+    \arg\min_{\beta:\,X^\top\beta=y}
+    D_{Q_k}(\beta,\beta_0)
+    } .
+\end{equation}
+Equivalently,
+\begin{equation}
+    \boxed{
+    \beta(\infty)
+    =
+    \arg\min_{\beta:\,X^\top\beta=y}
+    \sum_i
+    \left[
+        q_{k_i}(\beta_i)-q_{k_i}'(\beta_{0,i})\beta_i
+    \right]
+    } .
+\end{equation}
+\end{theorem}
+
+This is not a convergence theorem. It is a conditional characterization of the limit: if gradient flow converges to a finite interpolating predictor and the residual integral exists, then the limit has the Bregman variational form above.
+
+\begin{proof}
+For the diagonal network, the predictor dynamics, derived in Appendix~\ref{app:predictor-dynamics}, have the form
+\begin{equation}
+    \dot\beta_i(t)
+    =
+    \sqrt{k_i+4\beta_i(t)^2}\;s_i(t).
+\end{equation}
+Since
+\begin{equation}
+    q_{k_i}''(z)=\frac{1}{\sqrt{k_i+4z^2}},
+\end{equation}
+we obtain
+\begin{equation}
+    \frac{d}{dt}q_{k_i}'(\beta_i(t))
+    =
+    q_{k_i}''(\beta_i(t))\dot\beta_i(t)
+    =
+    s_i(t).
+\end{equation}
+In vector form,
+\begin{equation}
+    \frac{d}{dt}\nabla Q_k(\beta(t))=Xr(t).
+\end{equation}
+Integrating from \(0\) to \(\infty\) gives
+\begin{equation}
+    \nabla Q_k(\beta(\infty))-\nabla Q_k(\beta_0)=X\nu,
+    \qquad
+    \nu:=\int_0^\infty r(t)\,dt.
+\end{equation}
+Together with the interpolation constraint \(X^\top\beta(\infty)=y\), this is exactly the KKT stationarity and feasibility condition for minimizing \(D_{Q_k}(\beta,\beta_0)\) subject to \(X^\top\beta=y\). Since \(Q_k\) is strictly convex when \(k_i>0\), the KKT conditions characterize the global optimum.
+\end{proof}
+
+\section{Center Versus Geometry}
+
+The theorem separates two roles of initialization.
+\begin{itemize}
+    \item The initial predictor \(\beta_0\) controls the Bregman center.
+    \item The potential \(Q_k\), equivalently the parameters \(k_i\), controls the geometry.
+\end{itemize}
+Changing \(\beta_0\) changes where fine-tuning is pulled. Changing \(Q_k\) changes which directions are cheap or expensive.
+
+A function reset changes the center:
+\begin{equation}
+    \beta_0\to 0.
+\end{equation}
+A parameter reset or layer rescaling can change the geometry:
+\begin{equation}
+    Q_k\to Q_{k^{FT}}.
+\end{equation}
+These are distinct operations. In particular, setting the function to zero is not the same as choosing a new parameter initialization, since the latter may also change \(c_i\), \(\lambda_{e,\pm,i}\), and hence \(k_i\).
+
+The zero-output special case recovers the usual implicit-bias result. If \(\beta_0=0\), then \(q_{k_i}'(0)=0\) and
+\begin{equation}
+    D_{Q_k}(\beta,0)=Q_k(\beta)-Q_k(0).
+\end{equation}
+Thus
+\begin{equation}
+    \beta(\infty)
+    =
+    \arg\min_{\beta:\,X^\top\beta=y}Q_k(\beta).
+\end{equation}
+When \(\beta_{0,i}\neq0\), the coordinate has a local quadratic basin around the warm-start center:
+\begin{equation}
+    D_{q_{k_i}}(\beta_{0,i}+\Delta_i,\beta_{0,i})
+    =
+    \frac12q_{k_i}''(\beta_{0,i})\Delta_i^2+o(\Delta_i^2).
+\end{equation}
+This is not a special global lazy-regime claim; every smooth Bregman divergence is locally quadratic. The global rich/lazy behavior is still governed by \(q_{k_i}\) and \(k_i\).
+
+\section{Layer Rescaling in One Compact Proposition}
+
+Suppose that, before fine-tuning, the pretrained parameters are rescaled by
+\begin{equation}
+    w^\pm\mapsto \alpha_{\mathrm{input}}w^\pm,
+    \qquad
+    v^\pm\mapsto \alpha_{\mathrm{output}}v^\pm.
+\end{equation}
+Let
+\begin{equation}
+    s=\alpha_{\mathrm{input}}\alpha_{\mathrm{output}}.
+\end{equation}
+Then the center becomes
+\begin{equation}
+    \beta_{0,i}=s\,\widehat\beta_{PT,i}.
+\end{equation}
+The geometry is determined by the rescaled invariants
+\begin{equation}
+    c_i^{FT}
+    =
+    \alpha_{\mathrm{input}}^2w_i^+w_i^-
+    +
+    \alpha_{\mathrm{output}}^2v_i^+v_i^-,
+\end{equation}
+\begin{equation}
+    \lambda_{e,+,i}^{FT}
+    =
+    \alpha_{\mathrm{input}}^2(w_i^+)^2
+    -
+    \alpha_{\mathrm{output}}^2(v_i^+)^2,
+\end{equation}
+\begin{equation}
+    \lambda_{e,-,i}^{FT}
+    =
+    \alpha_{\mathrm{input}}^2(w_i^-)^2
+    -
+    \alpha_{\mathrm{output}}^2(v_i^-)^2,
+\end{equation}
+and
+\begin{equation}
+    k_i^{FT}
+    =
+    (\lambda_{e,+,i}^{FT}-\lambda_{e,-,i}^{FT})^2
+    +
+    4(c_i^{FT})^2.
+\end{equation}
+
+Under the balanced-pathway compressed formulas in Appendix~\ref{app:layer-rescaling}, equal layer scaling removes the explicit \(\widehat\beta_{PT,i}\)-dependence of \(k_i^{FT}\); unequal layer scaling can introduce it. Active pretrained coordinates have a nonzero center; inactive pretrained coordinates are zero-centered. Thus the center and geometry can be changed independently.
+
+\begin{theorem}[Fine-tuning implicit bias after layer rescaling]
+\label{thm:rescaled-finetuning-bias}
+Consider a pretrained diagonal-network checkpoint with predictor \(\widehat\beta_{PT}\). Before fine-tuning, rescale the layers by
+\begin{equation}
+    w^\pm\mapsto \alpha_{\mathrm{input}}w^\pm,
+    \qquad
+    v^\pm\mapsto \alpha_{\mathrm{output}}v^\pm,
+    \qquad
+    s:=\alpha_{\mathrm{input}}\alpha_{\mathrm{output}}.
+\end{equation}
+Assume the balanced-pathway/gauge conditions used in Appendix~\ref{app:layer-rescaling}. For each coordinate, write the pretrained invariants as \(c_{\mathrm{PT},i}\), \(\lambda_{\mathrm{PT},i}\), and
+\begin{equation}
+    H_{\mathrm{PT},i}
+    :=
+    \sqrt{c_{\mathrm{PT},i}^2+\widehat\beta_{PT,i}^2}.
+\end{equation}
+Then the fine-tuning warm-start center is
+\begin{equation}
+    \beta_{0,i}^{FT}
+    =
+    s\,\widehat\beta_{PT,i},
+\end{equation}
+and the fine-tuning geometry is
+\begin{equation}
+    \Gamma_i^{FT}
+    :=
+    (\alpha_{\mathrm{input}}^2+\alpha_{\mathrm{output}}^2)c_{\mathrm{PT},i}
+    +
+    (\alpha_{\mathrm{input}}^2-\alpha_{\mathrm{output}}^2)
+    \lambda_{\mathrm{PT},i}H_{\mathrm{PT},i},
+\end{equation}
+\begin{equation}
+    k_i^{FT}
+    =
+    (\Gamma_i^{FT})^2
+    +
+    (\alpha_{\mathrm{input}}^2-\alpha_{\mathrm{output}}^2)^2
+    \widehat\beta_{PT,i}^2(1-\lambda_{\mathrm{PT},i}^2).
+\end{equation}
+Equivalently, at fixed function scale \(s\), so that \(\alpha_{\mathrm{output}}=s/\alpha_{\mathrm{input}}\),
+\begin{equation}
+    \Gamma_{i,s}^{FT}
+    :=
+    \left(\alpha_{\mathrm{input}}^2+\frac{s^2}{\alpha_{\mathrm{input}}^2}\right)c_{\mathrm{PT},i}
+    +
+    \left(\alpha_{\mathrm{input}}^2-\frac{s^2}{\alpha_{\mathrm{input}}^2}\right)
+    \lambda_{\mathrm{PT},i}H_{\mathrm{PT},i},
+\end{equation}
+\begin{equation}
+    k_i^{FT}
+    =
+    (\Gamma_{i,s}^{FT})^2
+    +
+    \left(\alpha_{\mathrm{input}}^2-\frac{s^2}{\alpha_{\mathrm{input}}^2}\right)^2
+    \widehat\beta_{PT,i}^2(1-\lambda_{\mathrm{PT},i}^2).
+\end{equation}
+Now fine-tune by gradient flow on a squared loss whose effective target is \(\beta_{\mathrm{eff}}\). If gradient flow converges to a finite interpolating predictor, then
+\begin{equation}
+    \boxed{
+    \beta(\infty)
+    =
+    \arg\min_{\beta}
+    \sum_i
+    D_{q_{k_i^{FT}}}
+    \!\left(
+        \beta_i,
+        s\,\widehat\beta_{PT,i}
+    \right)
+    \quad
+    \text{s.t.}
+    \quad
+    X^\top\beta=X^\top\beta_{\mathrm{eff}}
+    }.
+\end{equation}
+Equivalently,
+\begin{equation}
+    \beta(\infty)
+    =
+    \arg\min_{X^\top\beta=X^\top\beta_{\mathrm{eff}}}
+    \sum_i
+    \left[
+    q_{k_i^{FT}}(\beta_i)
+    -
+    q_{k_i^{FT}}'\!\left(s\,\widehat\beta_{PT,i}\right)\beta_i
+    \right].
+\end{equation}
+\end{theorem}
+
+\section{Stage-2 Readout Reinitialization}
+
+The previous section covered Mode B: continue from the pretrained checkpoint
+after an optional layer rescaling.  We now record the corresponding Stage-2
+implicit bias when the readout is reinitialized before unlearning.
+
+Let the pretrained checkpoint have parameters
+\begin{equation}
+    w_{\mathrm{PT},i}^{+},
+    \quad
+    w_{\mathrm{PT},i}^{-},
+    \quad
+    v_{\mathrm{PT},i}^{+},
+    \quad
+    v_{\mathrm{PT},i}^{-}.
+\end{equation}
+Before Stage 2, define the reset parameters by
+\begin{equation}
+    w_{0,i}^{+}
+    =
+    w_{0,i}^{-}
+    =
+    s_{\mathrm{in}}
+    \left(
+        w_{\mathrm{PT},i}^{+}
+        +
+        w_{\mathrm{PT},i}^{-}
+    \right),
+    \qquad
+    v_{0,i}^{+}
+    =
+    v_{0,i}^{-}
+    =
+    \gamma .
+\end{equation}
+This is the readout-reinitialization convention used in the finite-dimensional
+checks: the two input pathways are symmetrized, optionally scaled by
+\(s_{\mathrm{in}}\), and both readout pathways are set to the same scalar
+\(\gamma\).  If one instead averages the input pathways by a factor \(1/2\),
+the formulas below are unchanged after replacing
+\(w_{\mathrm{PT},i}^{+}+w_{\mathrm{PT},i}^{-}\) by the chosen averaged input.
+
+The Stage-2 initial predictor is
+\begin{equation}
+    \beta_{0,i}^{\mathrm{UL,A}}
+    =
+    w_{0,i}^{+}v_{0,i}^{+}
+    -
+    w_{0,i}^{-}v_{0,i}^{-}
+    =
+    0.
+\end{equation}
+Thus readout reinitialization is a true function reset: the Bregman center for
+Stage 2 is zero.
+
+The geometry, however, is not reset to an arbitrary constant.  It is determined
+by the actual post-reset parameters.  The Stage-2 reset invariants are
+\begin{equation}
+    c_i^{\mathrm{UL,A}}
+    =
+    w_{0,i}^{+}w_{0,i}^{-}
+    +
+    v_{0,i}^{+}v_{0,i}^{-}
+    =
+    s_{\mathrm{in}}^2
+    \left(
+        w_{\mathrm{PT},i}^{+}
+        +
+        w_{\mathrm{PT},i}^{-}
+    \right)^2
+    +
+    \gamma^2,
+\end{equation}
+and
+\begin{equation}
+    \lambda_{e,+,i}^{\mathrm{UL,A}}
+    =
+    (w_{0,i}^{+})^2-(v_{0,i}^{+})^2,
+    \qquad
+    \lambda_{e,-,i}^{\mathrm{UL,A}}
+    =
+    (w_{0,i}^{-})^2-(v_{0,i}^{-})^2.
+\end{equation}
+Because the reset makes \(w_{0,i}^{+}=w_{0,i}^{-}\) and
+\(v_{0,i}^{+}=v_{0,i}^{-}\), the two \(\lambda_e\) invariants are equal:
+\begin{equation}
+    \lambda_{e,+,i}^{\mathrm{UL,A}}
+    -
+    \lambda_{e,-,i}^{\mathrm{UL,A}}
+    =
+    0.
+\end{equation}
+Therefore the Stage-2 geometry is
+\begin{equation}
+    \boxed{
+    k_i^{\mathrm{UL,A}}
+    =
+    4
+    \left(
+        c_i^{\mathrm{UL,A}}
+    \right)^2
+    =
+    4
+    \left[
+        s_{\mathrm{in}}^2
+        \left(
+            w_{\mathrm{PT},i}^{+}
+            +
+            w_{\mathrm{PT},i}^{-}
+        \right)^2
+        +
+        \gamma^2
+    \right]^2 .
+    }
+\end{equation}
+The dependence on pretraining now enters only through the reset geometry
+\(k_i^{\mathrm{UL,A}}\), not through a nonzero center.
+
+Let the squared unlearning objective have effective teacher
+\(\beta_{\mathrm{eff}}^{\mathrm{UL}}\), as in
+Section~\ref{sec:effective-teacher}.  If Stage-2 gradient flow converges to an
+interpolating predictor, then
+\begin{equation}
+    \boxed{
+    \widehat\beta_{\mathrm{UL}}
+    =
+    \arg\min_{\beta}
+    \sum_i
+    D_{q_{k_i^{\mathrm{UL,A}}}}(\beta_i,0)
+    \quad
+    \mathrm{s.t.}
+    \quad
+    X_{\mathrm{UL}}^\top\beta
+    =
+    X_{\mathrm{UL}}^\top\beta_{\mathrm{eff}}^{\mathrm{UL}} .
+    }
+\end{equation}
+Since \(q_k(0)=q_k'(0)=0\), this is equivalently
+\begin{equation}
+    \boxed{
+    \widehat\beta_{\mathrm{UL}}
+    =
+    \arg\min_{
+        X_{\mathrm{UL}}^\top\beta
+        =
+        X_{\mathrm{UL}}^\top\beta_{\mathrm{eff}}^{\mathrm{UL}}
+    }
+    \sum_i q_{k_i^{\mathrm{UL,A}}}(\beta_i).
+    }
+\end{equation}
+
+The corresponding Stage-3 statement follows the general theorem in
+Section~\ref{sec:stage3-relearning-bias}.  If no further reset or rescaling is
+performed between Stage 2 and Stage 3, then the Stage-3 center is
+\(\widehat\beta_{\mathrm{UL}}\) while the Stage-3 geometry remains
+\(k_i^{\mathrm{UL,A}}\), because the reset invariants are conserved during the
+Stage-2 gradient flow.
+
+\section{Implicit-Bias Variable Dependence Across Reset Cases}
+\label{sec:reset-variable-dependence}
+
+This section records which variables influence the predictor-space implicit
+bias in each stage.  Write
+\begin{equation}
+    \mathcal T_{\mathrm{PT}}
+    =
+    (X_{\mathrm{PT}},\beta_{\mathrm{eff}}^{\mathrm{PT}}),
+    \qquad
+    \mathcal T_{\mathrm{UL}}
+    =
+    (X_{\mathrm{UL}},\beta_{\mathrm{eff}}^{\mathrm{UL}}),
+    \qquad
+    \mathcal T_{\mathrm{RL}}
+    =
+    (X_{\mathrm{RL}},\beta_{\mathrm{eff}}^{\mathrm{RL}}),
+\end{equation}
+for the data and effective teacher in the three stages.  Let
+\[
+    A_{\mathrm{UL}}
+    =
+    (\alpha_{\mathrm{in}}^{\mathrm{UL}},
+     \alpha_{\mathrm{out}}^{\mathrm{UL}}),
+    \qquad
+    G_{\mathrm{UL}}
+    =
+    (s_{\mathrm{in}}^{\mathrm{UL}},\gamma_{\mathrm{UL}}),
+    \qquad
+    G_{\mathrm{RL}}
+    =
+    (s_{\mathrm{in}}^{\mathrm{RL}},\gamma_{\mathrm{RL}}).
+\]
+Here \(G_{\mathrm{UL}}\) is used only when the readout is reinitialized after
+pretraining, and \(G_{\mathrm{RL}}\) is used only when the readout is
+reinitialized after unlearning.
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llll}
+\toprule
+\textbf{Reset case} & \textbf{Stage 1: PT} & \textbf{Stage 2: UL} & \textbf{Stage 3: RL} \\
+\midrule
+No \(R_{\mathrm{UL}}\), no \(R_{\mathrm{RL}}\)
+&
+\(\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}}\)
+&
+\(\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,A_{\mathrm{UL}}\)
+&
+\(\mathcal T_{\mathrm{RL}},\,\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,A_{\mathrm{UL}}\)
+\\
+\addlinespace
+Yes \(R_{\mathrm{UL}}\), no \(R_{\mathrm{RL}}\)
+&
+\(\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}}\)
+&
+\(\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,G_{\mathrm{UL}}\)
+&
+\(\mathcal T_{\mathrm{RL}},\,\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,G_{\mathrm{UL}}\)
+\\
+\addlinespace
+No \(R_{\mathrm{UL}}\), yes \(R_{\mathrm{RL}}\)
+&
+\(\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}}\)
+&
+\(\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,A_{\mathrm{UL}}\)
+&
+\(\mathcal T_{\mathrm{RL}},\,\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,A_{\mathrm{UL}},\,G_{\mathrm{RL}}\)
+\\
+\addlinespace
+Yes \(R_{\mathrm{UL}}\), yes \(R_{\mathrm{RL}}\)
+&
+\(\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}}\)
+&
+\(\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,G_{\mathrm{UL}}\)
+&
+\(\mathcal T_{\mathrm{RL}},\,\mathcal T_{\mathrm{UL}},\,\mathcal T_{\mathrm{PT}},\,c_{\mathrm{PT}},\,\lambda_{\mathrm{PT}},\,G_{\mathrm{UL}},\,G_{\mathrm{RL}}\)
+\\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+The table is intentionally cumulative.  For example, if the Stage-3 readout is
+reinitialized, then the RL geometry depends on the actual unlearned parameter
+representation, so all variables that shaped Stage 2 can enter the Stage-3
+implicit bias through that representation.
+
+\begin{center}
+\small
+\begin{tabular}{p{0.20\textwidth}p{0.29\textwidth}p{0.43\textwidth}}
+\toprule
+\textbf{Stage/start rule} & \textbf{Bregman center} & \textbf{Geometry source} \\
+\midrule
+Stage 1: PT
+&
+\(0\)
+&
+\(k_i^{\mathrm{PT}}=4c_{\mathrm{PT}}^2\).  The predictor-space PT bias depends on \(c_{\mathrm{PT}}\), not \(\lambda_{\mathrm{PT}}\).
+\\
+\addlinespace
+Stage 2: no \(R_{\mathrm{UL}}\)
+&
+\(\beta_{0,i}^{\mathrm{UL}}=\alpha_{\mathrm{in}}^{\mathrm{UL}}\alpha_{\mathrm{out}}^{\mathrm{UL}}\widehat\beta_{\mathrm{PT},i}\)
+&
+\(k_i^{\mathrm{UL}}\) is the Mode-B rescaled geometry.  It depends on \(c_{\mathrm{PT}}\), \(\lambda_{\mathrm{PT}}\), \(\widehat\beta_{\mathrm{PT}}\), \(\alpha_{\mathrm{in}}^{\mathrm{UL}}\), and \(\alpha_{\mathrm{out}}^{\mathrm{UL}}\).
+\\
+\addlinespace
+Stage 2: yes \(R_{\mathrm{UL}}\)
+&
+\(0\)
+&
+\(k_i^{\mathrm{UL,A}}=4[(s_{\mathrm{in}}^{\mathrm{UL}})^2(w_{\mathrm{PT},i}^{+}+w_{\mathrm{PT},i}^{-})^2+\gamma_{\mathrm{UL}}^2]^2\).  The dependence on \(c_{\mathrm{PT}}\) and \(\lambda_{\mathrm{PT}}\) enters through the pretrained parameters.
+\\
+\addlinespace
+Stage 3: no \(R_{\mathrm{RL}}\)
+&
+\(\beta_{0,i}^{\mathrm{RL}}=\widehat\beta_{\mathrm{UL},i}\)
+&
+The geometry is inherited from the Stage-2 initialization invariants: \(k_i^{\mathrm{UL}}\) in the no-\(R_{\mathrm{UL}}\) case, and \(k_i^{\mathrm{UL,A}}\) in the yes-\(R_{\mathrm{UL}}\) case.
+\\
+\addlinespace
+Stage 3: yes \(R_{\mathrm{RL}}\)
+&
+\(0\)
+&
+\(k_i^{\mathrm{RL,A}}=4[(s_{\mathrm{in}}^{\mathrm{RL}})^2(w_{\mathrm{UL},i}^{+}+w_{\mathrm{UL},i}^{-})^2+\gamma_{\mathrm{RL}}^2]^2\).  The dependence on earlier variables enters through the actual unlearned parameters.
+\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+\section{Optimal Unlearning Parameters in the No-Reset Setting}
+
+This section specializes the target/center/geometry decomposition to a no-reset unlearning pipeline and asks which initialization and layer-rescaling parameters make adversarial relearning hardest while preserving retain performance. The section is a design analysis for the diagonal model, not a distribution-free theorem.
+
+\subsection{Setting}
+
+Consider a three-stage pipeline.
+
+\paragraph{Stage 1: pretraining.}
+Train from the complex \((c_{\mathrm{PT}},\lambda_{\mathrm{PT}})\) initialization on the auxiliary or pretraining task. At convergence, the pretrained predictor \(\widehat\beta_{\mathrm{PT}}\) has active coordinates with magnitude
+\begin{equation}
+    a=|\widehat\beta_{\mathrm{PT},i}|
+\end{equation}
+and inactive coordinates with \(\widehat\beta_{\mathrm{PT},i}=0\).
+
+\paragraph{Stage 2: unlearning.}
+Fine-tune directly from the pretrained checkpoint, optionally applying Mode B layer rescaling beforehand. No Mode A operations are performed: the readout \(v^\pm\) is not reinitialized to a constant \(\gamma\), and the input weights \(w^\pm\) are not averaged. The effective target \(\beta_{\mathrm{eff}}\) is chosen to push harmful forget-set features toward zero while preserving retain-set features.
+
+\paragraph{Stage 3: adversarial relearning.}
+An adversary fine-tunes the unlearned model on forget-set data, attempting to recover the harmful capability. The design question is: what choice of
+\begin{equation}
+    (c_{\mathrm{PT}},\lambda_{\mathrm{PT}},\alpha_{\mathrm{in}},\alpha_{\mathrm{out}})
+\end{equation}
+makes adversarial relearning hardest, subject to the unlearned model performing well on the retain task and Stage 2 remaining sample-efficient?
+
+\subsection{The Geometry Parameter Is Conserved from Initialization}
+
+For the complex \((c,\lambda)\) initialization,
+\begin{equation}
+    w_i^+=w_i^-=\sqrt{\frac{c-\lambda}{2}},
+    \qquad
+    v_i^+=v_i^-=\sqrt{\frac{c+\lambda}{2}}.
+\end{equation}
+Hence
+\begin{equation}
+    c_i=w_i^+w_i^-+v_i^+v_i^-=c,
+    \qquad
+    \lambda_{e,+,i}=\lambda_{e,-,i}=-\lambda.
+\end{equation}
+Therefore
+\begin{equation}
+    k_i
+    =
+    (\lambda_{e,+,i}-\lambda_{e,-,i})^2+4c_i^2
+    =
+    4c^2
+\end{equation}
+at initialization. Since \(c_i\), \(\lambda_{e,+,i}\), and \(\lambda_{e,-,i}\) are conserved under gradient flow, this geometry parameter remains fixed throughout pretraining and no-reset fine-tuning unless an explicit layer rescaling is applied.
+
+Two consequences follow. Without Mode B rescaling, the Stage 3 geometry is determined entirely by \(c_{\mathrm{PT}}\) and is uniform across coordinates. The parameter \(\lambda_{\mathrm{PT}}\) does not affect \(k\) in the no-rescaling case, because \(\lambda_{e,+}=\lambda_{e,-}\); it becomes relevant only when layer imbalance creates \(\Delta_\alpha\neq0\), equivalently \(\rho\neq1\).
+
+\subsection{Regime Definitions}
+
+The regime diagram has two axes. The first axis is the update order \(\ell\): \(\ell\approx1\) means rich or sparse recovery, while \(\ell\approx2\) means lazy or quadratic recovery. The second axis is pretraining dependence \(PD\): \(PD\approx0\) means pretraining-independent updates, while \(PD\approx-1\) means strongly pretraining-dependent updates around an inherited center. Thus a coordinate's regime is the pair
+\begin{equation}
+    (\ell,PD).
+\end{equation}
+Safe and dangerous are not new axes; they are relearning interpretations of this pair for harmful coordinates.
+
+For a harmful coordinate, write \(b_H\) for the inherited Bregman center at the start of adversarial relearning and \(k_H\) for its geometry. The dangerous center-reuse regime is the lazy/pretraining-dependent pair
+\begin{equation}
+    \ell_H\approx2,
+    \qquad
+    PD_H\approx-1.
+\end{equation}
+Mechanistically, this occurs when
+\begin{equation}
+    |b_H|^2\gg k_H,
+    \qquad
+    u_H\ \text{small},
+\end{equation}
+so that
+\begin{equation}
+    \qquad
+    D_{q_{k_H}}(b_H+u_H,b_H)
+    \approx
+    \frac{u_H^2}{4|b_H|}.
+\end{equation}
+In plain English: the harmful feature remains as a large inherited center, so small aligned relearning updates are locally cheap even though the penalty looks quadratic.
+
+The safest target for harmful coordinates is the lazy/pretraining-independent pair
+\begin{equation}
+    \ell_H\approx2,
+    \qquad
+    PD_H\approx0.
+\end{equation}
+Mechanistically, this corresponds to
+\begin{equation}
+    k_H\gg |b_H|^2.
+\end{equation}
+In plain English: the harmful center has been removed or made small relative to the geometry, so future relearning behaves like dense/lazy recovery rather than cheap center reuse.
+
+The rich/pretraining-independent pair \((\ell_H,PD_H)\approx(1,0)\) is not dangerous center reuse, but it is less safe than the lazy/pretraining-independent pair because sparse harmful features can still be relearned sample-efficiently. The rich/pretraining-dependent region is also undesirable when the inherited center is harmful, because it combines sparse recovery with pretraining-dependent cheap directions.
+
+\subsection{The Dangerous Regime and the Condition for Safety}
+
+For a harmful feature active during pretraining, the Bregman center at the start of Stage 3 is the harmful coordinate left after Stage 2,
+\begin{equation}
+    b_H=\beta_{\mathrm{unlearn},H}.
+\end{equation}
+If Stage 2 drives \(\beta_{\mathrm{unlearn},H}\approx0\), the adversary starts near zero. If Stage 2 leaves a large harmful center, small aligned relearning updates may be cheap.
+
+Without Mode B rescaling, \(\rho=1\) and \(s=1\), so
+\begin{equation}
+    k_H=4c_{\mathrm{PT}}^2,
+    \qquad
+    b_H=a=|\widehat\beta_{\mathrm{PT},H}|.
+\end{equation}
+For a teacher with \(r\) active features normalized by \(|\widehat\beta_{\mathrm{PT},i}|=1/\sqrt r\), the danger ratio is
+\begin{equation}
+    \frac{k_H}{b_H^2}=4c_{\mathrm{PT}}^2r.
+\end{equation}
+If \(4c_{\mathrm{PT}}^2r\ll1\), the coordinate lies in the center-reuse regime: \(\ell\approx2\), \(PD\approx-1\), and small aligned relearning updates are cheap. If \(4c_{\mathrm{PT}}^2r\gg1\), the coordinate lies in the safe lazy regime: \(\ell\approx2\), \(PD\approx0\), and the adversary faces dense recovery. The threshold is
+\begin{equation}
+    c_{\mathrm{PT}}\gg\frac{1}{2\sqrt r}.
+\end{equation}
+For \(r=40\), this is about \(0.08\); for \(r=20\), it is about \(0.11\).
+
+Large \(k\) is beneficial in both directions. Stage 2 must move a harmful coordinate from \(a\) to zero. In the local large-geometry approximation,
+\begin{equation}
+    D_{q_k}(0,a)
+    \approx
+    \frac{a^2}{2\sqrt{k}}
+    =
+    \frac{1}{4c_{\mathrm{PT}}r},
+\end{equation}
+so increasing \(c_{\mathrm{PT}}\) makes forgetting cheaper while making later relearning harder.
+
+\subsection{Uniform Rescaling Does Not Change the Regime}
+
+A natural question is whether Mode B with equal layer scaling can move a coordinate to a safer regime. Under \(\rho=1\),
+\begin{equation}
+    \Delta_\alpha=0,
+    \qquad
+    \Sigma_\alpha=2s,
+\end{equation}
+and therefore
+\begin{equation}
+    b=sa,
+    \qquad
+    \sqrt{k^{FT}}=2s c_{\mathrm{PT}}.
+\end{equation}
+The ratio
+\begin{equation}
+    \frac{\sqrt{k^{FT}}}{|b|}
+    =
+    \frac{2c_{\mathrm{PT}}}{a}
+\end{equation}
+is independent of \(s\). Uniform rescaling changes \(b\) and \(\sqrt{k}\) in the same proportion, moving the operating point along a slope-one ray in the \((\log|b|,\log\sqrt{k})\) plane without crossing the diagonal \(|b|=\sqrt{k}\). Thus \(s\) changes absolute scale, but it is inert with respect to the center/geometry regime when \(\rho=1\).
+
+This contrasts with Lippl and Lindsey (2024), where weight rescaling before fine-tuning changes the regime because the readout is later reinitialized to a fixed constant \(\gamma\). The relevant ratio then contains \(s^2|\beta^{\mathrm{aux}}|/\gamma^2\), which varies with \(s\). In the no-reinitialization setting considered here, this mechanism is absent; the symmetry must be broken by layer imbalance instead.
+
+\subsection{Layer Imbalance as the Primary Lever}
+
+Let
+\begin{equation}
+    s:=\alpha_{\mathrm{in}}\alpha_{\mathrm{out}},
+    \qquad
+    \rho:=\frac{\alpha_{\mathrm{in}}}{\alpha_{\mathrm{out}}},
+\end{equation}
+with positive layer scales. Then
+\begin{equation}
+    \alpha_{\mathrm{in}}=\sqrt{s\rho},
+    \qquad
+    \alpha_{\mathrm{out}}=\sqrt{\frac{s}{\rho}},
+\end{equation}
+and
+\begin{equation}
+    \Sigma_\alpha=s(\rho+\rho^{-1}),
+    \qquad
+    \Delta_\alpha=s(\rho-\rho^{-1}).
+\end{equation}
+The center remains
+\begin{equation}
+    b=s\widehat\beta_{\mathrm{PT}},
+\end{equation}
+which is independent of \(\rho\). Under the balanced-pathway and aligned-gauge assumptions, the rescaled geometry is
+\begin{equation}
+    k^{FT}
+    =
+    s^2\left[
+    \left((\rho+\rho^{-1})c_{\mathrm{PT}}
+    +
+    (\rho-\rho^{-1})\lambda_{\mathrm{PT}}H\right)^2
+    +
+    (\rho-\rho^{-1})^2a^2(1-\lambda_{\mathrm{PT}}^2)
+    \right],
+\end{equation}
+where \(H=\sqrt{c_{\mathrm{PT}}^2+a^2}\). Hence \(k^{FT}/b^2\) is again independent of \(s\), but it depends on \(\rho\). At \(\lambda_{\mathrm{PT}}=0\), the condition \(k^{FT}>b^2\) becomes
+\begin{equation}
+    (\rho+\rho^{-1})^2\frac{c_{\mathrm{PT}}^2}{a^2}
+    +
+    (\rho-\rho^{-1})^2
+    >1.
+\end{equation}
+In the limit \(c_{\mathrm{PT}}\to0\), this reduces to
+\begin{equation}
+    (\rho-\rho^{-1})^2>1.
+\end{equation}
+For \(\rho>1\), the threshold is
+\begin{equation}
+    \rho^2-\rho-1>0,
+\end{equation}
+so
+\begin{equation}
+    \boxed{\rho>\varphi:=\frac{1+\sqrt5}{2}\approx1.618.}
+\end{equation}
+Thus \(\rho>\varphi\) moves the operating point above the diagonal \(|b|=\sqrt{k}\) even when \(c_{\mathrm{PT}}\to0\). This decouples the pretraining regime from the fine-tuning regime: one can pretrain richly with small \(c\), then enter the lazy, low-center-reuse regime by choosing sufficient layer imbalance.
+
+\subsection{Role of \texorpdfstring{\(\lambda_{\mathrm{PT}}\)}{lambdaPT}}
+
+For \(\rho>1\), so \(\Delta_\alpha>0\), the balanced formula gives
+\begin{equation}
+    \frac{\partial}{\partial\lambda_{\mathrm{PT}}}
+    \left[\frac{k^{FT}}{b^2}\right]
+    >0
+    \qquad
+    \text{for }\lambda_{\mathrm{PT}}\in(-1,1),\ c_{\mathrm{PT}}>0.
+\end{equation}
+Indeed, differentiating the bracketed expression above gives a positive multiple of
+\begin{equation}
+    c_{\mathrm{PT}}
+    \left[(\rho+\rho^{-1})H+(\rho-\rho^{-1})\lambda_{\mathrm{PT}}c_{\mathrm{PT}}\right],
+\end{equation}
+which is positive for \(\rho>1\) and \(\lambda_{\mathrm{PT}}\in(-1,1)\). Therefore \(\lambda_{\mathrm{PT}}\to+1\) maximizes \(k^{FT}\) at fixed \(\rho>1\). The intuition is that a positive \(\lambda_{\mathrm{PT}}\) is already input-heavy, and \(\rho>1\) amplifies this asymmetry. For \(\rho<1\), the symmetric choice \(\lambda_{\mathrm{PT}}\to-1\) maximizes \(k^{FT}\).
+
+\subsection{Why the Safe Lazy Regime Satisfies the Constraints}
+
+In the safe lazy regime, \(k^{FT}\gg b^2\), the coordinate Bregman divergence is approximately quadratic:
+\begin{equation}
+    D_{q_k}(b+u,b)
+    \approx
+    \frac{u^2}{2\sqrt{k}}.
+\end{equation}
+Thus the Stage 2 Bregman projection is approximately an \(\ell_2\) projection. When forget and retain features are approximately orthogonal, as in random designs with \(D\gg r\), this projection can move forget coordinates toward zero while leaving retain coordinates nearly unchanged.
+
+The same geometry is also favorable for Stage 2 optimization: the local landscape is lazy and well-conditioned, and the sample requirement is governed mainly by the need to identify the forget directions in the data constraint. But Stage 3 adversarial relearning from a near-zero harmful coordinate faces dense recovery. The heuristic benchmarks in Appendix~\ref{app:rich-lazy} give
+\begin{equation}
+    N_{\mathrm{rich}}\approx2r\log(D/r),
+    \qquad
+    N_{\mathrm{lazy}}\approx D.
+\end{equation}
+For \(D=1000\) and \(r=40\), this gives \(N_{\mathrm{rich}}\approx258\) versus \(N_{\mathrm{lazy}}\approx1000\). Regime 4 therefore dominates Regime 1 for sparse harmful features: both avoid center reuse, but only Regime 4 denies the adversary sparse recovery.
+
+\subsection{Summary of Optimal Parameters}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parameter} & \textbf{Recommended value} & \textbf{Reason} \\
+\midrule
+\(\rho=\alpha_{\mathrm{in}}/\alpha_{\mathrm{out}}\) & \(>\varphi\), practically \(\rho\ge2\) & Enters Regime 4 even for small \(c_{\mathrm{PT}}\) \\
+\(\lambda_{\mathrm{PT}}\) & \(\to+1\) for \(\rho>1\) & Maximizes \(k^{FT}\) through imbalance terms \\
+\(c_{\mathrm{PT}}\) & Moderate; need not be large & Helps geometry but is subdominant for \(\rho>\varphi\) \\
+\(s=\alpha_{\mathrm{in}}\alpha_{\mathrm{out}}\) & Free for regime selection & Scales \(b\) and \(\sqrt{k}\) proportionally \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The key insight is that \(\rho\) plays the role in the no-reinitialization setting that \(s\) plays in Lippl and Lindsey (2024): it is the lever that shifts the regime. The mechanism is different. There, \(s\) matters because the readout reinitialization \(\gamma\) breaks the scaling symmetry. Here, \(\rho\neq1\) breaks the symmetry through the \(\Delta_\alpha^2a^2\) contribution to \(k^{FT}\).
+
+\subsection{Heatmap Suite}
+
+Three diagnostic heatmaps summarize the parameter effects. Each figure has four panels: \(\ell\)-order, \(PD\), \(\ell+PD\), and \(\log C_{\mathrm{rel}}\).
+
+\begin{figure}[t]
+\centering
+\IfFileExists{figures/heatmaps/heatmap_A_u0.5.pdf}{%
+\includegraphics[width=\textwidth]{figures/heatmaps/heatmap_A_u0.5.pdf}%
+}{%
+\fbox{\parbox{0.9\textwidth}{Missing figure: \texttt{figures/heatmaps/heatmap\_A\_u0.5.pdf}}}%
+}
+\caption{Reduced Bregman heatmap with axes \(\log|b|\) and \(\log\sqrt{k}\), holding \(u=0.5\) fixed. The dashed diagonal is \(|b|=\sqrt{k}\). Bottom-right is dangerous center reuse; top-left is the safe lazy regime.}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\IfFileExists{figures/heatmaps/heatmap_B_a1.0_c0.5_lam0.0_u0.5.pdf}{%
+\includegraphics[width=\textwidth]{figures/heatmaps/heatmap_B_a1.0_c0.5_lam0.0_u0.5.pdf}%
+}{%
+\fbox{\parbox{0.9\textwidth}{Missing figure: \texttt{figures/heatmaps/heatmap\_B\_a1.0\_c0.5\_lam0.0\_u0.5.pdf}}}%
+}
+\caption{Layer-rescaling heatmap with axes \(\log s\) and \(\log\rho\), holding \(a=1\), \(c_{\mathrm{PT}}=0.5\), \(\lambda_{\mathrm{PT}}=0\), and \(u=0.5\) fixed. Varying \(s\) along \(\rho=1\) preserves the regime; moving away from \(\rho=1\) increases geometry.}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\IfFileExists{figures/heatmaps/heatmap_C_a1.0_s1.0_rho2.0_u0.5.pdf}{%
+\includegraphics[width=\textwidth]{figures/heatmaps/heatmap_C_a1.0_s1.0_rho2.0_u0.5.pdf}%
+}{%
+\fbox{\parbox{0.9\textwidth}{Missing figure: \texttt{figures/heatmaps/heatmap\_C\_a1.0\_s1.0\_rho2.0\_u0.5.pdf}}}%
+}
+\caption{Pretrained-gauge heatmap with axes \(\lambda_{\mathrm{PT}}\) and \(\log c_{\mathrm{PT}}\), holding \(a=1\), \(s=1\), \(\rho=2\), and \(u=0.5\) fixed. Increasing \(\lambda_{\mathrm{PT}}\) and \(c_{\mathrm{PT}}\) pushes the coordinate toward the safe lazy regime.}
+\end{figure}
+
+Heatmap A places the four regimes in the \((\log|b|,\log\sqrt{k})\) plane. Without rescaling the operating point is \((\log a,\log(2c_{\mathrm{PT}}))\); uniform scaling moves it along a slope-one ray, while \(\rho>\varphi\) lifts it above the diagonal. Heatmap B shows directly that \(s\) alone is inert along \(\rho=1\), whereas layer imbalance changes the regime. Heatmap C shows how \(\lambda_{\mathrm{PT}}\) and \(c_{\mathrm{PT}}\) shape the geometry at fixed predictor magnitude.
+
+\section{Effective-Teacher Unlearning Reduction}
+\label{sec:effective-teacher}
+
+The next reduction is exact only for finite sums of squared losses. Consider
+\begin{equation}
+    L(\beta)
+    =
+    \sum_j
+    \frac{a_j}{2}
+    \left\|X^\top\beta-X^\top\beta_j\right\|_2^2,
+    \qquad
+    A:=\sum_j a_j.
+\end{equation}
+If \(A\neq 0\), define
+\begin{equation}
+    \beta_{\mathrm{eff}}
+    =
+    \frac1A\sum_j a_j\beta_j.
+\end{equation}
+Then
+\begin{equation}
+    L(\beta)
+    =
+    \frac{A}{2}
+    \left\|X^\top\beta-X^\top\beta_{\mathrm{eff}}\right\|_2^2
+    +
+    \mathrm{const}.
+\end{equation}
+This is a pure completion-of-the-square identity. Algebraically the reduction holds for \(A\neq0\), but the gradient-flow implicit-bias theorem uses \(A>0\). If \(A<0\), the reduced quadratic is negative-definite; if \(A=0\), the quadratic term vanishes.
+
+This reduction does not apply to arbitrary cross-entropy, KL, DPO-style, adversarial, or other non-quadratic unlearning losses. Outside the quadratic family, the target need not collapse to a single effective teacher and the square-loss dynamics used above need not apply.
+
+\section{Combined Unlearning Implicit-Bias Theorem}
+
+\begin{theorem}[Target, center, and geometry for squared unlearning]
+Consider a squared unlearning loss of the form above with \(A>0\), effective teacher \(\beta_{\mathrm{eff}}\), and warm start \(\beta_0\). Assume \(k_i>0\). If gradient flow converges to a finite predictor satisfying
+\begin{equation}
+    X^\top\beta(\infty)=X^\top\beta_{\mathrm{eff}},
+\end{equation}
+and the residual integral exists for \(r(t)=X^\top\beta_{\mathrm{eff}}-X^\top\beta(t)\), then
+\begin{equation}
+    \boxed{
+    \beta(\infty)
+    =
+    \arg\min_{\beta}
+    D_{Q_k}(\beta,\beta_0)
+    \quad
+    \text{s.t.}
+    \quad
+    X^\top\beta=X^\top\beta_{\mathrm{eff}}
+    }.
+\end{equation}
+\end{theorem}
+
+The interpretation is the three-channel decomposition:
+\begin{itemize}
+    \item the target \(\beta_{\mathrm{eff}}\) sets the interpolation constraint;
+    \item the center \(\beta_0\) sets the Bregman tilt;
+    \item the geometry \(Q_k\) sets the implicit regularizer.
+\end{itemize}
+This is the main unlearning theorem. It says that, for squared unlearning losses, the target and the initialization enter different parts of the variational problem. The statement is for continuous-time gradient flow and an interpolating limit; finite-step gradient descent, stochastic optimization, and non-interpolating regimes may deviate.
+
+
+
+\section{No-Rescaling Intuition: Center-Based Pretraining Dependence}
+
+Before giving the unified definitions, it is useful to isolate the basic intuition in the no-rescaling case. In the Anguita PT+FT framework, fine-tuning is reset so that the effective function starts at zero, and the coordinate penalty is the zero-centered potential \(q_k(\beta_{FT})\). Pretraining dependence then enters through the geometry parameter \(k=k(|\widehat\beta_{PT}|)\).
+
+In the no-rescaling nonzero-center setting, the fine-tuning predictor starts at an inherited coordinate
+\begin{equation}
+    \beta_0=\beta(0),
+\end{equation}
+and, for the simplified no-rescaling elasticity calculation, \(k(|\widehat\beta_{PT}|)=k_0\) is held fixed. The one-coordinate penalty is instead
+\begin{equation}
+    D_{q_k}(\beta_{FT},\beta_0)
+    =
+    q_k(\beta_{FT})-q_k(\beta_0)-q_k'(\beta_0)(\beta_{FT}-\beta_0).
+\end{equation}
+Thus pretraining dependence is center-based: the inherited coordinate creates a Bregman basin around \(\beta_0\). Taylor's theorem gives
+\begin{equation}
+    D_{q_k}(\beta_{FT},\beta_0)
+    =
+    \frac12q_k''(\beta_0)(\beta_{FT}-\beta_0)^2
+    +
+    o((\beta_{FT}-\beta_0)^2)
+    =
+    \frac{(\beta_{FT}-\beta_0)^2}{2\sqrt{k+4\beta_0^2}}
+    +
+    o((\beta_{FT}-\beta_0)^2).
+\end{equation}
+Therefore small updates around a large inherited feature become cheap, because the local curvature scales like \(1/|\beta_0|\) when \(|\beta_0|^2\gg k\). This is the center-based analogue of a lazy pretraining-dependent basin.
+
+Deletion to zero is a different qualitative operation. If \(\beta_{FT}=0\), then the displacement is \(-\beta_0\), so the update itself changes with the pretrained magnitude. As \(|\beta_0|\to\infty\),
+\begin{equation}
+    D_{q_k}(0,\beta_0)\sim\frac{|\beta_0|}{2},
+\end{equation}
+so removing a large inherited feature remains costly. This should not be confused with the unified \(PD\), which holds the displacement \(\beta_{FT}-\beta_0\) fixed while varying \(|\widehat\beta_{PT}|\).
+
+The next section makes this precise with one canonical update-coordinate definition of \(\ell\)-order and one canonical definition of \(PD\).
+
+
+\section{Unified \texorpdfstring{\(\ell\)-Order and Pretraining Dependence}{l-Order and Pretraining Dependence}}
+
+This is the canonical \(\ell\)-order and pretraining-dependence theory used in the rest of the note. It gives one coordinate penalty, one \(\ell\)-order, and one \(PD\) definition. The zero-center Anguita-style framework and the no-rescaling nonzero-center framework are both special cases.
+
+\subsection{Variables and Canonical Definitions}
+
+Fix one coordinate \(i\). The pretrained coordinate is
+\begin{equation}
+    \widehat\beta_{PT,i},
+\end{equation}
+and the final coordinate after the fine-tuning or relearning update is
+\begin{equation}
+    \beta_{FT,i}.
+\end{equation}
+The inherited Bregman center at the start of that fine-tuning run is
+\begin{equation}
+    \beta_{0,i}=\beta_{0,i}(|\widehat\beta_{PT,i}|),
+\end{equation}
+and the inherited geometry is
+\begin{equation}
+    k_i=k_i(|\widehat\beta_{PT,i}|)>0.
+\end{equation}
+Thus \(\widehat\beta_{PT,i}\) is the pretrained feature value, \(\beta_{0,i}\) is the center that future fine-tuning is pulled toward, and \(\beta_{FT,i}\) is the coordinate value whose update cost we evaluate.
+
+The coordinatewise Bregman divergence is
+\begin{equation}
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    =
+    q_{k_i}(\beta_{FT,i})
+    -
+    q_{k_i}(\beta_{0,i})
+    -
+    q_{k_i}'(\beta_{0,i})(\beta_{FT,i}-\beta_{0,i}).
+\end{equation}
+The master coordinate penalty is
+\begin{equation}
+    \boxed{
+    \psi_i(\beta_{FT,i};\widehat\beta_{PT,i})
+    :=
+    D_{q_{k_i(|\widehat\beta_{PT,i}|)}}(\beta_{FT,i},\beta_{0,i}(|\widehat\beta_{PT,i}|))
+    }.
+\end{equation}
+The update being measured is the displacement
+\begin{equation}
+    \beta_{FT,i}-\beta_{0,i}.
+\end{equation}
+We do not introduce a separate symbol for this displacement below; all formulas keep the two betas visible.
+
+The canonical definitions are
+\begin{equation}
+    \boxed{
+    \ell_i
+    :=
+    \frac{\partial\log\psi_i}{\partial\log |\beta_{FT,i}-\beta_{0,i}|}
+    }
+\end{equation}
+and
+\begin{equation}
+    \boxed{
+    PD_i
+    :=
+    \frac{\partial\log\psi_i}{\partial\log |\widehat\beta_{PT,i}|}
+    }.
+\end{equation}
+In the definition of \(PD_i\), the displacement \(\beta_{FT,i}-\beta_{0,i}\) is held fixed, not the final coordinate \(\beta_{FT,i}\). Thus \(PD_i\) asks how the cost of making the same update changes as the pretrained feature magnitude \(|\widehat\beta_{PT,i}|\) changes.
+
+\subsection{Formula for \texorpdfstring{\(\ell_i\)}{l-i}}
+
+Differentiating the Bregman divergence in the fine-tuned coordinate gives
+\begin{equation}
+    \partial_{\beta_{FT,i}}
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    =
+    q_{k_i}'(\beta_{FT,i})-q_{k_i}'(\beta_{0,i}).
+\end{equation}
+Therefore
+\begin{equation}
+    \boxed{
+    \ell_i
+    =
+    \frac{
+    (\beta_{FT,i}-\beta_{0,i})
+    \left[q_{k_i}'(\beta_{FT,i})-q_{k_i}'(\beta_{0,i})\right]
+    }{
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    }
+    }.
+\end{equation}
+Using \(q_k'(x)=\tfrac12\operatorname{arcsinh}(2x/\sqrt{k})\), this is
+\begin{equation}
+    \boxed{
+    \ell_i
+    =
+    \frac{
+    \frac{\beta_{FT,i}-\beta_{0,i}}{2}
+    \left[
+    \operatorname{arcsinh}\left(\dfrac{2\beta_{FT,i}}{\sqrt{k_i}}\right)
+    -
+    \operatorname{arcsinh}\left(\dfrac{2\beta_{0,i}}{\sqrt{k_i}}\right)
+    \right]
+    }{
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    }
+    }.
+\end{equation}
+This \(\ell\)-order is nonnegative, because \(q_{k_i}'\) is increasing and \(\beta_{FT,i}-\beta_{0,i}\) has the same sign as \(q_{k_i}'(\beta_{FT,i})-q_{k_i}'(\beta_{0,i})\).
+
+For small updates around the inherited center,
+\begin{equation}
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    =
+    \frac12q_{k_i}''(\beta_{0,i})(\beta_{FT,i}-\beta_{0,i})^2
+    +
+    o((\beta_{FT,i}-\beta_{0,i})^2),
+\end{equation}
+that is,
+\begin{equation}
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    =
+    \frac{(\beta_{FT,i}-\beta_{0,i})^2}{2\sqrt{k_i+4\beta_{0,i}^2}}
+    +
+    o((\beta_{FT,i}-\beta_{0,i})^2).
+\end{equation}
+Hence
+\begin{equation}
+    \boxed{\ell_i\to2\qquad\text{as }\beta_{FT,i}\to\beta_{0,i}.}
+\end{equation}
+Every smooth nonzero-center Bregman penalty is locally quadratic around the inherited center.
+
+\subsection{Formula for \texorpdfstring{\(PD_i\)}{PD-i}}
+
+The dependence on the pretrained coordinate enters through two channels:
+\begin{equation}
+    \beta_{0,i}=\beta_{0,i}(|\widehat\beta_{PT,i}|),
+    \qquad
+    k_i=k_i(|\widehat\beta_{PT,i}|).
+\end{equation}
+By the chain rule, with \(\beta_{FT,i}-\beta_{0,i}\) held fixed,
+\begin{equation}
+    PD_i
+    =
+    |\widehat\beta_{PT,i}|
+    \frac{\partial\beta_{0,i}}{\partial |\widehat\beta_{PT,i}|}
+    \partial_{\beta_{0,i}}\log D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    +
+    |\widehat\beta_{PT,i}|
+    \frac{\partial k_i}{\partial |\widehat\beta_{PT,i}|}
+    \partial_{k_i}\log D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i}).
+\end{equation}
+Since
+\begin{equation}
+    \partial_{\beta_{0,i}}D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    =
+    q_{k_i}'(\beta_{FT,i})
+    -
+    q_{k_i}'(\beta_{0,i})
+    -
+    (\beta_{FT,i}-\beta_{0,i})q_{k_i}''(\beta_{0,i}),
+\end{equation}
+we obtain
+\begin{equation}
+    \boxed{
+    \begin{aligned}
+    PD_i
+    ={}&
+    \frac{
+    |\widehat\beta_{PT,i}|
+    \frac{\partial\beta_{0,i}}{\partial |\widehat\beta_{PT,i}|}
+    \left[
+    q_{k_i}'(\beta_{FT,i})-q_{k_i}'(\beta_{0,i})
+    -
+    (\beta_{FT,i}-\beta_{0,i})q_{k_i}''(\beta_{0,i})
+    \right]
+    }{
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    }\\
+    &+
+    \frac{
+    |\widehat\beta_{PT,i}|
+    \frac{\partial k_i}{\partial |\widehat\beta_{PT,i}|}
+    }{
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    }
+    \partial_{k_i}D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i}).
+    \end{aligned}
+    }
+\end{equation}
+This is a single definition of \(PD_i\). The two summands are not alternative definitions; they are the center channel and geometry channel in the chain rule.
+
+Negative \(PD_i\) means that increasing the pretrained feature magnitude makes the same update \(\beta_{FT,i}-\beta_{0,i}\) cheaper. Positive \(PD_i\) means it makes that same update more expensive.
+
+\subsection{Recovery of the Zero-Center Anguita Definitions}
+
+In the zero-center reset framework,
+\begin{equation}
+    \beta_{0,i}=0.
+\end{equation}
+Then
+\begin{equation}
+    D_{q_{k_i}}(\beta_{FT,i},0)
+    =
+    q_{k_i}(\beta_{FT,i})-q_{k_i}(0)-q_{k_i}'(0)\beta_{FT,i}
+    =
+    q_{k_i}(\beta_{FT,i}),
+\end{equation}
+because \(q_k(0)=q_k'(0)=0\). Hence the master penalty reduces to
+\begin{equation}
+    \psi_i=q_{k_i(|\widehat\beta_{PT,i}|)}(\beta_{FT,i}),
+\end{equation}
+and the unified definitions become
+\begin{equation}
+    \ell_i
+    =
+    \frac{\partial\log q_{k_i(|\widehat\beta_{PT,i}|)}(\beta_{FT,i})}{\partial\log |\beta_{FT,i}|},
+    \qquad
+    PD_i
+    =
+    \frac{\partial\log q_{k_i(|\widehat\beta_{PT,i}|)}(\beta_{FT,i})}{\partial\log |\widehat\beta_{PT,i}|}.
+\end{equation}
+These are exactly the zero-center Anguita-style definitions. Thus the present framework is a center-and-geometry generalization of Anguita.
+
+\subsection{Recovery of the No-Rescaling Nonzero-Center Definitions}
+
+In the simplified no-rescaling elasticity calculation, the inherited center is the pretrained coordinate up to sign,
+\begin{equation}
+    \beta_{0,i}=\sigma|\widehat\beta_{PT,i}|,
+    \qquad
+    \sigma\in\{-1,+1\},
+\end{equation}
+and the geometry is held fixed,
+\begin{equation}
+    k_i=k_0.
+\end{equation}
+Therefore \(\partial k_i/\partial|\widehat\beta_{PT,i}|=0\) and
+\begin{equation}
+    |\widehat\beta_{PT,i}|
+    \frac{\partial\beta_{0,i}}{\partial |\widehat\beta_{PT,i}|}
+    =
+    \beta_{0,i}.
+\end{equation}
+The unified \(PD_i\) becomes
+\begin{equation}
+    \boxed{
+    PD_i
+    =
+    \frac{
+    \beta_{0,i}
+    \left[
+    q_{k_i}'(\beta_{FT,i})-q_{k_i}'(\beta_{0,i})
+    -
+    (\beta_{FT,i}-\beta_{0,i})q_{k_i}''(\beta_{0,i})
+    \right]
+    }{
+    D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    }
+    }.
+\end{equation}
+As \(\beta_{FT,i}\to\beta_{0,i}\),
+\begin{equation}
+    PD_i
+    \to
+    \beta_{0,i}\frac{q_{k_i}'''(\beta_{0,i})}{q_{k_i}''(\beta_{0,i})}
+    =
+    -\frac{4\beta_{0,i}^2}{k_i+4\beta_{0,i}^2}.
+\end{equation}
+Together with \(\ell_i\to2\), this gives
+\begin{equation}
+    \boxed{
+    \ell_i\to2,
+    \qquad
+    PD_i\to-\frac{4\beta_{0,i}^2}{k_i+4\beta_{0,i}^2}.
+    }
+\end{equation}
+If \(|\beta_{0,i}|^2\ll k_i\), then \(PD_i\approx0\). If \(|\beta_{0,i}|^2\gg k_i\), then \(PD_i\approx-1\). Thus a large inherited center creates a locally lazy and pretraining-dependent update basin, \((\ell_i,PD_i)\approx(2,-1)\).
+
+\subsection{Scaling Identity and Regime Interpretation}
+
+At fixed geometry, radial scaling of the pair \((\beta_{FT,i},\beta_{0,i})\) gives the elasticity
+\begin{equation}
+    R_i
+    :=
+    \left(
+    \beta_{FT,i}\partial_{\beta_{FT,i}}
+    +
+    \beta_{0,i}\partial_{\beta_{0,i}}
+    \right)
+    \log D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i}).
+\end{equation}
+The integral representation of the Bregman divergence implies
+\begin{equation}
+    1\le R_i\le2.
+\end{equation}
+The exact scaling identity is
+\begin{equation}
+    D_{q_{\alpha^2k_i}}(\alpha\beta_{FT,i},\alpha\beta_{0,i})
+    =
+    \alpha D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i}).
+\end{equation}
+Differentiating at \(\alpha=1\) gives
+\begin{equation}
+    \left(
+    \beta_{FT,i}\partial_{\beta_{FT,i}}
+    +
+    \beta_{0,i}\partial_{\beta_{0,i}}
+    +
+    2k_i\partial_{k_i}
+    \right)
+    \log D_{q_{k_i}}(\beta_{FT,i},\beta_{0,i})
+    =
+    1.
+\end{equation}
+If \(\beta_{0,i}=\sigma|\widehat\beta_{PT,i}|\) and
+\begin{equation}
+    m_i
+    :=
+    \frac{\partial\log\sqrt{k_i(|\widehat\beta_{PT,i}|)}}{\partial\log |\widehat\beta_{PT,i}|},
+\end{equation}
+then the same calculation yields
+\begin{equation}
+    \ell_i+PD_i
+    =
+    m_i+(1-m_i)R_i.
+\end{equation}
+Therefore, under the explicit scaling assumptions \(0\le m_i\le1\) and \(1\le R_i\le2\),
+\begin{equation}
+    \boxed{1\le\ell_i+PD_i\le2.}
+\end{equation}
+This inequality is a scaling result under these assumptions, not an arbitrary-path guarantee.
+
+The regime interpretation is unchanged: \((\ell_i,PD_i)\approx(1,0)\) is rich and pretraining-independent; \((2,0)\) is lazy and pretraining-independent; \((2,-1)\) is lazy and pretraining-dependent, meaning the same update is much cheaper around large pretrained coordinates. Globally, \(PD_i\) can be positive or outside \([-1,0]\), depending on how \(\beta_{0,i}\) and \(k_i\) vary with \(|\widehat\beta_{PT,i}|\).
+
+Thus the old zero-center regimes are recovered as the geometry-dependent slice \(\beta_{0,i}=0\), while the no-rescaling nonzero-center regime is the center-dependent slice \(\beta_{0,i}=\pm|\widehat\beta_{PT,i}|\), \(k_i=k_0\). This center-based pretraining dependence is relevant for relearning resistance: if a harmful coordinate remains a large inherited center \(\beta_{0,i}\), then small relearning updates around it are locally cheap, since
+\begin{equation}
+    D_{q_{k_i}}(\beta_{0,i}+\text{small update},\beta_{0,i})
+    \approx
+    \frac{(\text{small update})^2}{4|\beta_{0,i}|}
+\end{equation}
+when \(|\beta_{0,i}|^2\gg k_i\).
+
+\section{Stage-3 Relearning Implicit Bias from the Unlearned Checkpoint}
+\label{sec:stage3-relearning-bias}
+
+We now state the precise implicit bias governing adversarial relearning after unlearning. Use \(\mathrm{UL}\) for the endpoint of unlearning and \(\mathrm{RL}\) for the Stage-3 relearning run. The key distinction is
+\begin{equation}
+    \boxed{
+    \begin{gathered}
+    \text{RL center depends on }\widehat\beta_{\mathrm{UL}},\\
+    \text{RL geometry is determined by the actual Stage-3 initial parameters.}
+    \end{gathered}
+    }
+\end{equation}
+Thus the center is a function-level object, while the geometry is a parameter-level object. The same unlearned predictor \(\widehat\beta_{\mathrm{UL}}\) can lead to different relearning biases if the post-unlearning parameters differ.
+
+\subsection{Stage-3 Center and Exact Geometry}
+
+Let Stage 3 begin from parameters
+\begin{equation}
+    w_{0,i}^{+},
+    \quad
+    w_{0,i}^{-},
+    \quad
+    v_{0,i}^{+},
+    \quad
+    v_{0,i}^{-}.
+\end{equation}
+The Stage-3 initial predictor, or RL center, is
+\begin{equation}
+    \beta_{0,i}^{\mathrm{RL}}
+    =
+    w_{0,i}^{+}v_{0,i}^{+}
+    -
+    w_{0,i}^{-}v_{0,i}^{-}.
+\end{equation}
+If Stage 3 starts directly from the unlearned checkpoint with no reset or rescaling, then
+\begin{equation}
+    \boxed{
+    \beta_{0,i}^{\mathrm{RL}}
+    =
+    \widehat\beta_{\mathrm{UL},i}.
+    }
+\end{equation}
+
+The exact Stage-3 initialization invariants are
+\begin{equation}
+    c_i^{\mathrm{RL}}
+    =
+    w_{0,i}^{+}w_{0,i}^{-}
+    +
+    v_{0,i}^{+}v_{0,i}^{-},
+\end{equation}
+\begin{equation}
+    \lambda_{e,+,i}^{\mathrm{RL}}
+    =
+    (w_{0,i}^{+})^2
+    -
+    (v_{0,i}^{+})^2,
+    \qquad
+    \lambda_{e,-,i}^{\mathrm{RL}}
+    =
+    (w_{0,i}^{-})^2
+    -
+    (v_{0,i}^{-})^2.
+\end{equation}
+The Stage-3 geometry is
+\begin{equation}
+    \boxed{
+    k_i^{\mathrm{RL}}
+    =
+    \left(
+        \lambda_{e,+,i}^{\mathrm{RL}}
+        -
+        \lambda_{e,-,i}^{\mathrm{RL}}
+    \right)^2
+    +
+    4\left(c_i^{\mathrm{RL}}\right)^2.
+    }
+\end{equation}
+This formula is exact and does not require balancedness, sign alignment, or gauge assumptions.
+
+\subsection{Theorem}
+
+Consider a mixed squared relearning loss
+\begin{equation}
+    L_{\mathrm{RL}}(\beta)
+    =
+    \sum_j
+    \frac{a_j}{2}
+    \left\|
+    X_{\mathrm{RL}}^\top\beta
+    -
+    X_{\mathrm{RL}}^\top\beta_j
+    \right\|_2^2,
+\end{equation}
+where \(X_{\mathrm{RL}}\in\mathbb{R}^{d\times N_{\mathrm{RL}}}\) has samples as columns. Let
+\begin{equation}
+    A_{\mathrm{RL}}:=\sum_j a_j>0,
+    \qquad
+    \beta_{\mathrm{eff}}^{\mathrm{RL}}
+    :=
+    \frac{1}{A_{\mathrm{RL}}}\sum_j a_j\beta_j.
+\end{equation}
+By the same completion-of-the-square calculation as in Section~\ref{sec:effective-teacher}, the relearning loss is equivalent, up to a positive factor and an additive constant, to square loss against the effective teacher \(X_{\mathrm{RL}}^\top\beta_{\mathrm{eff}}^{\mathrm{RL}}\).
+
+\begin{theorem}[Stage-3 relearning implicit bias]
+\label{thm:stage3-relearning-bias}
+Let Stage 3 start from parameters \(w_{0,i}^{\pm},v_{0,i}^{\pm}\), with center \(\beta_0^{\mathrm{RL}}\) and geometry \(k^{\mathrm{RL}}\) defined above. Suppose gradient flow on \(L_{\mathrm{RL}}\) converges to a finite predictor \(\widehat\beta_{\mathrm{RL}}\) satisfying
+\begin{equation}
+    X_{\mathrm{RL}}^\top\widehat\beta_{\mathrm{RL}}
+    =
+    X_{\mathrm{RL}}^\top\beta_{\mathrm{eff}}^{\mathrm{RL}},
+\end{equation}
+and suppose the residual integral exists for
+\begin{equation}
+    r(t)
+    =
+    X_{\mathrm{RL}}^\top\beta_{\mathrm{eff}}^{\mathrm{RL}}
+    -
+    X_{\mathrm{RL}}^\top\beta(t).
+\end{equation}
+Then
+\begin{equation}
+    \boxed{
+    \widehat\beta_{\mathrm{RL}}
+    =
+    \arg\min_{\beta}
+    D_{Q_{k^{\mathrm{RL}}}}
+    \left(
+        \beta,
+        \beta_0^{\mathrm{RL}}
+    \right)
+    \quad
+    \mathrm{s.t.}
+    \quad
+    X_{\mathrm{RL}}^\top\beta
+    =
+    X_{\mathrm{RL}}^\top
+    \beta_{\mathrm{eff}}^{\mathrm{RL}}.
+    }
+\end{equation}
+Equivalently,
+\begin{equation}
+    \boxed{
+    \widehat\beta_{\mathrm{RL}}
+    =
+    \arg\min_{
+    X_{\mathrm{RL}}^\top\beta
+    =
+    X_{\mathrm{RL}}^\top\beta_{\mathrm{eff}}^{\mathrm{RL}}
+    }
+    \sum_i
+    D_{q_{k_i^{\mathrm{RL}}}}
+    \left(
+        \beta_i,
+        \beta_{0,i}^{\mathrm{RL}}
+    \right).
+    }
+\end{equation}
+Dropping terms independent of \(\beta\), this is also
+\begin{equation}
+    \widehat\beta_{\mathrm{RL}}
+    =
+    \arg\min_{
+    X_{\mathrm{RL}}^\top\beta
+    =
+    X_{\mathrm{RL}}^\top\beta_{\mathrm{eff}}^{\mathrm{RL}}
+    }
+    \sum_i
+    \left[
+    q_{k_i^{\mathrm{RL}}}(\beta_i)
+    -
+    q_{k_i^{\mathrm{RL}}}'(\beta_{0,i}^{\mathrm{RL}})\beta_i
+    \right],
+\end{equation}
+where
+\begin{equation}
+    q_{k_i^{\mathrm{RL}}}'(\beta_{0,i}^{\mathrm{RL}})
+    =
+    \frac12
+    \operatorname{arcsinh}
+    \left(
+        \frac{2\beta_{0,i}^{\mathrm{RL}}}{\sqrt{k_i^{\mathrm{RL}}}}
+    \right).
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The effective-teacher reduction gives ordinary square-loss dynamics against \(X_{\mathrm{RL}}^\top\beta_{\mathrm{eff}}^{\mathrm{RL}}\), up to the positive time rescaling \(A_{\mathrm{RL}}\). The predictor dynamics derived in Appendix~\ref{app:predictor-dynamics}, applied to the Stage-3 initial invariants, give
+\begin{equation}
+    \dot\beta_i(t)
+    =
+    \sqrt{k_i^{\mathrm{RL}}+4\beta_i(t)^2}\;s_i(t),
+\end{equation}
+where
+\begin{equation}
+    s_i(t)
+    =
+    \sum_n x_{\mathrm{RL},i}^{(n)}r^{(n)}(t).
+\end{equation}
+Since \(q_{k_i^{\mathrm{RL}}}''(z)=(k_i^{\mathrm{RL}}+4z^2)^{-1/2}\), this implies
+\begin{equation}
+    \frac{d}{dt}
+    q_{k_i^{\mathrm{RL}}}'(\beta_i(t))
+    =
+    s_i(t).
+\end{equation}
+In vector form,
+\begin{equation}
+    \frac{d}{dt}
+    \nabla Q_{k^{\mathrm{RL}}}(\beta(t))
+    =
+    X_{\mathrm{RL}}r(t).
+\end{equation}
+Integrating from \(0\) to \(\infty\) gives
+\begin{equation}
+    \nabla Q_{k^{\mathrm{RL}}}(\widehat\beta_{\mathrm{RL}})
+    -
+    \nabla Q_{k^{\mathrm{RL}}}(\beta_0^{\mathrm{RL}})
+    =
+    X_{\mathrm{RL}}\nu,
+    \qquad
+    \nu:=\int_0^\infty r(t)\,dt.
+\end{equation}
+Together with interpolation, these are exactly the KKT conditions for the displayed Bregman projection. Strict convexity of \(Q_{k^{\mathrm{RL}}}\) for \(k_i^{\mathrm{RL}}>0\) makes the KKT conditions sufficient.
+\end{proof}
+
+\subsection{How \texorpdfstring{\(\widehat\beta_{\mathrm{UL}}\)}{betaUL} and \texorpdfstring{\(\widehat\beta_{PT}\)}{betaPT} Enter}
+
+If Stage 3 starts directly from the unlearned checkpoint, then
+\begin{equation}
+    w_{0,i}^{\pm}=w_{\mathrm{UL},i}^{\pm},
+    \qquad
+    v_{0,i}^{\pm}=v_{\mathrm{UL},i}^{\pm}.
+\end{equation}
+Therefore
+\begin{equation}
+    \boxed{
+    \beta_{0,i}^{\mathrm{RL}}
+    =
+    \widehat\beta_{\mathrm{UL},i}
+    }
+\end{equation}
+and
+\begin{equation}
+    \boxed{
+    \begin{aligned}
+    k_i^{\mathrm{RL}}
+    =
+    &\left[
+    (w_{\mathrm{UL},i}^{+})^2
+    -
+    (v_{\mathrm{UL},i}^{+})^2
+    -
+    (w_{\mathrm{UL},i}^{-})^2
+    +
+    (v_{\mathrm{UL},i}^{-})^2
+    \right]^2 \\
+    &+
+    4
+    \left[
+    w_{\mathrm{UL},i}^{+}w_{\mathrm{UL},i}^{-}
+    +
+    v_{\mathrm{UL},i}^{+}v_{\mathrm{UL},i}^{-}
+    \right]^2 .
+    \end{aligned}
+    }
+\end{equation}
+This is the safest expression: it uses the actual post-unlearning parameters and makes no assumptions about how those parameters represent \(\widehat\beta_{\mathrm{UL}}\).
+
+If there is no reset or rescaling between the start of unlearning and the start of relearning, then the invariants are conserved during the unlearning gradient flow, so
+\begin{equation}
+    \boxed{
+    k_i^{\mathrm{RL}}=k_i^{\mathrm{UL}\text{-}\mathrm{start}}.
+    }
+\end{equation}
+Thus Stage 3 inherits the geometry present at the start of unlearning, even though its center is the unlearning endpoint \(\widehat\beta_{\mathrm{UL}}\).
+
+\paragraph{Optional Stage-3 layer scaling.}
+If the adversary rescales the unlearned checkpoint before relearning by
+\begin{equation}
+    w^\pm\mapsto \alpha_{\mathrm{RL,in}}w^\pm,
+    \qquad
+    v^\pm\mapsto \alpha_{\mathrm{RL,out}}v^\pm,
+\end{equation}
+then
+\begin{equation}
+    \boxed{
+    \beta_{0,i}^{\mathrm{RL}}
+    =
+    \alpha_{\mathrm{RL,in}}\alpha_{\mathrm{RL,out}}
+    \widehat\beta_{\mathrm{UL},i}.
+    }
+\end{equation}
+The exact rescaled geometry is
+\begin{equation}
+    \boxed{
+    \begin{aligned}
+    k_i^{\mathrm{RL}}
+    =
+    &\left\{
+    \alpha_{\mathrm{RL,in}}^2
+    \left[
+    (w_{\mathrm{UL},i}^{+})^2
+    -
+    (w_{\mathrm{UL},i}^{-})^2
+    \right]
+    -
+    \alpha_{\mathrm{RL,out}}^2
+    \left[
+    (v_{\mathrm{UL},i}^{+})^2
+    -
+    (v_{\mathrm{UL},i}^{-})^2
+    \right]
+    \right\}^2 \\
+    &+
+    4
+    \left[
+    \alpha_{\mathrm{RL,in}}^2
+    w_{\mathrm{UL},i}^{+}w_{\mathrm{UL},i}^{-}
+    +
+    \alpha_{\mathrm{RL,out}}^2
+    v_{\mathrm{UL},i}^{+}v_{\mathrm{UL},i}^{-}
+    \right]^2 .
+    \end{aligned}
+    }
+\end{equation}
+The corresponding implicit bias is Theorem~\ref{thm:stage3-relearning-bias} with this rescaled center and geometry.
+
+\paragraph{When the RL geometry can be written from PT quantities.}
+Suppose the unlearning stage began from a pretrained checkpoint, optionally after a layer rescaling
+\begin{equation}
+    w^\pm\mapsto \alpha_{\mathrm{UL,in}}w^\pm,
+    \qquad
+    v^\pm\mapsto \alpha_{\mathrm{UL,out}}v^\pm,
+\end{equation}
+and suppose no additional reset or rescaling occurs between the start of unlearning and Stage 3. Then conservation of \(c_i,\lambda_{e,+,i},\lambda_{e,-,i}\) during unlearning implies that \(k_i^{\mathrm{RL}}\) equals the geometry induced at UL start.
+
+Under the balanced/gauge compressed representation of Appendix~\ref{app:layer-rescaling}, define
+\begin{equation}
+    H_i^{\mathrm{PT}}
+    =
+    \sqrt{
+    (c_i^{\mathrm{PT}})^2
+    +
+    \widehat\beta_{PT,i}^2
+    },
+\end{equation}
+\begin{equation}
+    \Sigma_{\mathrm{UL}}
+    =
+    \alpha_{\mathrm{UL,in}}^2+\alpha_{\mathrm{UL,out}}^2,
+    \qquad
+    \Delta_{\mathrm{UL}}
+    =
+    \alpha_{\mathrm{UL,in}}^2-\alpha_{\mathrm{UL,out}}^2.
+\end{equation}
+Then
+\begin{equation}
+    \boxed{
+    \begin{aligned}
+    k_i^{\mathrm{RL}}
+    =
+    &\left[
+    \Sigma_{\mathrm{UL}}c_i^{\mathrm{PT}}
+    +
+    \Delta_{\mathrm{UL}}\lambda_i^{\mathrm{PT}}H_i^{\mathrm{PT}}
+    \right]^2 \\
+    &+
+    \Delta_{\mathrm{UL}}^2
+    \widehat\beta_{PT,i}^2
+    \left[
+    1-(\lambda_i^{\mathrm{PT}})^2
+    \right].
+    \end{aligned}
+    }
+\end{equation}
+This compact formula is exact only under the balanced/gauge assumptions. In this important case,
+\begin{equation}
+    \boxed{
+    \text{Stage-3 center}=\widehat\beta_{\mathrm{UL}},
+    \qquad
+    \text{Stage-3 geometry}=k^{\mathrm{RL}}(\widehat\beta_{PT}).
+    }
+\end{equation}
+The center records where unlearning ended; the geometry records how the inherited parameterization constrains future relearning.
+
+\paragraph{No rescaling anywhere.}
+If there is no UL-start rescaling, no Stage-3 rescaling, and no reset, then for the standard complex initialization
+\begin{equation}
+    k_i^{\mathrm{RL}}=4c_{\mathrm{PT}}^2,
+    \qquad
+    \beta_{0,i}^{\mathrm{RL}}=\widehat\beta_{\mathrm{UL},i}.
+\end{equation}
+The Stage-3 bias reduces to
+\begin{equation}
+    \boxed{
+    \widehat\beta_{\mathrm{RL}}
+    =
+    \arg\min_{
+    X_{\mathrm{RL}}^\top\beta
+    =
+    X_{\mathrm{RL}}^\top\beta_{\mathrm{eff}}^{\mathrm{RL}}
+    }
+    \sum_i
+    D_{q_{4c_{\mathrm{PT}}^2}}
+    \left(
+        \beta_i,
+        \widehat\beta_{\mathrm{UL},i}
+    \right).
+    }
+\end{equation}
+Here \(k_i^{\mathrm{RL}}\) does not directly depend on \(\widehat\beta_{PT,i}\); the dependence on pretraining enters through the unlearning endpoint \(\widehat\beta_{\mathrm{UL}}\).
+
+\section{Relearning Hardness After Unlearning}
+
+A stronger unlearning goal is not merely to lower harmful performance immediately after unlearning, but to increase the number of examples and amount of compute needed to relearn the harmful behavior. For a harmful-capability threshold \(\epsilon\), define
+\begin{equation}
+    N_{\mathrm{relearn}}(\epsilon)
+    :=
+    \min
+    \left\{
+        m:
+        \mathrm{HarmfulCapability}
+        \left(
+            \mathrm{FT}_K(\theta_{\mathrm{UL}},S_F^{(m)})
+        \right)
+        \geq \epsilon
+    \right\}.
+\end{equation}
+The goal is to increase \(N_{\mathrm{relearn}}(\epsilon)\) relative to the original pretrained model, exact retain-only retraining, and standard output-level unlearning baselines.
+
+\paragraph{Threat model.}
+Geometry helps only against constrained inherited-geometry adversaries: hosted fine-tuning, adapters, LoRA, or interfaces that do not freely reset or reparameterize the model. Geometry is not cryptographic deletion. It is an inherited-optimizer sample-complexity effect.
+
+The design implication is that relearning-resistant unlearning should modify both
+\begin{equation}
+    \beta_0
+    \qquad\text{and}\qquad
+    Q_k.
+\end{equation}
+It should move the center away from the forgotten-feature solution and reshape the geometry so harmful directions are expensive or sample-inefficient to relearn.
+
+In a sparse random-design benchmark, rich geometry behaves like sparse recovery, while lazy geometry behaves more like dense recovery. Under the assumptions spelled out in Appendix~\ref{app:rich-lazy}, this motivates the heuristic comparison
+\begin{equation}
+    N_{\mathrm{rich}}\approx 2r\log(D/r),
+    \qquad
+    N_{\mathrm{lazy}}\approx D.
+\end{equation}
+These are not universal theorems; they are benchmarks for the inherited-geometry threat model.
+
+\section{Conclusion}
+
+The central lesson is that unlearning has three separable levers: target, center, and geometry. Exact output-level forgetting controls only the target. Relearning-resistant unlearning should additionally recenter the implicit bias and reshape the geometry inherited by future fine-tuning. In diagonal networks these levers are explicit through \(\beta_{\mathrm{eff}}\), \(\beta_0\), and \(Q_k\). The \(\ell/PD\) calculation supplies a local mechanism for relearning: if unlearning changes outputs but leaves a harmful feature as a large Bregman center, then small aligned future updates in that coordinate remain cheap. The next step is to test whether analogous levers can be implemented in practical fine-tuning interfaces such as adapters or LoRA.
+
+\appendix
+
+\section{Predictor-Dynamics Derivation}
+\label{app:predictor-dynamics}
+
+This appendix derives the mechanical identity used in the main theorem. With residual convention
+\begin{equation}
+    r^{(n)}(t)=y^{(n)}-\beta(t)^\top x^{(n)},
+    \qquad
+    s_i(t)=\sum_{n=1}^N x_i^{(n)}r^{(n)}(t),
+\end{equation}
+the square loss satisfies \(\partial L/\partial \beta_i=-s_i(t)\). Since
+\begin{equation}
+    \beta_i=w_i^+v_i^+-w_i^-v_i^-,
+\end{equation}
+gradient flow gives
+\begin{equation}
+    \dot w_i^+=s_i v_i^+,
+    \qquad
+    \dot v_i^+=s_i w_i^+,
+    \qquad
+    \dot w_i^-=-s_i v_i^-,
+    \qquad
+    \dot v_i^-=-s_i w_i^-.
+\end{equation}
+Therefore
+\begin{equation}
+    \dot\beta_i
+    =
+    s_i\left[
+        (w_i^+)^2+(v_i^+)^2+(w_i^-)^2+(v_i^-)^2
+    \right].
+\end{equation}
+Let
+\begin{equation}
+    A_i(t)
+    =
+    (w_i^+)^2+(v_i^+)^2+(w_i^-)^2+(v_i^-)^2.
+\end{equation}
+The quantities
+\begin{equation}
+    c_i=w_i^+w_i^-+v_i^+v_i^-,
+    \qquad
+    \lambda_{e,+,i}=(w_i^+)^2-(v_i^+)^2,
+    \qquad
+    \lambda_{e,-,i}=(w_i^-)^2-(v_i^-)^2
+\end{equation}
+are conserved by these dynamics. A direct algebraic expansion gives
+\begin{equation}
+    A_i(t)^2
+    =
+    (\lambda_{e,+,i}-\lambda_{e,-,i})^2
+    +4c_i^2
+    +4\beta_i(t)^2
+    =
+    k_i+4\beta_i(t)^2.
+\end{equation}
+Since \(A_i(t)\ge0\), this yields
+\begin{equation}
+    \dot\beta_i(t)
+    =
+    \sqrt{k_i+4\beta_i(t)^2}\;s_i(t).
+\end{equation}
+
+\section{Layer Rescaling Algebra}
+\label{app:layer-rescaling}
+
+This appendix records the algebra behind the compact layer-rescaling proposition. The compressed formulas in this appendix hold under balanced-pathway and aligned-sign gauge assumptions, with positive layer scales \(\alpha_{\mathrm{input}},\alpha_{\mathrm{output}}>0\). Outside that gauge, use the general invariant formulas for \(c_i^{FT}\), \(\lambda_{e,\pm,i}^{FT}\), and \(k_i^{FT}\) from the main text.
+
+Assume the pretrained endpoint satisfies the balanced-pathway condition
+\begin{equation}
+    (w_i^+)^2-(v_i^+)^2=(w_i^-)^2-(v_i^-)^2.
+\end{equation}
+Let
+\begin{equation}
+    c_i=w_i^+w_i^-+v_i^+v_i^-,
+    \qquad
+    \lambda_i=\frac{(w_i^+)^2-(v_i^+)^2}{c_i}
+    =
+    \frac{(w_i^-)^2-(v_i^-)^2}{c_i},
+\end{equation}
+and let \(\widehat\beta_{PT,i}=v_i^+w_i^+-v_i^-w_i^-\). Define
+\begin{equation}
+    H_i=\sqrt{c_i^2+\widehat\beta_{PT,i}^2}.
+\end{equation}
+Then
+\begin{equation}
+    w_i^+w_i^- = \frac{c_i+\lambda_iH_i}{2},
+    \qquad
+    v_i^+v_i^- = \frac{c_i-\lambda_iH_i}{2}.
+\end{equation}
+Under layer rescaling,
+\begin{equation}
+    c_i^{FT}
+    =
+    \frac{\alpha_{\mathrm{input}}^2+\alpha_{\mathrm{output}}^2}{2}c_i
+    +
+    \frac{\alpha_{\mathrm{input}}^2-\alpha_{\mathrm{output}}^2}{2}\lambda_iH_i.
+\end{equation}
+The first squared term below is \(4(c_i^{FT})^2\), which cancels the factors of \(1/2\) in \(c_i^{FT}\).
+Moreover,
+\begin{equation}
+    \lambda_{e,+,i}^{FT}-\lambda_{e,-,i}^{FT}
+    =
+    (\alpha_{\mathrm{input}}^2-\alpha_{\mathrm{output}}^2)\Delta_i,
+    \qquad
+    \Delta_i^2=\widehat\beta_{PT,i}^2(1-\lambda_i^2).
+\end{equation}
+Consequently,
+\begin{equation}
+\begin{split}
+    k_i^{FT}
+    =
+    \Bigl(
+        (\alpha_{\mathrm{input}}^2+\alpha_{\mathrm{output}}^2)c_i
+        +
+        (\alpha_{\mathrm{input}}^2-\alpha_{\mathrm{output}}^2)\lambda_iH_i
+    \Bigr)^2
+    +
+    (\alpha_{\mathrm{input}}^2-\alpha_{\mathrm{output}}^2)^2
+    \widehat\beta_{PT,i}^2(1-\lambda_i^2).
+\end{split}
+\end{equation}
+At fixed function scale \(s=\alpha_{\mathrm{input}}\alpha_{\mathrm{output}}\), this is equivalently
+\begin{equation}
+\begin{split}
+    k_i^{FT}
+    =
+    \Bigl(
+        \left(\alpha_{\mathrm{input}}^2+\frac{s^2}{\alpha_{\mathrm{input}}^2}\right)c_i
+        +
+        \left(\alpha_{\mathrm{input}}^2-\frac{s^2}{\alpha_{\mathrm{input}}^2}\right)\lambda_iH_i
+    \Bigr)^2
+    +
+    \left(\alpha_{\mathrm{input}}^2-\frac{s^2}{\alpha_{\mathrm{input}}^2}\right)^2
+    \widehat\beta_{PT,i}^2(1-\lambda_i^2).
+\end{split}
+\end{equation}
+
+For inactive coordinates \(\widehat\beta_{PT,i}=0\), the center is zero. Active pretrained coordinates have center \(\beta_{0,i}=s\widehat\beta_{PT,i}\), which is nonzero when \(s\neq0\). Equal layer scaling makes \(\alpha_{\mathrm{input}}=\alpha_{\mathrm{output}}\), so the \(\widehat\beta_{PT,i}\)-dependent part of \(k_i^{FT}\) vanishes. Unequal layer scaling can make the geometry depend on the pretrained predictor.
+
+It is sometimes useful to write
+\begin{equation}
+    \Sigma_\alpha=\alpha_{\mathrm{input}}^2+\alpha_{\mathrm{output}}^2,
+    \qquad
+    \Delta_\alpha=\alpha_{\mathrm{input}}^2-\alpha_{\mathrm{output}}^2.
+\end{equation}
+Then
+\begin{equation}
+    k_i^{FT}
+    =
+    (\Sigma_\alpha c_i+\Delta_\alpha\lambda_iH_i)^2
+    +
+    \Delta_\alpha^2\widehat\beta_{PT,i}^2(1-\lambda_i^2),
+\end{equation}
+and
+\begin{equation}
+    \beta_{0,i}
+    =
+    \frac12\sqrt{\Sigma_\alpha^2-\Delta_\alpha^2}\,\widehat\beta_{PT,i}.
+\end{equation}
+Since \(\alpha_{\mathrm{input}},\alpha_{\mathrm{output}}>0\), this equals \(s\widehat\beta_{PT,i}\) with \(s=\alpha_{\mathrm{input}}\alpha_{\mathrm{output}}\).
+The sign-aligned imbalance rule is
+\begin{equation}
+    \Delta_\alpha\lambda_i>0.
+\end{equation}
+This is a design rule for creating geometric pretraining dependence; it is not an unconditional robustness theorem.
+
+\section{Rich/Lazy Relearning Heuristics}
+\label{app:rich-lazy}
+
+This appendix records the compressed-sensing heuristic behind the relearning-hardness discussion. The assumptions are:
+\begin{itemize}
+    \item random design;
+    \item sparse forget teacher with support size \(r\) in dimension \(D\);
+    \item noiseless or controlled-noise observations;
+    \item comparable nonzero amplitudes;
+    \item an inherited-geometry adversary.
+\end{itemize}
+Under these assumptions, rich diagonal-network geometry behaves like sparse recovery:
+\begin{equation}
+    N_{\mathrm{rich}}
+    \approx
+    2r\log(D/r).
+\end{equation}
+Lazy geometry behaves more like dense recovery:
+\begin{equation}
+    N_{\mathrm{lazy}}
+    \approx
+    D.
+\end{equation}
+The possible geometric sample-complexity gain is therefore heuristically
+\begin{equation}
+    \frac{N_{\mathrm{lazy}}}{N_{\mathrm{rich}}}
+    \approx
+    \frac{D}{r\log(D/r)}.
+\end{equation}
+These are heuristic benchmarks, not universal theorems. They should be used to guide experiments and threat-model-specific design, not as distribution-free guarantees.
+
+\section{Algorithmic Directions}
+
+These directions are not implied as theorems by the diagonal-network analysis; they are proposed algorithmic directions motivated by the target/center/geometry decomposition.
+
+Three complementary directions follow from the target/center/geometry decomposition.
+
+\paragraph{Adversarial relearning-resistant unlearning.}
+During unlearning, simulate a bad actor who fine-tunes on a small harmful subset and optimize against the recovered harmful capability:
+\begin{equation}
+    \min_{\theta_{\mathrm{UL}}}
+    L_R(\theta_{\mathrm{UL}})
+    +
+    \lambda
+    \max_{S_F:\,|S_F|=m}
+    \mathrm{HarmfulCapability}
+    \left(
+        \mathrm{FT}_K(\theta_{\mathrm{UL}},S_F)
+    \right).
+\end{equation}
+
+\paragraph{Representation scrubbing and gradient incoherence.}
+Estimate harmful feature subspaces and harmful gradient covariance, then penalize linearly accessible harmful representations and coherent harmful update directions:
+\begin{equation}
+    L_R(\theta)
+    +
+    \alpha\|P_{U_F}h_\theta(x_F)\|^2
+    +
+    \beta\lambda_{\max}(C_F).
+\end{equation}
+
+\paragraph{Bregman re-centering.}
+Move the implicit-bias center toward a retain-only safe solution
+\begin{equation}
+    \beta_{\mathrm{safe}}
+    =
+    \arg\min_{\beta:\,X_R^\top\beta=y_R}
+    D_Q(\beta,\beta_0),
+\end{equation}
+so future updates occur around safe dual coordinates rather than around the harmful fine-tuned solution.
+
+\end{document}
