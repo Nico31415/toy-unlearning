@@ -20,6 +20,40 @@ Everything else is the same.
 
 Output:
   overlay_q_vs_ridge_lasso_TIGHT.png
+
+================================================================================
+STATE-EVOLUTION CONVENTION  (read before comparing against replica_derivation.pdf)
+================================================================================
+This module uses the *reciprocal* (compressed-sensing) convention, which is
+DIFFERENT from the N/D convention used in replica_derivation.pdf and in the
+unlearning scripts (compare_cpt_replica.py, unlearning_relearning_replica.py).
+
+  * Here  ``beta`` is the aspect ratio  D / N  (signal dimension / measurements),
+    i.e. the x-axis label "beta = n/m" has n = signal dimension, m = #measurements.
+    Hence  beta = 1 / alpha  where alpha = N/D is the measurement ratio used in
+    the theory note.  Small beta = overdetermined = small MSE.
+
+  * The SE noise update is the *additive* form
+        s^2  <-  sigma0^2  +  beta * MSE                         (this file)
+    which is the self-consistent partner of solve_ridge_closed_form() and
+    lasso_analytical_expectations() below: the ridge closed form is DERIVED from
+    exactly this update (see solve_ridge_closed_form), and main() verifies that
+    the q_k MC solver reproduces it.  Changing this line to the theory's
+    divisive form  s^2 = (sigma0^2 + MSE)/alpha  would BREAK that internal
+    ridge/LASSO agreement and must not be done in isolation.
+
+  * The theory note (replica_derivation.pdf, eq. SE1, and the warning in sec. 9.3)
+    instead writes, in the alpha = N/D convention,
+        s^2  =  (sigma0^2 + MSE) / alpha .
+    Substituting beta = 1/alpha, the MSE/alpha term matches; the two conventions
+    differ only in how the (tiny) noise floor sigma0^2 enters
+    (sigma0^2 here vs. sigma0^2/alpha there), which is numerically negligible at
+    the SNRs used here (sigma0^2 ~ 1e-2).  This is a convention choice, NOT a bug.
+
+The unlearning pipeline (compare_cpt_replica.py, unlearning_relearning_replica.py)
+uses the theory's alpha = N/D convention with the divisive SE update and only
+imports the convention-free primitives prox_qk_safeguarded() and sigma2_qk().
+================================================================================
 """
 
 from __future__ import annotations
@@ -634,6 +668,10 @@ def solve_rspmap_qk_one(
             mse = float(np.mean((x_mc - xhat) ** 2))
             mean_sigma2 = float(np.mean(sigma2_qk(xhat, lam, k_q)))
 
+            # Additive SE update under the reciprocal convention beta = D/N
+            # (see the STATE-EVOLUTION CONVENTION block at the top of this file).
+            # This is the self-consistent partner of solve_ridge_closed_form();
+            # do NOT swap it for the theory's divisive form in isolation.
             s2_new = float(cfg.sigma0_2 + beta * mse)
             gp_new = float(gamma_ext + beta * mean_sigma2)
 

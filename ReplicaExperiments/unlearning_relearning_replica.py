@@ -49,6 +49,35 @@ Stage 2:  gen_err_forget(α_UL),  gen_err_retain(α_UL)
 
 Stage 3:  gen_err_relearn(α_UL, α_RL)
     = E[(β̂_RL,F - β*_PT,F)²]  (how much of the forget feature the adversary recovers)
+
+================================================================================
+METHOD: FULL PMAP  (replica_derivation.pdf sec. 8.2 / 6.3)
+================================================================================
+Unlike compare_cpt_replica.py (which fixes γ* by an oracle calibration), this
+script iterates the FULL PMAP state evolution — BOTH s² (SE1) and gp (SE2,
+Onsager) self-consistently in solve_bregman_fp().  Consequences:
+
+  * The two scripts use non-equivalent methods and will NOT coincide exactly;
+    compare_cpt is a parametric γ*-family, this one is the GAMP/replica FP.
+
+  * Multiple fixed points exist (theory Remark 6.1).  We resolve them with a
+    forward+backward sweep and a per-α branch pick (Stage 2: higher target-MSE
+    "nontrivial" FP; Stage 3: lower target-MSE "successful-relearn" FP).  NOTE:
+    this max/min pick is a numerical HEURISTIC and departs from the theory's
+    prescribed selection rule, which is the prior-MSE warm start of Remark 6.1
+    (s₀² = (σ₀² + E[(β₀-β_eff)²])/α) followed by a single damped iteration.
+    The warm start is implemented in solve_bregman_fp(); the extra sweep/pick
+    layered on top in run_unlearning_replica()/run_relearning_replica() is the
+    heuristic part.
+
+  * The Stage-3 centre is the actual Stage-2 endpoint β̂_UL (a single MC sample
+    path), which captures finite-α_UL randomness better than compare_cpt's
+    deterministic-centre oracle but is still NOT the principled nested
+    expectation of sec. 9.2 — see nested_cascade_replica.py for that.
+
+SE convention: alpha = N/D with the divisive update s² = (σ₀² + MSE)/α (theory
+eq. SE1), matching replica_derivation.pdf — NOT the reciprocal β=D/N convention
+of fixed_lambda_all.py.
 """
 
 from __future__ import annotations
@@ -181,13 +210,13 @@ def solve_bregman_fp(
         #   This gives a nonzero s2 that steers the iteration toward the
         #   physically correct (nontrivial) fixed point.
         #
-        # s2 = σ₀² + α · E[(β₀ - β_eff)²]   (prior-MSE warm start)
+        # s2 = (σ₀² + E[(β₀ - β_eff)²]) / α   (prior-MSE warm start)
         # gp = α · mean σ²_{q_k}(β₀, 1, k)   (local variance at the center)
         #
         # We clamp s2 to at least 1e-6 so the first iteration introduces
         # enough noise to avoid the trivially-zero collapse.
         prior_mse = float(np.mean((target_mc - center_mc) ** 2))
-        s2 = cfg.sigma0_sq + alpha * prior_mse
+        s2 = (cfg.sigma0_sq + prior_mse) / alpha
         s2 = max(s2, 1e-6)
 
         # Estimate gp from mean local variance evaluated at the center β₀.
@@ -208,7 +237,7 @@ def solve_bregman_fp(
         mse = float(np.mean((target_mc - xhat) ** 2))
         mean_sigma2 = float(np.mean(sigma2_qk(xhat, gp, k)))
 
-        s2_new = float(cfg.sigma0_sq + alpha * mse)
+        s2_new = float((cfg.sigma0_sq + mse) / alpha)
         gp_new = float(cfg.gamma_ext + alpha * mean_sigma2)
 
         if max(abs(s2_new - s2), abs(gp_new - gp)) < cfg.tol_fp:
@@ -216,7 +245,7 @@ def solve_bregman_fp(
 
         s2 = (1.0 - cfg.damp) * s2 + cfg.damp * s2_new
         gp = (1.0 - cfg.damp) * gp + cfg.damp * gp_new
-        s2 = max(s2, cfg.sigma0_sq, 1e-15)
+        s2 = max(s2, cfg.sigma0_sq / alpha, 1e-15)
         gp = max(gp, cfg.gamma_ext, 1e-14)
 
     # Return best estimate after max iters
