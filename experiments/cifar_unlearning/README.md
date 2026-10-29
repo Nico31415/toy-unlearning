@@ -9,7 +9,7 @@ is imported for the SLURM arrays.
 
 | Stage | Command (from the repo root) | Tasks |
 | --- | --- | --- |
-| download | `python experiments/cifar_unlearning/run.py download` (login node) | 1 |
+| download | `$PY experiments/cifar_unlearning/run.py download` (login node) | 1 |
 | pretrain | `launch.sh pretrain` | 5 seeds |
 | select_pairs | `launch.sh select_pairs` | 1 |
 | retrain | `launch.sh retrain` | experiments x seeds |
@@ -19,20 +19,32 @@ is imported for the SLURM arrays.
 Experiments are the pilot pairs in `<out_root>/pilot_pairs.json` plus `random`.
 `launch.py STAGE --count` prints the array size.
 
-`launch.sh` is set up for Cambridge CSD3 (A100 partition `ampere`, 12-hour SL3 limit,
-one GPU per task). Before submitting, make its two marked edits: your GPU project
-account (`mybalance` shows it, e.g. `XYZ123-SL3-GPU`) and your Python environment
-activation. Activate the same environment on the login node too, since the commands
-below run `python` there. Compute nodes have no internet, so run `download` on the
-login node first. Then:
+`launch.sh` follows the repo's other CSD3 scripts: it runs the `mtl_ft` conda Python
+by absolute path (`/home/na658/.conda/envs/mtl_ft/bin/python`, override with `PY=...`),
+takes the repo root from the submit directory, and writes to `logs/`. It differs in
+using the A100 GPU partition (`ampere`, one GPU per task, 12-hour SL3 limit), which
+needs one edit: replace `CHANGEME-SL3-GPU` with your GPU project (`mybalance` lists
+it; it ends in `-GPU`). Each task first checks that torch can see the GPU and stops
+if not.
+
+Before the first submit, on a login node, check that `mtl_ft` has a CUDA build of
+torch and torchvision; the second number printed must not be `None`:
 
 ```bash
-mkdir -p slurm
+/home/na658/.conda/envs/mtl_ft/bin/python -c "import torch, torchvision; print(torch.__version__, torch.version.cuda)"
+```
+
+Compute nodes have no internet, so `download` runs on the login node. Then, from the
+repo root:
+
+```bash
+mkdir -p logs
+PY=${PY:-/home/na658/.conda/envs/mtl_ft/bin/python}
 L=experiments/cifar_unlearning/launch.py
 S=experiments/cifar_unlearning/launch.sh
-n() { echo $(( $(python $L "$1" --count) - 1 )); }
+n() { echo $(( $($PY $L "$1" --count) - 1 )); }
 
-python experiments/cifar_unlearning/run.py download
+$PY experiments/cifar_unlearning/run.py download
 PT=$(sbatch --parsable --array=0-$(n pretrain) $S pretrain)
 SP=$(sbatch --parsable --dependency=afterok:$PT --array=0-0 $S select_pairs)
 # after select_pairs has finished (the array sizes below read pilot_pairs.json):
@@ -48,7 +60,7 @@ unchanged. A run that fails a check (for example Pretrain not reaching train los
 
 Extra flags after the stage name go to `run.py`, for example
 `sbatch ... $S unlearn_relearn --ul_lr 0.005`. Every hyperparameter is a flag; see
-`config.py` for defaults and `python experiments/cifar_unlearning/run.py --help`.
+`config.py` for defaults and `$PY experiments/cifar_unlearning/run.py --help`.
 
 ## Outputs
 
@@ -66,8 +78,8 @@ data/cifar_unlearning/<loss>/
 Then:
 
 ```bash
-python experiments/cifar_unlearning/aggregate.py   # CSVs in data/processed/cifar_unlearning/<loss>/
-python experiments/cifar_unlearning/plot.py        # PNGs in figures/cifar_unlearning/<loss>/
+$PY experiments/cifar_unlearning/aggregate.py   # CSVs in data/processed/cifar_unlearning/<loss>/
+$PY experiments/cifar_unlearning/plot.py        # PNGs in figures/cifar_unlearning/<loss>/
 ```
 
 ## Unlearning stop rule and safety net

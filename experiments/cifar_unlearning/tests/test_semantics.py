@@ -181,7 +181,8 @@ def _python_shim(tmp_path):
 
 def test_launch_sh_end_to_end(tmp_path):
     bindir = _python_shim(tmp_path)
-    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "SLURM_ARRAY_TASK_ID": "0"}
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "SLURM_ARRAY_TASK_ID": "0",
+           "REQUIRE_GPU": "0", "SLURM_SUBMIT_DIR": str(REPO)}
     script = REPO / "experiments" / "cifar_unlearning" / "launch.sh"
     ok = subprocess.run(["bash", str(script), "pretrain", "--out_root", str(tmp_path / "out")] + SYN,
                         cwd=REPO, env=env, capture_output=True, text=True)
@@ -191,6 +192,11 @@ def test_launch_sh_end_to_end(tmp_path):
                          + ["--pt_max_final_train_loss", "0", "--pt_epochs", "1"],
                          cwd=REPO, env=env, capture_output=True, text=True)
     assert bad.returncode != 0
+    if not torch.cuda.is_available():  # the GPU check must stop a task that has no usable GPU
+        gpu = subprocess.run(["bash", str(script), "pretrain", "--out_root", str(tmp_path / "gpu")] + SYN,
+                             cwd=REPO, env={**env, "REQUIRE_GPU": "1"}, capture_output=True, text=True)
+        assert gpu.returncode != 0 and "cannot see a GPU" in gpu.stderr
+        assert not (tmp_path / "gpu").exists()
     no_id = subprocess.run(["bash", str(script), "pretrain"], cwd=REPO,
                            env={k: v for k, v in env.items() if k != "SLURM_ARRAY_TASK_ID"},
                            capture_output=True, text=True)
@@ -200,7 +206,7 @@ def test_launch_sh_end_to_end(tmp_path):
 def test_readme_submit_block(tmp_path):
     """Run the README's submit commands with a fake sbatch and check the arrays requested."""
     readme = (REPO / "experiments" / "cifar_unlearning" / "README.md").read_text()
-    block = re.search(r"```bash\n(mkdir -p slurm.*?)```", readme, re.S).group(1)
+    block = re.search(r"```bash\n(mkdir -p logs.*?)```", readme, re.S).group(1)
     block = "\n".join(line for line in block.splitlines() if "run.py download" not in line)
     work = tmp_path / "repo"
     shutil.copytree(REPO / "experiments" / "cifar_unlearning", work / "experiments" / "cifar_unlearning",
@@ -215,7 +221,7 @@ def test_readme_submit_block(tmp_path):
     sbatch = bindir / "sbatch"
     sbatch.write_text(f'#!/bin/sh\necho "$@" >> "{calls}"\necho 1234\n')
     sbatch.chmod(sbatch.stat().st_mode | stat.S_IEXEC)
-    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"}
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "PY": sys.executable}
     done = subprocess.run(["bash", "-euo", "pipefail", "-c", block], cwd=work, env=env,
                           capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
