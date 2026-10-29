@@ -17,8 +17,14 @@ is imported for the SLURM arrays.
 | references | `launch.sh references` | experiments x seeds |
 
 Experiments are the pilot pairs in `<out_root>/pilot_pairs.json` plus `random`.
-`launch.py STAGE --count` prints the array size. Before submitting, edit `launch.sh`
-for your cluster (environment activation, partition, account). Then:
+`launch.py STAGE --count` prints the array size.
+
+`launch.sh` is set up for Cambridge CSD3 (A100 partition `ampere`, 12-hour SL3 limit,
+one GPU per task). Before submitting, make its two marked edits: your GPU project
+account (`mybalance` shows it, e.g. `XYZ123-SL3-GPU`) and your Python environment
+activation. Activate the same environment on the login node too, since the commands
+below run `python` there. Compute nodes have no internet, so run `download` on the
+login node first. Then:
 
 ```bash
 mkdir -p slurm
