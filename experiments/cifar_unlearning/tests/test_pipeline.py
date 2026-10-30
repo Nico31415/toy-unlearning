@@ -30,6 +30,9 @@ def pipeline(tmp_path_factory):
         run.main(["references", "--exp", exp, "--seed", "0"] + common)
     run.main(["unlearn_relearn", "--exp", pairs[0], "--seed", "0", "--ul_mu_f", "0.5", "--rs_mode", "body_head",
               "--rs_alpha_head", "0.5", "--rs_recalibrate_bn", "true"] + common)
+    for exp in exps:
+        run.main(["represent", "--exp", exp, "--seed", "0"] + common)
+        run.main(["represent", "--exp", exp, "--seed", "0"] + common)  # second call skips everything
     run.main(["pretrain", "--seed", "0"] + common)  # already done: must be skipped
     csv_dir, fig_dir = root / "csv", root / "fig"
     aggregate.main(["--out_root", str(out), "--dest", str(csv_dir)])
@@ -63,6 +66,29 @@ def test_tables(pipeline):
     assert (curves["step"] == 0).any()
 
 
+def test_every_model_is_saved_and_analysed(pipeline):
+    out = pipeline["out"]
+    unlearn_dirs = sorted(p.parent for p in out.glob("unlearn/exp=*/seed=*/mu_f=*/rescale=*/f=*/result.json"))
+    ref_dirs = sorted(p.parent for p in out.glob("references/exp=*/seed=*/model=*/f=*/result.json"))
+    assert len(unlearn_dirs) == 6 and len(ref_dirs) == 12
+    for d in unlearn_dirs:
+        assert (d / "model_fp16.pt").exists() and (d / "model_relearned_fp16.pt").exists()
+        rep = json.loads((d / "representation.json").read_text())
+        assert {"after_unlearn", "after_relearn"} <= set(rep)
+    for d in ref_dirs:
+        assert (d / "model_fp16.pt").exists() and (d / "representation.json").exists()
+    assert len(list(out.glob("pretrain/seed=*/model.pt"))) == 2 and len(list(out.glob("retrain/*/*/model.pt"))) == 2
+    before = json.loads((out / "references" / f"exp={pipeline['pairs'][0]}" / "seed=0"
+                         / "representation_before.json").read_text())["metrics"]
+    assert before["retrain"]["cka_retrain_r"] == pytest.approx(1.0)
+    assert before["pretrained"]["cka_pretrained_f"] == pytest.approx(1.0)
+    rep = pd.read_csv(pipeline["csv"] / "representation.csv")
+    # per experiment: 3 before + 2 fractions x 2 stages + 2 fractions x 3 references; + rescaled run (2 x 2)
+    assert len(rep) == 2 * (3 + 2 * 2 + 2 * 3) + 4
+    assert set(rep["when"]) == {"before_relearn", "after_unlearn", "after_relearn"}
+    assert rep["cka_retrain_r"].between(0, 1.0 + 1e-9).all()
+
+
 def test_figures(pipeline):
     for exp in pipeline["exps"]:
         assert (pipeline["fig"] / f"after_unlearning_{exp}.png").exists()
@@ -83,7 +109,8 @@ def test_launch_arrays(tmp_path):
     exps = launch.experiments(tmp_path, None, False)
     assert exps == ["pair-3-5", "pair-0-8", "random"]
     counts = {stage: launch.task_count(launch.build_array(stage, exps)) for stage in launch.ARRAY_STAGES}
-    assert counts == {"pretrain": 5, "select_pairs": 1, "retrain": 15, "unlearn_relearn": 45, "references": 15}
+    assert counts == {"pretrain": 5, "select_pairs": 1, "retrain": 15, "unlearn_relearn": 45, "references": 15,
+                      "represent": 15}
     argv = launch.to_argv(launch.build_array("unlearn_relearn", exps).get_args(0))
     assert argv[0] == "unlearn_relearn"
     assert argv[argv.index("--exp") + 1] == "pair-3-5" and argv[argv.index("--ul_mu_f") + 1] == "0.25"

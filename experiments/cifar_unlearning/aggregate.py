@@ -2,7 +2,8 @@
 
     python experiments/cifar_unlearning/aggregate.py [--loss ce] [--out_root ...] [--dest ...]
 
-Writes pretrain.csv, retrain.csv, unlearn.csv, references.csv and curves.csv to
+Writes pretrain.csv, retrain.csv, unlearn.csv, references.csv, curves.csv and
+representation.csv (one row per model and stage: CKA and k-NN) to
 data/processed/cifar_unlearning/<loss>/ by default.
 """
 from __future__ import annotations
@@ -34,7 +35,8 @@ def _curve_rows(curve: List[Dict], keys: Dict) -> List[Dict]:
 
 
 def collect(out_root: Path) -> Dict[str, pd.DataFrame]:
-    tables: Dict[str, List[Dict]] = {name: [] for name in ("pretrain", "retrain", "unlearn", "references", "curves")}
+    tables: Dict[str, List[Dict]] = {name: [] for name in
+                                     ("pretrain", "retrain", "unlearn", "references", "curves", "representation")}
 
     for path in sorted(out_root.glob("pretrain/seed=*/result.json")):
         r = _load(path)
@@ -74,6 +76,23 @@ def collect(out_root: Path) -> Dict[str, pd.DataFrame]:
         tables["references"].append({**keys, **_prefixed(before, "before_"), "rl_status": rl["status"],
                                      "rl_steps": rl["steps"], **_prefixed(r["after_relearn"], "rl_")})
         tables["curves"] += _curve_rows(rl["curve"], {**keys, "source": r["model"]})
+
+    for path in sorted(out_root.glob("references/exp=*/seed=*/representation_before.json")):
+        r = _load(path)
+        for model, metrics in r["metrics"].items():
+            tables["representation"].append({"exp": r["exp"], "seed": r["seed"], "source": model,
+                                             "when": "before_relearn", **metrics})
+    for path in sorted(out_root.glob("unlearn/exp=*/seed=*/mu_f=*/rescale=*/f=*/representation.json")):
+        r = _load(path)
+        keys = {"exp": r["exp"], "seed": r["seed"], "source": "unlearned", "mu_f": r["mu_f"],
+                "rescale": r["rescale"], "fraction": r["fraction"]}
+        for when in ("after_unlearn", "after_relearn"):
+            if when in r:
+                tables["representation"].append({**keys, "when": when, **r[when]})
+    for path in sorted(out_root.glob("references/exp=*/seed=*/model=*/f=*/representation.json")):
+        r = _load(path)
+        tables["representation"].append({"exp": r["exp"], "seed": r["seed"], "source": r["source"],
+                                         "fraction": r["fraction"], "when": "after_relearn", **r["after_relearn"]})
 
     return {name: pd.DataFrame(rows) for name, rows in tables.items()}
 

@@ -15,6 +15,7 @@ is imported for the SLURM arrays.
 | retrain | `launch.sh retrain` | experiments x seeds |
 | unlearn_relearn | `launch.sh unlearn_relearn` | experiments x seeds x 3 mu_f |
 | references | `launch.sh references` | experiments x seeds |
+| represent | `launch.sh represent` | experiments x seeds |
 
 Experiments are the pilot pairs in `<out_root>/pilot_pairs.json` plus `random`.
 `launch.py STAGE --count` prints the array size.
@@ -49,11 +50,13 @@ PT=$(sbatch --parsable --array=0-$(n pretrain) $S pretrain)
 SP=$(sbatch --parsable --dependency=afterok:$PT --array=0-0 $S select_pairs)
 # after select_pairs has finished (the array sizes below read pilot_pairs.json):
 RT=$(sbatch --parsable --array=0-$(n retrain) $S retrain)
-sbatch --array=0-$(n unlearn_relearn) $S unlearn_relearn
-sbatch --dependency=afterok:$RT --array=0-$(n references) $S references
+UR=$(sbatch --parsable --array=0-$(n unlearn_relearn) $S unlearn_relearn)
+RF=$(sbatch --parsable --dependency=afterok:$RT --array=0-$(n references) $S references)
+sbatch --dependency=afterok:$UR:$RF --array=0-$(n represent) $S represent
 ```
 
-`unlearn_relearn` needs only Pretrain; `references` needs Retrain. Every run skips
+`unlearn_relearn` needs only Pretrain; `references` needs Retrain; `represent` reads
+the saved checkpoints of both and can be rerun at any time. Every run skips
 work whose `result.json` exists, so failed or timed-out arrays can be resubmitted
 unchanged. A run that fails a check (for example Pretrain not reaching train loss
 1e-2) writes `failed.json` and exits non-zero.
@@ -70,10 +73,29 @@ data/cifar_unlearning/<loss>/
     pretrain/seed=S/{model.pt,result.json}
     pilot_pairs.json                                all 45 pairs ranked by confusion
     retrain/exp=E/seed=S/{model.pt,result.json}
-    unlearn/exp=E/seed=S/mu_f=M/rescale=R/f=F/{model_fp16.pt,result.json}
-    references/exp=E/seed=S/before.json
-    references/exp=E/seed=S/model={pretrained,retrain,scratch}/f=F/result.json
+    unlearn/exp=E/seed=S/mu_f=M/rescale=R/f=F/
+        model_fp16.pt                               after unlearning
+        model_relearned_fp16.pt                     after relearning
+        result.json, representation.json
+    references/exp=E/seed=S/{before.json,representation_before.json}
+    references/exp=E/seed=S/model={pretrained,retrain,scratch}/f=F/
+        model_fp16.pt                               after relearning
+        result.json, representation.json
 ```
+
+Every model is kept: the pilot (4 experiments, 5 seeds, 3 mu_f, 5 fractions) stores
+about 900 fp16 checkpoints of about 22 MB, roughly 20 GB. If your home quota is
+smaller, point `--out_root` at your RDS project space.
+
+## Representation analysis
+
+`represent` follows "Are We Truly Forgetting?" (Kim, Cha & Kim, 2025) on the
+penultimate (512-d) features: linear CKA to Retrain and to Pretrained on T_f and T_r
+(on T_f also within-class, since two classes alone make plain CKA close to 1),
+k-NN accuracy on the forgotten classes (support: the probe images; query: T_f) and on
+the kept classes. Real unlearning should move CKA toward Retrain and away from
+Pretrained; edits confined to the final layer leave the features, and CKA to
+Pretrained, unchanged. Results go to representation.csv.
 
 Then:
 

@@ -26,7 +26,7 @@ from functions.array_training import ArgparseArray  # noqa: E402
 from experiments.cifar_unlearning import run  # noqa: E402
 from experiments.cifar_unlearning.config import DEFAULT_FRACTIONS, DEFAULT_MU_F, DEFAULT_SEEDS  # noqa: E402
 
-ARRAY_STAGES = ("pretrain", "select_pairs", "retrain", "unlearn_relearn", "references")
+ARRAY_STAGES = ("pretrain", "select_pairs", "retrain", "unlearn_relearn", "references", "represent")
 
 
 def experiments(out_root: Path, exps: Optional[List[str]], all_pairs: bool, num_classes: int = 10) -> List[str]:
@@ -56,6 +56,8 @@ def build_array(stage: str, exps: List[str]) -> ArgparseArray:
                              niarg_fractions=fractions)
     if stage == "references":
         return ArgparseArray(posarg0="references", exp=exps, seed=seeds, niarg_fractions=fractions)
+    if stage == "represent":
+        return ArgparseArray(posarg0="represent", exp=exps, seed=seeds)
     raise ValueError(f"unknown stage {stage!r}")
 
 
@@ -91,7 +93,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     args, passthrough = parser.parse_known_args(argv)
     out_root = Path(args.out_root or f"data/cifar_unlearning/{args.loss}")
 
-    needs_exps = args.stage in ("retrain", "unlearn_relearn", "references")
+    needs_exps = args.stage in ("retrain", "unlearn_relearn", "references", "represent")
     exps = experiments(out_root, args.exps, args.all_pairs) if needs_exps else []
     array = build_array(args.stage, exps)
     if args.count:

@@ -226,12 +226,13 @@ def test_readme_submit_block(tmp_path):
                           capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     lines = calls.read_text().splitlines()
-    assert len(lines) == 5
+    assert len(lines) == 6
     arrays = [re.search(r"--array=(\S+)", line).group(1) for line in lines]
-    assert arrays == ["0-4", "0-0", "0-19", "0-59", "0-19"]  # 4 experiments x 5 seeds (x 3 mu_f)
+    assert arrays == ["0-4", "0-0", "0-19", "0-59", "0-19", "0-19"]  # 4 experiments x 5 seeds (x 3 mu_f)
     assert "--dependency=afterok:1234" in lines[1] and "--dependency=afterok:1234" in lines[4]
+    assert "--dependency=afterok:1234:1234" in lines[5]
     assert [line.split()[-1] for line in lines] == ["pretrain", "select_pairs", "retrain", "unlearn_relearn",
-                                                    "references"]
+                                                    "references", "represent"]
 
 
 def test_changed_hyperparameters_are_not_silently_skipped(tmp_path, pretrained):

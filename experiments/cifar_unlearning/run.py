@@ -9,9 +9,11 @@ Stages, in order:
     retrain          --exp E --seed S              the control: train on all of D_r
     unlearn_relearn  --exp E --seed S --ul_mu_f M  unlearn Pretrained at every fraction, then relearn
     references       --exp E --seed S              relearn Pretrained, Retrain and Scratch at every fraction
+    represent        --exp E --seed S              CKA and k-NN analysis of every saved model (post hoc)
 
-E is "random" or "pair-A-B". Every run writes result.json (plus a checkpoint where
-needed) under --out_root and is skipped when its result.json exists, so a SLURM
+E is "random" or "pair-A-B". Every model is saved: Pretrained and Retrain in fp32,
+every unlearned model before and after relearning and every relearned reference in
+fp16. Every run writes result.json under --out_root and is skipped when its result.json exists, so a SLURM
 array can be resubmitted safely. A run that fails a check writes failed.json and
 exits non-zero, which stops dependent SLURM jobs.
 """
@@ -41,6 +43,8 @@ from experiments.cifar_unlearning.data import (  # noqa: E402
     save_split)
 from experiments.cifar_unlearning.losses import LOSS_KINDS  # noqa: E402
 from experiments.cifar_unlearning.metrics import EvalSets, confusion_matrix, evaluate  # noqa: E402
+from experiments.cifar_unlearning.representation import (  # noqa: E402
+    RepSets, reference_features, representation_metrics)
 from experiments.cifar_unlearning.models import (  # noqa: E402
     build_model, is_identity_rescale, load_state, mean_logit_norm, recalibrate_bn, rescale_,
     state_dict_fp16, weight_norms)
@@ -48,7 +52,7 @@ from experiments.cifar_unlearning.train import (  # noqa: E402
     relearn, train_from_scratch, unlearn)
 
 log = partial(print, flush=True)
-STAGES = ("download", "pretrain", "select_pairs", "retrain", "unlearn_relearn", "references")
+STAGES = ("download", "pretrain", "select_pairs", "retrain", "unlearn_relearn", "references", "represent")
 REFERENCE_MODELS = ("pretrained", "retrain", "scratch")
 
 
@@ -210,6 +214,7 @@ STAGE_GROUPS = {
     "retrain": ("data", "model", "pt"),
     "unlearn_relearn": ("data", "model", "ul", "rl", "rs"),
     "references": ("data", "model", "rl"),
+    "represent": ("data", "model", "rep"),
 }
 
 
@@ -346,6 +351,7 @@ def stage_unlearn_relearn(ctx: Context) -> None:
         relearned = _relearn_and_record(ctx, model, split, ev, x_f, y_f,
                                         seed=derive_seed("relearn", exp, seed, ul.mu_f, f),
                                         freeze_bn=ctx.cfg["rl"].freeze_bn)
+        torch.save(state_dict_fp16(model), out / "model_relearned_fp16.pt")
         record = ctx.base_record(stage="unlearn_relearn", exp=exp, seed=seed, kind=split.kind, pair=split.pair,
                                  fraction=f, n_r=len(retain_idx), n_f=len(forget_idx), mu_r=ul.mu_r,
                                  mu_f=ul.mu_f, rescale=rescale_info, unlearn=ul_result,
@@ -385,9 +391,71 @@ def stage_references(ctx: Context) -> None:
             relearned = _relearn_and_record(
                 ctx, model, split, ev, x_f, y_f, seed=derive_seed("relearn-ref", exp, seed, name, f),
                 freeze_bn=ctx.cfg["rl"].freeze_bn and name != "scratch")
+            out.mkdir(parents=True, exist_ok=True)
+            torch.save(state_dict_fp16(model), out / "model_fp16.pt")
             record = ctx.base_record(stage="references", exp=exp, seed=seed, kind=split.kind, pair=split.pair,
                                      model=name, fraction=f, n_f=len(forget_idx), **relearned)
             write_json(out / "result.json", record)
+
+
+def stage_represent(ctx: Context) -> None:
+    """CKA (to Retrain and Pretrained) and k-NN accuracy of every saved model of one
+    experiment and seed: the references before relearning, every unlearned model
+    before and after relearning, and every relearned reference. Writes
+    representation.json next to each checkpoint; existing files are skipped."""
+    exp, seed = ctx.args.exp, ctx.args.seed
+    rep = ctx.cfg["rep"]
+    split = ctx.split(exp, seed)
+
+    def images(idx, train: bool):
+        if train:
+            return ctx.train_subset(idx)
+        index = torch.as_tensor(idx, dtype=torch.int64)
+        return normalize(ctx.dataset.x_test[index], ctx.device), ctx.dataset.y_test[index].to(ctx.device)
+
+    rs = RepSets(*images(split.test_forget, False), *images(split.test_retain, False),
+                 *images(split.probe, True), *images(split.retain_order[:rep.max_support_retain], True))
+    pretrained = ctx.load_model(ctx.pretrain_dir(seed, read=True) / "model.pt")
+    retrain = ctx.load_model(ctx.retrain_dir(exp, seed) / "model.pt")
+    refs = {"retrain": reference_features(retrain, rs), "pretrained": reference_features(pretrained, rs)}
+
+    def measure(model) -> Dict:
+        return representation_metrics(model, rs, refs, split.pair, rep.knn_k)
+
+    def load_fp16(path: Path):
+        model = ctx.new_model(0)
+        return load_state(model, torch.load(path, map_location=ctx.device))
+
+    base = ctx.references_dir(exp, seed)
+    before_path = base / "representation_before.json"
+    if not _done(before_path, ctx, "represent"):
+        scratch = ctx.new_model(derive_seed("scratch-init", exp, seed, None))
+        before = {"pretrained": measure(pretrained), "retrain": measure(retrain), "scratch": measure(scratch)}
+        write_json(before_path, ctx.base_record(stage="represent", exp=exp, seed=seed, metrics=before))
+
+    unlearn_root = ctx.out / "unlearn" / f"exp={exp}" / f"seed={seed}"
+    for folder in sorted(p.parent for p in unlearn_root.glob("mu_f=*/rescale=*/f=*/result.json")):
+        out = folder / "representation.json"
+        if _done(out, ctx, "represent"):
+            continue
+        result = read_json(folder / "result.json")
+        record = {"after_unlearn": measure(load_fp16(folder / "model_fp16.pt"))}
+        if (folder / "model_relearned_fp16.pt").exists():
+            record["after_relearn"] = measure(load_fp16(folder / "model_relearned_fp16.pt"))
+        write_json(out, ctx.base_record(stage="represent", exp=exp, seed=seed, source="unlearned",
+                                        mu_f=result["mu_f"], rescale=result["rescale"]["tag"],
+                                        fraction=result["fraction"], **record))
+        log(f"wrote {out}")
+
+    for folder in sorted(p.parent for p in base.glob("model=*/f=*/model_fp16.pt")):
+        out = folder / "representation.json"
+        if _done(out, ctx, "represent"):
+            continue
+        result = read_json(folder / "result.json")
+        write_json(out, ctx.base_record(stage="represent", exp=exp, seed=seed, source=result["model"],
+                                        fraction=result["fraction"],
+                                        after_relearn=measure(load_fp16(folder / "model_fp16.pt"))))
+        log(f"wrote {out}")
 
 
 # --------------------------------------------------------------------------- CLI
@@ -413,7 +481,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = build_parser().parse_args(argv)
-    if args.stage in ("retrain", "unlearn_relearn", "references"):
+    if args.stage in ("retrain", "unlearn_relearn", "references", "represent"):
         if args.exp is None:
             raise SystemExit(f"--exp is required for {args.stage}")
         parse_experiment(args.exp)  # validate early
@@ -426,6 +494,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "retrain": stage_retrain,
         "unlearn_relearn": stage_unlearn_relearn,
         "references": stage_references,
+        "represent": stage_represent,
     }[args.stage](ctx)
 
 

@@ -97,6 +97,15 @@ class RescaleConfig:
     recalibrate_bn: bool = False
 
 
+@dataclass
+class RepresentationConfig:
+    """Post-hoc representation analysis (the `represent` stage)."""
+    knn_k: int = 20
+    # k-NN support for the kept classes: at most this many kept training images
+    # (a stratified prefix of D_r).
+    max_support_retain: int = 5000
+
+
 # group name -> (dataclass, flag prefix)
 GROUPS = {
     "data": (DataConfig, ""),
@@ -105,6 +114,7 @@ GROUPS = {
     "ul": (UnlearnConfig, "ul_"),
     "rl": (RelearnConfig, "rl_"),
     "rs": (RescaleConfig, "rs_"),
+    "rep": (RepresentationConfig, "rep_"),
 }
 
 
