@@ -63,6 +63,8 @@ class UnlearnConfig:
     retain_eval_max: int = 2000
     retain_loss_threshold: float = 1e-2
     forget_acc_threshold: float = 0.01
+    # "loss" (MSE only): stop when effective retain + forget loss < retain_loss_threshold (convergence).
+    # "none": no early stop, exactly max_steps steps (fixed-budget runs, e.g. mu_f = 0).
     # "both": stop when forget accuracy <= forget_acc_threshold AND retain loss <
     # retain_loss_threshold (the agreed rule). "forget": stop as soon as forget
     # accuracy <= forget_acc_threshold; retain damage is then a measured outcome.
@@ -71,6 +73,9 @@ class UnlearnConfig:
     # this (well above chance, ln 10 = 2.3), roll back to the previous check and stop
     # with status "collapsed".
     retain_loss_abort: float = 5.0
+    # CE only: clip each forget image's CE at this value (0 = plain -CE). An image above the
+    # clip adds no gradient, so the ascent is bounded and can settle instead of blowing up.
+    forget_clip: float = 0.0
     freeze_bn: bool = True
 
 

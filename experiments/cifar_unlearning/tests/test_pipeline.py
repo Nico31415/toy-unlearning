@@ -21,6 +21,8 @@ def pipeline(tmp_path_factory):
     common = SYN + ["--out_root", str(out)]
     for seed in ("0", "1"):
         run.main(["pretrain", "--seed", seed] + common)
+    run.main(["pretrain_curve", "--seed", "0"] + common)
+    run.main(["pretrain_curve", "--seed", "0"] + common)  # second call skips everything
     run.main(["select_pairs", "--seeds", "0", "1", "--n_pairs", "2"] + common)
     pairs = json.loads((out / "pilot_pairs.json").read_text())["pairs"]
     exps = [pairs[0], "random"]
@@ -38,6 +40,82 @@ def pipeline(tmp_path_factory):
     aggregate.main(["--out_root", str(out), "--dest", str(csv_dir)])
     plot.main(["--src", str(csv_dir), "--dest", str(fig_dir)])
     return {"out": out, "csv": csv_dir, "fig": fig_dir, "pairs": pairs, "exps": exps}
+
+
+def test_sample_efficiency(pipeline):
+    curve = pd.read_csv(pipeline["csv"] / "pretrain_curve.csv")
+    assert list(curve["fraction"]) == [0.1, 1.0] and list(curve["n_train"]) == [40, 400]
+    accs = curve[[f"acc_c{k}" for k in range(10)]]
+    assert ((accs >= 0) & (accs <= 1)).all().all()
+    pw = curve[[f"pair_{a}_{b}" for a in range(10) for b in range(10) if a != b]]
+    assert ((pw >= 0) & (pw <= 1)).all().all() and len(pw.columns) == 90
+    assert (curve["test_acc"] - accs.mean(axis=1)).abs().max() < 1e-6  # equal test images per class (test_acc is float32)
+    assert (pipeline["fig"] / f"sample_efficiency_{pipeline['pairs'][0]}.png").exists()
+    assert not (pipeline["fig"] / "sample_efficiency_random.png").exists()
+
+
+def test_forget_sizes(tmp_path):
+    """--forget_sizes: n forget images with the whole retain set, folders n=<size>, tables and the figure."""
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out)]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["retrain", "--exp", "pair-0-1", "--seed", "0"] + common)
+    sizes = ["--forget_sizes", "2", "6"]
+    for _ in range(2):  # the second call skips everything
+        run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5"] + sizes + common)
+        run.main(["references", "--exp", "pair-0-1", "--seed", "0"] + sizes + common)
+    assert sorted(p.name for p in out.glob("unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/*")) == ["n=2", "n=6"]
+    aggregate.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    unl = pd.read_csv(tmp_path / "csv" / "unlearn.csv")
+    assert list(unl["n_f"]) == [2, 6] and unl["retain_full"].all()
+    assert (unl["n_r"] == 8 * 40).all()  # every kept-class training image, whatever n_f
+    refs = pd.read_csv(tmp_path / "csv" / "references.csv")
+    assert sorted(set(refs["n_f"])) == [2, 6] and len(refs) == 6
+    plot.main(["--src", str(tmp_path / "csv"), "--dest", str(tmp_path / "fig")])
+    assert (tmp_path / "fig" / "sample_efficiency_pair-0-1.png").exists()
+    with pytest.raises(SystemExit):  # larger than the forget pool
+        run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--forget_sizes", "9999"] + common)
+
+
+def test_pretrain_sizes(tmp_path):
+    """--pt_sizes: sizes from the untrained network up, with the step floor lengthening small runs."""
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--pt_epochs", "1"]
+    sizes = ["--pt_sizes", "0", "10", "100", "--pt_min_steps", "20"]
+    for _ in range(2):  # the second call skips everything
+        run.main(["pretrain_curve", "--seed", "0"] + sizes + common)
+    assert sorted(p.name for p in out.glob("pretrain_curve/seed=0/*")) == ["n=0", "n=10", "n=100"]
+    aggregate.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    curve = pd.read_csv(tmp_path / "csv" / "pretrain_curve.csv").sort_values("n_train")
+    assert list(curve["n_train"]) == [0, 10, 100]
+    assert list(curve["steps"]) == [0, 20, 20]  # n=10: 20 one-step epochs; n=100: 4 steps x 5 epochs
+    assert curve["test_acc"].iloc[0] < 0.5  # the untrained network is near chance
+    with pytest.raises(SystemExit):  # more images than the training set
+        run.main(["pretrain_curve", "--seed", "0", "--pt_sizes", "99999"] + common)
+
+
+def test_three_stage_figure(tmp_path):
+    """Matched retain/forget sizes, a fixed-budget mu_f = 0 run, pretraining sizes, and the three-panel figure."""
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out)]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["retrain", "--exp", "pair-0-1", "--seed", "0"] + common)
+    run.main(["pretrain_curve", "--seed", "0", "--pt_sizes", "0", "20", "100", "--pt_min_steps", "10"] + common)
+    sizes = ["--forget_sizes", "2", "6", "--match_retain"]
+    run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5"] + sizes + common)
+    run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0"] + sizes + common
+             + ["--ul_stop_rule", "none", "--ul_max_steps", "6"])  # last flags win over SYN's defaults
+    run.main(["references", "--exp", "pair-0-1", "--seed", "0", "--forget_sizes", "2", "6"] + common)
+    assert sorted(p.name for p in out.glob("unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/*")) == ["m=2", "m=6"]
+    aggregate.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    unl = pd.read_csv(tmp_path / "csv" / "unlearn.csv")
+    assert unl["retain_matched"].all() and not unl["retain_full"].any()
+    assert (unl["n_r"] == unl["n_f"]).all()  # n retain and n forget images
+    budget = unl[unl["mu_f"] == 0]
+    assert set(budget["ul_status"]) == {"budget"} and (budget["ul_steps"] == 6).all()
+    plot.main(["--src", str(tmp_path / "csv"), "--dest", str(tmp_path / "fig")])
+    for forget in ("2way", "10way"):
+        assert (tmp_path / "fig" / f"pipeline_pair-0-1_{forget}.png").exists()
 
 
 def test_pair_selection(pipeline):
@@ -109,7 +187,7 @@ def test_launch_arrays(tmp_path):
     exps = launch.experiments(tmp_path, None, False)
     assert exps == ["pair-3-5", "pair-0-8", "random"]
     counts = {stage: launch.task_count(launch.build_array(stage, exps)) for stage in launch.ARRAY_STAGES}
-    assert counts == {"pretrain": 5, "select_pairs": 1, "retrain": 15, "unlearn_relearn": 45, "references": 15,
+    assert counts == {"pretrain": 5, "pretrain_curve": 5, "select_pairs": 1, "retrain": 15, "unlearn_relearn": 45, "relearn_sweep": 45, "references": 15,
                       "represent": 15}
     argv = launch.to_argv(launch.build_array("unlearn_relearn", exps).get_args(0))
     assert argv[0] == "unlearn_relearn"
@@ -137,3 +215,123 @@ def test_resnet18_runs_every_stage(tmp_path):
     result = json.loads((tmp_path / "unlearn" / "exp=pair-0-1" / "seed=0" / "mu_f=0.5" / "rescale=none" / "f=1"
                          / "result.json").read_text())
     assert result["n_f"] == 20 and result["n_r"] == 96
+
+
+def test_augment_batch():
+    import torch
+    from experiments.cifar_unlearning import train as T
+    x = torch.randn(64, 3, 32, 32)
+    T.set_augment(False)
+    assert T.augment_batch(x) is x
+    T.set_augment(True)
+    try:
+        y = T.augment_batch(x)
+        assert y.shape == x.shape and not torch.equal(x, y)
+        # every output is a shifted (and maybe flipped) copy: the pixel multiset away from the border is preserved
+        assert torch.isclose(y.abs().sum(), x.abs().sum(), rtol=0.25)
+        # shift 0 + no flip is possible: with many draws some image must equal its source
+        ids = sum(int(torch.equal(T.augment_batch(x[:1])[0], x[0])) for _ in range(2000))
+        assert ids > 0
+    finally:
+        T.set_augment(False)
+
+
+def test_mse_loss_stop_rule(tmp_path):
+    """MSE arm: stop rule 'loss' trains to convergence of the bounded effective-target objective, mu_f = 0 is
+    allowed (forget target 0), no false 'collapsed' at large rho, and augmentation runs end to end."""
+    import torch
+    from experiments.cifar_unlearning import losses, train as T
+    # optimum of the effective objective is exactly zero
+    y = torch.tensor([1, 2])
+    for mu_f in (0.0, 0.75):
+        rho = mu_f / (1 - mu_f)
+        target_r = (1 + rho) * torch.nn.functional.one_hot(y, 10).float()
+        target_f = -rho * torch.nn.functional.one_hot(y, 10).float()
+        assert losses.unlearning_retain_loss(target_r, y, 1.0, mu_f, "mse") == 0
+        assert losses.unlearning_forget_loss(target_f, y, 1.0, mu_f, "mse") == 0
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--loss", "mse", "--augment", "--pt_lr", "0.02"]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["retrain", "--exp", "pair-0-1", "--seed", "0"] + common)
+    ul = ["--forget_sizes", "4", "--match_retain", "--ul_stop_rule", "loss", "--ul_max_steps", "200",
+          "--ul_eval_every", "10", "--ul_lr", "0.01", "--ul_retain_loss_threshold", "1.0"]
+    for mu_f in ("0", "0.75"):
+        run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", mu_f] + common + ul)
+        r = run.read_json(out / f"unlearn/exp=pair-0-1/seed=0/mu_f={mu_f}/rescale=none/m=4/result.json")
+        assert r["augment"] is True
+        assert r["unlearn"]["status"] in ("success", "step_cap")  # never "collapsed" for MSE
+        h = r["unlearn"]["history"]
+        if r["unlearn"]["status"] == "success":
+            assert h[-1]["retain_loss"] + h[-1]["forget_loss"] < 1.0
+    with pytest.raises(ValueError):  # the loss rule needs a bounded objective
+        T.unlearn(None, torch.zeros(1), torch.zeros(1), torch.zeros(1), torch.zeros(1),
+                  __import__("experiments.cifar_unlearning.config", fromlist=["x"]).UnlearnConfig(stop_rule="loss"), seed=0, loss_kind="ce")
+    with pytest.raises(SystemExit):  # an augmented root cannot be resumed without --augment
+        run.main(["pretrain", "--seed", "0"] + [a for a in common if a != "--augment"])
+
+
+def test_theory_mode(tmp_path):
+    """--theory: stage 2 on n mixed rows weighted equally, stage 3 the forget-only attack (onehot on forget rows,
+    zero on retain rows) on disjoint fresh rows, same rows for the references; folders t=<n>; table and figure."""
+    import torch
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--loss", "mse", "--pt_lr", "0.02"]
+    th = ["--theory", "--forget_sizes", "2", "12", "--ul_stop_rule", "loss", "--ul_max_steps", "100",
+          "--ul_lr", "0.01", "--ul_retain_loss_threshold", "1.0", "--rl_loss_threshold", "1.0"]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["retrain", "--exp", "pair-0-1", "--seed", "0"] + common)
+    for _ in range(2):  # the second call skips everything
+        for mu_f in ("0", "0.5"):
+            run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", mu_f] + common + th)
+        run.main(["references", "--exp", "pair-0-1", "--seed", "0"] + common + th)
+    r = run.read_json(out / "unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/t=12/result.json")
+    assert r["theory"] and r["n_rows"] == 12 and r["n_r"] + r["n_f"] == 12 and r["n_f"] >= 1
+    split = run.load_split(str(out / "splits/exp=pair-0-1/seed=0.npz"))
+    a_r, a_f = run.theory_rows(split, 12)
+    b_r, b_f = run.theory_rows(split, 12, fresh=True)
+    assert not set(a_r) & set(b_r) and not set(a_f) & set(b_f)  # unlearning and relearning rows are disjoint
+    assert len(a_f) == round(12 * len(split.forget_pool_order) / (len(split.forget_pool_order) + len(split.retain_order)))
+    assert len(run.theory_rows(split, 2)[1]) == 1
+    aggregate.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    unl = pd.read_csv(tmp_path / "csv" / "unlearn.csv")
+    assert unl["theory"].all() and sorted(set(unl["n_rows"])) == [2, 12]
+    refs = pd.read_csv(tmp_path / "csv" / "references.csv")
+    assert refs["theory"].all() and len(refs) == 6
+    pre = pd.DataFrame()
+    assert plot.plot_pipeline("pair-0-1", pre, unl, refs, tmp_path / "fig")
+    # the relearning targets: zero vector on retain rows, onehot on forget rows
+    from experiments.cifar_unlearning import train as T
+    model = torch.nn.Linear(3, 4)
+    x = torch.randn(5, 3)
+    tg = torch.zeros(5, 4)
+    assert abs(T.full_target_loss(model, x, tg) - 0.5 * model(x).pow(2).sum(1).mean().item()) < 1e-6
+    with pytest.raises(SystemExit):
+        run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--theory", "--forget_sizes", "4"] + SYN
+                 + ["--out_root", str(out)])  # needs --loss mse
+
+
+
+def test_relearn_sweep(tmp_path):
+    """relearn_sweep: the model unlearned with --ul_from rows, relearned at every size, on the references' rows."""
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--loss", "mse", "--pt_lr", "0.02"]
+    th = ["--theory", "--ul_stop_rule", "loss", "--ul_max_steps", "60", "--ul_lr", "0.01",
+          "--ul_retain_loss_threshold", "1.0", "--rl_loss_threshold", "1.0"]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5", "--forget_sizes", "6"]
+             + common + th)
+    sweep = ["relearn_sweep", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5", "--ul_from", "6",
+             "--forget_sizes", "2", "6", "12"]
+    for _ in range(2):  # the second call skips everything
+        run.main(sweep + common + th)
+    base = out / "unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/t=6/relearn_sweep"
+    assert sorted(p.name for p in base.iterdir()) == ["t=12", "t=2", "t=6"]
+    # the relearned model at n_RL = n_UL matches the one unlearn_relearn made (same rows, fp16-rounded start)
+    aggregate.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    sw = pd.read_csv(tmp_path / "csv" / "relearn_sweep.csv")
+    assert sorted(sw["n_rows"]) == [2, 6, 12] and (sw["n_ul"] == 6).all()
+    with pytest.raises(SystemExit):  # no unlearned model with 7 rows
+        run.main(["relearn_sweep", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5", "--ul_from", "7",
+                  "--forget_sizes", "2"] + common + th)
+    with pytest.raises(SystemExit):  # different unlearning settings than the saved model
+        run.main(sweep + common + th + ["--ul_lr", "0.02"])

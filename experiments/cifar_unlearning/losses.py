@@ -43,17 +43,24 @@ def classification_loss(logits: torch.Tensor, y: torch.Tensor, kind: str = "ce",
 
 def signed_unlearning_loss(logits_r: torch.Tensor, y_r: torch.Tensor,
                            logits_f: torch.Tensor, y_f: torch.Tensor,
-                           mu_r: float, mu_f: float, kind: str = "ce") -> torch.Tensor:
+                           mu_r: float, mu_f: float, kind: str = "ce",
+                           forget_clip: float = 0.0, w_r: float = 1.0, w_f: float = 1.0) -> torch.Tensor:
     """Unlearning loss on a retain batch and a forget batch.
 
     ce:  mu_r * CE(retain) - mu_f * CE(forget). Unbounded below; the training loop's
-         stop rule halts it.
+         stop rule halts it. With forget_clip > 0 each forget image's CE is clipped at
+         that value, so the loss is bounded below by -mu_f * forget_clip.
     mse: the workshop paper's effective-target form, needing mu_r > mu_f. With
          rho = mu_f / (mu_r - mu_f), retain images regress to (1 + rho) * onehot and
-         forget images to -rho * onehot, weighted by A = mu_r - mu_f.
+         forget images to -rho * onehot, weighted by A = mu_r - mu_f. `w_r`, `w_f` weight the retain and
+         forget batch means; with w = (share of retain rows, share of forget rows) the loss is the mean over
+         all rows, as in the theory (both terms on the same rows).
     """
     if kind == "ce":
-        return mu_r * F.cross_entropy(logits_r, y_r) - mu_f * F.cross_entropy(logits_f, y_f)
+        ce_f = F.cross_entropy(logits_f, y_f, reduction="none")
+        if forget_clip > 0:
+            ce_f = ce_f.clamp(max=forget_clip)
+        return mu_r * F.cross_entropy(logits_r, y_r) - mu_f * ce_f.mean()
     if kind == "mse":
         if not mu_r > mu_f:
             raise ValueError("the MSE effective-target loss needs mu_r > mu_f")
@@ -61,7 +68,7 @@ def signed_unlearning_loss(logits_r: torch.Tensor, y_r: torch.Tensor,
         k = logits_r.shape[1]
         target_r = (1.0 + rho) * F.one_hot(y_r, k).float()
         target_f = -rho * F.one_hot(y_f, k).float()
-        return (mu_r - mu_f) * (_squared(logits_r, target_r) + _squared(logits_f, target_f))
+        return (mu_r - mu_f) * (w_r * _squared(logits_r, target_r) + w_f * _squared(logits_f, target_f))
     raise ValueError(f"unknown loss kind {kind!r}")
 
 
@@ -74,4 +81,16 @@ def unlearning_retain_loss(logits_r: torch.Tensor, y_r: torch.Tensor, mu_r: floa
     if kind == "mse":
         rho = mu_f / (mu_r - mu_f)
         return _squared(logits_r, (1.0 + rho) * F.one_hot(y_r, logits_r.shape[1]).float())
+    raise ValueError(f"unknown loss kind {kind!r}")
+
+
+def unlearning_forget_loss(logits_f: torch.Tensor, y_f: torch.Tensor, mu_r: float, mu_f: float,
+                           kind: str = "ce") -> torch.Tensor:
+    """Forget-side loss used by the "loss" stop rule (and logged): CE for "ce"; for "mse", the squared error
+    to the effective forget target -rho * onehot, so retain + forget loss is 0 exactly at the optimum."""
+    if kind == "ce":
+        return F.cross_entropy(logits_f, y_f)
+    if kind == "mse":
+        rho = mu_f / (mu_r - mu_f)
+        return _squared(logits_f, -rho * F.one_hot(y_f, logits_f.shape[1]).float())
     raise ValueError(f"unknown loss kind {kind!r}")

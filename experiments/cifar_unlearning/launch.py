@@ -26,7 +26,8 @@ from functions.array_training import ArgparseArray  # noqa: E402
 from experiments.cifar_unlearning import run  # noqa: E402
 from experiments.cifar_unlearning.config import DEFAULT_FRACTIONS, DEFAULT_MU_F, DEFAULT_SEEDS  # noqa: E402
 
-ARRAY_STAGES = ("pretrain", "select_pairs", "retrain", "unlearn_relearn", "references", "represent")
+ARRAY_STAGES = ("pretrain", "pretrain_curve", "select_pairs", "retrain", "unlearn_relearn", "relearn_sweep", "references",
+                "represent")
 
 
 def experiments(out_root: Path, exps: Optional[List[str]], all_pairs: bool, num_classes: int = 10) -> List[str]:
@@ -42,18 +43,22 @@ def experiments(out_root: Path, exps: Optional[List[str]], all_pairs: bool, num_
     return pairs + ["random"]
 
 
-def build_array(stage: str, exps: List[str]) -> ArgparseArray:
+def build_array(stage: str, exps: List[str], mu_fs: Optional[List[float]] = None) -> ArgparseArray:
     seeds = list(DEFAULT_SEEDS)
     fractions = list(DEFAULT_FRACTIONS)
     if stage == "pretrain":
         return ArgparseArray(posarg0="pretrain", seed=seeds)
+    if stage == "pretrain_curve":
+        return ArgparseArray(posarg0="pretrain_curve", seed=seeds, niarg_fractions=fractions)
     if stage == "select_pairs":
         return ArgparseArray(posarg0="select_pairs", niarg_seeds=seeds)
     if stage == "retrain":
         return ArgparseArray(posarg0="retrain", exp=exps, seed=seeds)
     if stage == "unlearn_relearn":
-        return ArgparseArray(posarg0="unlearn_relearn", exp=exps, seed=seeds, ul_mu_f=list(DEFAULT_MU_F),
+        return ArgparseArray(posarg0="unlearn_relearn", exp=exps, seed=seeds, ul_mu_f=list(mu_fs or DEFAULT_MU_F),
                              niarg_fractions=fractions)
+    if stage == "relearn_sweep":
+        return ArgparseArray(posarg0="relearn_sweep", exp=exps, seed=seeds, ul_mu_f=list(mu_fs or DEFAULT_MU_F))
     if stage == "references":
         return ArgparseArray(posarg0="references", exp=exps, seed=seeds, niarg_fractions=fractions)
     if stage == "represent":
@@ -89,13 +94,15 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--loss", default="ce")
     parser.add_argument("--out_root", default=None)
     parser.add_argument("--exps", nargs="+", default=None)
+    parser.add_argument("--mu_fs", type=float, nargs="+", default=None,
+                        help="unlearn_relearn: the mu_f values of the array (default 0.25 0.5 0.75)")
     parser.add_argument("--all_pairs", action="store_true")
     args, passthrough = parser.parse_known_args(argv)
     out_root = Path(args.out_root or f"data/cifar_unlearning/{args.loss}")
 
-    needs_exps = args.stage in ("retrain", "unlearn_relearn", "references", "represent")
+    needs_exps = args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "represent")
     exps = experiments(out_root, args.exps, args.all_pairs) if needs_exps else []
-    array = build_array(args.stage, exps)
+    array = build_array(args.stage, exps, args.mu_fs)
     if args.count:
         print(task_count(array))
         return

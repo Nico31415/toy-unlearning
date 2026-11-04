@@ -5,9 +5,11 @@
 Stages, in order:
     download         fetch CIFAR-10 once and cache it as uint8 tensors (login node)
     pretrain         --seed S                      train on all of D
+    pretrain_curve   --seed S                      pretrain on nested subsets of D (sample-efficiency curve)
     select_pairs     --seeds 0 1 2 3 4             pick pilot pairs from pretrained confusion
     retrain          --exp E --seed S              the control: train on all of D_r
     unlearn_relearn  --exp E --seed S --ul_mu_f M  unlearn Pretrained at every fraction, then relearn
+                     (--forget_sizes n1 n2 ...: n forget images and the whole retain set instead)
     references       --exp E --seed S              relearn Pretrained, Retrain and Scratch at every fraction
     represent        --exp E --seed S              CKA and k-NN analysis of every saved model (post hoc)
 
@@ -20,6 +22,7 @@ exits non-zero, which stops dependent SLURM jobs.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import itertools
 import json
@@ -39,20 +42,23 @@ import torch  # noqa: E402
 from experiments.cifar_unlearning.config import (  # noqa: E402
     DEFAULT_FRACTIONS, DEFAULT_SEEDS, add_config_args, build_configs, configs_to_dict)
 from experiments.cifar_unlearning.data import (  # noqa: E402
-    Dataset, Split, load_cifar10, load_split, make_split, make_synthetic, normalize, parse_experiment,
-    save_split)
+    Dataset, Split, load_cifar10, load_split, make_split, make_synthetic, n_for_fraction, normalize,
+    parse_experiment, save_split, stratified_order)
 from experiments.cifar_unlearning.losses import LOSS_KINDS  # noqa: E402
-from experiments.cifar_unlearning.metrics import EvalSets, confusion_matrix, evaluate  # noqa: E402
+from experiments.cifar_unlearning.metrics import (  # noqa: E402
+    EvalSets, confusion_matrix, evaluate, predict_logits)
 from experiments.cifar_unlearning.representation import (  # noqa: E402
     RepSets, reference_features, representation_metrics)
 from experiments.cifar_unlearning.models import (  # noqa: E402
     build_model, is_identity_rescale, load_state, mean_logit_norm, recalibrate_bn, rescale_,
     state_dict_fp16, weight_norms)
+from experiments.cifar_unlearning import train as train_module  # noqa: E402
 from experiments.cifar_unlearning.train import (  # noqa: E402
     relearn, train_from_scratch, unlearn)
 
 log = partial(print, flush=True)
-STAGES = ("download", "pretrain", "select_pairs", "retrain", "unlearn_relearn", "references", "represent")
+STAGES = ("download", "pretrain", "pretrain_curve", "select_pairs", "retrain", "unlearn_relearn", "relearn_sweep",
+          "references", "represent")
 REFERENCE_MODELS = ("pretrained", "retrain", "scratch")
 
 
@@ -66,6 +72,42 @@ def derive_seed(*parts) -> int:
 
 def fmt(x: float) -> str:
     return f"{x:g}"
+
+
+def _tag(fraction: float, size: Optional[int], matched: bool = False, theory: bool = False) -> str:
+    """Folder name of one data-size setting: `n=<images>` for --forget_sizes runs (`m=<images>` when the
+    retain set is cut to the same size, `t=<rows>` in --theory mode), `f=<fraction>` otherwise."""
+    if size is None:
+        return f"f={fmt(fraction)}"
+    return f"{'t' if theory else ('m' if matched else 'n')}={size}"
+
+
+def theory_rows(split: "Split", n: int, fresh: bool = False):
+    """--theory mode: n rows from the whole training distribution, as in the theory, where both loss terms
+    are evaluated on the same rows. The forget share is the forget pool's share of the training images
+    (at least one row of each kind). Unlearning takes the start of the nested orders; relearning
+    (`fresh`) takes the end, so the two stages see disjoint rows, like the theory's fresh design per stage.
+    Returns (retain indices, forget indices)."""
+    pool, retain = split.forget_pool_order, split.retain_order
+    n_f = min(max(1, round(n * len(pool) / (len(pool) + len(retain)))), n - 1)
+    n_r = n - n_f
+    if 2 * n_f > len(pool) or 2 * n_r > len(retain):
+        raise SystemExit(f"--theory: {n} rows do not leave disjoint unlearning and relearning rows")
+    if fresh:
+        return retain[::-1][:n_r].copy(), pool[::-1][:n_f].copy()
+    return retain[:n_r], pool[:n_f]
+
+
+def theory_relearn_set(ctx: "Context", split: "Split", n: int):
+    """Rows and target vectors of the theory's forget-only attack (nu_r = 0): the squared loss towards
+    y_f = y * M_f, i.e. onehot for forget rows and the zero vector for retain rows, over all outputs."""
+    r_idx, f_idx = theory_rows(split, n, fresh=True)
+    x_r, y_r = ctx.train_subset(r_idx)
+    x_f, y_f = ctx.train_subset(f_idx)
+    k = ctx.dataset.num_classes
+    targets = torch.cat([torch.zeros(len(y_r), k, device=x_r.device),
+                         torch.nn.functional.one_hot(y_f, k).float()])
+    return torch.cat([x_r, x_f]), torch.cat([y_r, y_f]), targets, len(r_idx), len(f_idx)
 
 
 def write_json(path: Path, obj: Dict) -> None:
@@ -176,7 +218,8 @@ class Context:
         return model
 
     def base_record(self, **fields) -> Dict:
-        return {**fields, "loss": self.loss, "configs": configs_to_dict(self.cfg)}
+        extra = {"augment": True} if train_module.AUGMENT else {}
+        return {**fields, "loss": self.loss, "configs": configs_to_dict(self.cfg), **extra}
 
     # paths -----------------------------------------------------------------
     def pretrain_dir(self, seed: int, read: bool = False) -> Path:
@@ -198,9 +241,26 @@ class Context:
             tag = f"{rs.mode}-S{fmt(rs.S)}"
         return tag + ("-bnrecal" if rs.recalibrate_bn else "")
 
-    def unlearn_dir(self, exp: str, seed: int, mu_f: float, fraction: float) -> Path:
+    def unlearn_dir(self, exp: str, seed: int, mu_f: float, fraction: float, size: Optional[int] = None) -> Path:
         return (self.out / "unlearn" / f"exp={exp}" / f"seed={seed}" / f"mu_f={fmt(mu_f)}"
-                / f"rescale={self.rescale_tag()}" / f"f={fmt(fraction)}")
+                / f"rescale={self.rescale_tag()}" / _tag(fraction, size, self.args.match_retain, self.args.theory))
+
+    def data_grid(self, split: Split):
+        """(fraction, size) for every data setting to run. Default: `--fractions`, each scaling the retain
+        and forget sets together (size is None). With `--forget_sizes`: the first n images of the forget
+        pool and the whole retain set (or the first n retain images with --match_retain); fraction is then
+        n / |forget pool|."""
+        sizes = self.args.forget_sizes
+        if not sizes:
+            return [(f, None) for f in sorted(self.args.fractions)]
+        pool = len(split.forget_pool_order)
+        if self.args.theory:  # n is the number of rows of both kinds
+            if min(sizes) < 2:
+                raise SystemExit("--theory needs --forget_sizes >= 2 (one retain and one forget row)")
+            return [(n / pool, n) for n in sorted(sizes)]
+        if min(sizes) < 1 or max(sizes) > pool:
+            raise SystemExit(f"--forget_sizes must lie in [1, {pool}] (the forget pool), got {sizes}")
+        return [(n / pool, n) for n in sorted(sizes)]
 
     def references_dir(self, exp: str, seed: int) -> Path:
         return self.out / "references" / f"exp={exp}" / f"seed={seed}"
@@ -211,8 +271,10 @@ class Context:
 # mixing settings in one output folder.
 STAGE_GROUPS = {
     "pretrain": ("data", "model", "pt"),
+    "pretrain_curve": ("data", "model", "pt"),
     "retrain": ("data", "model", "pt"),
     "unlearn_relearn": ("data", "model", "ul", "rl", "rs"),
+    "relearn_sweep": ("data", "model", "ul", "rl", "rs"),
     "references": ("data", "model", "rl"),
     "represent": ("data", "model", "rep"),
 }
@@ -223,6 +285,8 @@ def _done(path: Path, ctx: "Context", stage: str) -> bool:
         return False
     saved = read_json(path)
     current = configs_to_dict(ctx.cfg)
+    if saved.get("augment", False) != train_module.AUGMENT:
+        raise SystemExit(f"{path} exists with a different --augment setting. Use a new --out_root.")
     for group in STAGE_GROUPS[stage]:
         if saved.get("configs", {}).get(group) != current[group] or saved.get("loss") != ctx.loss:
             raise SystemExit(f"{path} exists with different '{group}' settings (or loss). Use a new --out_root "
@@ -253,6 +317,59 @@ def stage_pretrain(ctx: Context) -> None:
                              test_acc=(conf.diag().sum() / conf.sum()).item(), confusion=conf)
     _finish(out, model, record, ok=train["converged"],
             reason=f"final train loss {train['final_train_loss']:.4f} above threshold")
+
+
+def stage_pretrain_curve(ctx: Context) -> None:
+    """Pretrain from scratch on the first n images of a nested, class-balanced order of D, for every
+    size. The model does not depend on the experiment: the confusion matrix on the whole test set
+    and the pairwise logit comparisons are saved, so any class pair's retain error (10-way) and forget error
+    (2-way) are read off afterwards. Sizes come from `--pt_sizes` (0 = the untrained network) or from
+    `--fractions` of D. `--pt_min_steps` lengthens the schedule of small sets so that they converge too.
+    A run that does not reach the train-loss threshold is still recorded (`converged` is False), because
+    a model trained on few images is part of the curve."""
+    seed = ctx.args.seed
+    ds = ctx.dataset
+    order = stratified_order(np.arange(len(ds.y_train)), ds.y_train.numpy(), np.random.default_rng([seed, 2]))
+    x_test, y_test = normalize(ds.x_test, ctx.device), ds.y_test.to(ctx.device)
+    if ctx.args.pt_sizes:
+        if min(ctx.args.pt_sizes) < 0 or max(ctx.args.pt_sizes) > len(order):
+            raise SystemExit(f"--pt_sizes must lie in [0, {len(order)}], got {ctx.args.pt_sizes}")
+        grid = [(n / len(order), n) for n in sorted(ctx.args.pt_sizes)]
+    else:
+        grid = [(f, n_for_fraction(f, len(order))) for f in sorted(ctx.args.fractions)]
+    pt = ctx.cfg["pt"]
+    for f, n in grid:
+        out = ctx.out / "pretrain_curve" / f"seed={seed}" / _tag(f, n)
+        if _done(out / "result.json", ctx, "pretrain_curve"):
+            continue
+        log(f"=== pretrain_curve seed {seed} {n} images")
+        model = ctx.new_model(derive_seed("pretrain-curve-init", seed, f))
+        if n == 0:
+            train = {"steps": 0, "final_train_loss": None, "converged": None, "history": [], "seconds": 0.0}
+        else:
+            x, y = ctx.train_subset(order[:n])
+            per_epoch = -(-n // pt.batch_size)
+            epochs = max(pt.epochs, -(-ctx.args.pt_min_steps // per_epoch))
+            shown = [0]
+
+            def epoch_log(message: str) -> None:  # thousands of epochs on tiny sets: print about 20 lines
+                shown[0] += 1
+                if epochs <= 100 or shown[0] % max(1, epochs // 20) == 0:
+                    log(message)
+
+            train = train_from_scratch(model, x, y, dataclasses.replace(pt, epochs=epochs),
+                                       seed=derive_seed("pretrain-curve-batches", seed, f),
+                                       loss_kind=ctx.loss, log=epoch_log)
+        conf = confusion_matrix(model, x_test, y_test, ds.num_classes)
+        logits = predict_logits(model, x_test)
+        # pairwise[a][b]: share of class-a test images whose class-a logit beats the class-b logit. The 2-way
+        # accuracy for the pair (a, b) is then (pairwise[a][b] + pairwise[b][a]) / 2 (equal test images per class).
+        pairwise = torch.stack([(logits[y_test == a][:, [a]] > logits[y_test == a]).float().mean(dim=0)
+                                for a in range(ds.num_classes)]).cpu()
+        out.mkdir(parents=True, exist_ok=True)
+        write_json(out / "result.json", ctx.base_record(
+            stage="pretrain_curve", seed=seed, fraction=f, n_train=n, train=train,
+            test_acc=(conf.diag().sum() / conf.sum()).item(), confusion=conf, pairwise=pairwise))
 
 
 def stage_select_pairs(ctx: Context) -> None:
@@ -306,26 +423,33 @@ def _finish(out: Path, model: torch.nn.Module, record: Dict, ok: bool, reason: s
 
 
 def _relearn_and_record(ctx: Context, model, split: Split, ev: EvalSets, x_f, y_f, seed: int,
-                        freeze_bn: bool) -> Dict:
+                        freeze_bn: bool, targets=None) -> Dict:
     result = relearn(model, x_f, y_f, ctx.cfg["rl"], seed=seed, freeze_bn=freeze_bn, pair=split.pair,
-                     loss_kind=ctx.loss, eval_fn=lambda m: evaluate(m, ev, split.pair), log=log)
+                     loss_kind=ctx.loss, eval_fn=lambda m: evaluate(m, ev, split.pair), log=log, targets=targets)
     return {"relearn": result, "after_relearn": evaluate(model, ev, split.pair)}
 
 
 def stage_unlearn_relearn(ctx: Context) -> None:
     exp, seed = ctx.args.exp, ctx.args.seed
     ul, rs = ctx.cfg["ul"], ctx.cfg["rs"]
-    todo = [f for f in sorted(ctx.args.fractions)
-            if not _done(ctx.unlearn_dir(exp, seed, ul.mu_f, f) / "result.json", ctx, "unlearn_relearn")]
+    split = ctx.split(exp, seed)
+    todo = [(f, n) for f, n in ctx.data_grid(split)
+            if not _done(ctx.unlearn_dir(exp, seed, ul.mu_f, f, n) / "result.json", ctx, "unlearn_relearn")]
     if not todo:
         return
     pretrained_state = torch.load(ctx.pretrain_dir(seed, read=True) / "model.pt", map_location=ctx.device)
-    split = ctx.split(exp, seed)
     ev = ctx.eval_sets(split)
-    for f in todo:
-        out = ctx.unlearn_dir(exp, seed, ul.mu_f, f)
-        log(f"=== {exp} seed {seed} mu_f {fmt(ul.mu_f)} rescale {ctx.rescale_tag()} f {fmt(f)}")
-        retain_idx, forget_idx = split.retain_subset(f), split.forget_subset(f)
+    for f, size in todo:
+        out = ctx.unlearn_dir(exp, seed, ul.mu_f, f, size)
+        log(f"=== {exp} seed {seed} mu_f {fmt(ul.mu_f)} rescale {ctx.rescale_tag()} "
+            f"{_tag(f, size, ctx.args.match_retain, ctx.args.theory)}")
+        if ctx.args.theory:
+            retain_idx, forget_idx = theory_rows(split, size)
+        elif size is None:
+            retain_idx, forget_idx = split.retain_subset(f), split.forget_subset(f)
+        else:
+            retain_idx = split.retain_order[:size] if ctx.args.match_retain else split.retain_order
+            forget_idx = split.forget_pool_order[:size]
         x_r, y_r = ctx.train_subset(retain_idx)
         x_f, y_f = ctx.train_subset(forget_idx)
 
@@ -342,21 +466,64 @@ def stage_unlearn_relearn(ctx: Context) -> None:
                                      "mean_logit_norm": mean_logit_norm(model, ev.x_test_retain),
                                      "metrics": evaluate(model, ev, split.pair)}
 
+        n_rows = len(retain_idx) + len(forget_idx)
+        weights = (len(retain_idx) / n_rows, len(forget_idx) / n_rows) if ctx.args.theory else (1.0, 1.0)
         ul_result = unlearn(model, x_r, y_r, x_f, y_f, ul, seed=derive_seed("unlearn", exp, seed, ul.mu_f, f),
-                            loss_kind=ctx.loss, log=log)
+                            loss_kind=ctx.loss, log=log, row_weights=weights)
         after_unlearn = evaluate(model, ev, split.pair)
         out.mkdir(parents=True, exist_ok=True)
         torch.save(state_dict_fp16(model), out / "model_fp16.pt")
 
-        relearned = _relearn_and_record(ctx, model, split, ev, x_f, y_f,
+        if ctx.args.theory:
+            x_rl, y_rl, t_rl, _, _ = theory_relearn_set(ctx, split, size)
+        else:
+            x_rl, y_rl, t_rl = x_f, y_f, None
+        relearned = _relearn_and_record(ctx, model, split, ev, x_rl, y_rl,
                                         seed=derive_seed("relearn", exp, seed, ul.mu_f, f),
-                                        freeze_bn=ctx.cfg["rl"].freeze_bn)
+                                        freeze_bn=ctx.cfg["rl"].freeze_bn, targets=t_rl)
         torch.save(state_dict_fp16(model), out / "model_relearned_fp16.pt")
         record = ctx.base_record(stage="unlearn_relearn", exp=exp, seed=seed, kind=split.kind, pair=split.pair,
-                                 fraction=f, n_r=len(retain_idx), n_f=len(forget_idx), mu_r=ul.mu_r,
+                                 fraction=f, retain_full=size is not None and not ctx.args.match_retain,
+                                 retain_matched=size is not None and ctx.args.match_retain and not ctx.args.theory,
+                                 theory=ctx.args.theory, n_rows=n_rows, n_r=len(retain_idx),
+                                 n_f=len(forget_idx), mu_r=ul.mu_r,
                                  mu_f=ul.mu_f, rescale=rescale_info, unlearn=ul_result,
                                  after_unlearn=after_unlearn, **relearned)
         write_json(out / "result.json", record)
+
+
+def stage_relearn_sweep(ctx: Context) -> None:
+    """--theory mode: relearn the model unlearned with `--ul_from` rows (one mu_f) with every relearning size in
+    --forget_sizes, the stage-3 attack of the theory. The unlearned model is the one unlearn_relearn saved, so
+    the --ul_* flags must match that run. Relearning rows are the same as for the references of each size, so
+    the from-scratch curve applies unchanged. Writes <unlearn dir>/relearn_sweep/t=<n>/result.json."""
+    exp, seed, ul = ctx.args.exp, ctx.args.seed, ctx.cfg["ul"]
+    if not ctx.args.theory or not ctx.args.ul_from:
+        raise SystemExit("relearn_sweep needs --theory and --ul_from")
+    split = ctx.split(exp, seed)
+    n_ul = ctx.args.ul_from
+    src = ctx.unlearn_dir(exp, seed, ul.mu_f, n_ul / len(split.forget_pool_order), n_ul)
+    if not (src / "result.json").exists():
+        raise SystemExit(f"{src} has no unlearned model: run unlearn_relearn with --forget_sizes including {n_ul}")
+    source = read_json(src / "result.json")
+    if source["configs"]["ul"] != configs_to_dict(ctx.cfg)["ul"]:
+        raise SystemExit(f"{src} was unlearned with different --ul_* settings than the current flags")
+    state = torch.load(src / "model_fp16.pt", map_location=ctx.device)
+    ev = ctx.eval_sets(split)
+    for f, size in ctx.data_grid(split):
+        out = src / "relearn_sweep" / _tag(f, size, theory=True)
+        if _done(out / "result.json", ctx, "relearn_sweep"):
+            continue
+        log(f"=== {exp} seed {seed} mu_f {fmt(ul.mu_f)} unlearned t={n_ul}: relearn t={size}")
+        model = load_state(ctx.new_model(0), state)
+        x_rl, y_rl, t_rl, n_r, n_f = theory_relearn_set(ctx, split, size)
+        relearned = _relearn_and_record(ctx, model, split, ev, x_rl, y_rl,
+                                        seed=derive_seed("relearn-sweep", exp, seed, ul.mu_f, n_ul, size),
+                                        freeze_bn=ctx.cfg["rl"].freeze_bn, targets=t_rl)
+        out.mkdir(parents=True, exist_ok=True)
+        write_json(out / "result.json", ctx.base_record(
+            stage="relearn_sweep", exp=exp, seed=seed, kind=split.kind, pair=split.pair, mu_r=ul.mu_r, mu_f=ul.mu_f,
+            theory=True, n_ul=n_ul, n_rows=size, n_r=n_r, n_f=n_f, after_unlearn=source["after_unlearn"], **relearned))
 
 
 def stage_references(ctx: Context) -> None:
@@ -379,22 +546,29 @@ def stage_references(ctx: Context) -> None:
         before = {name: evaluate(fresh(name, None), ev, split.pair) for name in REFERENCE_MODELS}
         write_json(before_path, ctx.base_record(stage="references_before", exp=exp, seed=seed, metrics=before))
 
-    for f in sorted(ctx.args.fractions):
-        forget_idx = split.forget_subset(f)
-        x_f, y_f = ctx.train_subset(forget_idx)
+    for f, size in ctx.data_grid(split):
+        if ctx.args.theory:  # the same relearning rows and targets as the unlearned models get
+            x_f, y_f, t_f, _, n_forget = theory_relearn_set(ctx, split, size)
+            forget_idx = range(n_forget)
+        else:
+            forget_idx = split.forget_subset(f) if size is None else split.forget_pool_order[:size]
+            x_f, y_f = ctx.train_subset(forget_idx)
+            t_f = None
+        tag = _tag(f, size, theory=ctx.args.theory)
         for name in REFERENCE_MODELS:
-            out = base / f"model={name}" / f"f={fmt(f)}"
+            out = base / f"model={name}" / tag
             if _done(out / "result.json", ctx, "references"):
                 continue
-            log(f"=== {exp} seed {seed} reference {name} f {fmt(f)}")
+            log(f"=== {exp} seed {seed} reference {name} {tag}")
             model = fresh(name, f)
             relearned = _relearn_and_record(
                 ctx, model, split, ev, x_f, y_f, seed=derive_seed("relearn-ref", exp, seed, name, f),
-                freeze_bn=ctx.cfg["rl"].freeze_bn and name != "scratch")
+                freeze_bn=ctx.cfg["rl"].freeze_bn and name != "scratch", targets=t_f)
             out.mkdir(parents=True, exist_ok=True)
             torch.save(state_dict_fp16(model), out / "model_fp16.pt")
             record = ctx.base_record(stage="references", exp=exp, seed=seed, kind=split.kind, pair=split.pair,
-                                     model=name, fraction=f, n_f=len(forget_idx), **relearned)
+                                     model=name, fraction=f, n_f=len(forget_idx), theory=ctx.args.theory,
+                                     n_rows=len(x_f), **relearned)
             write_json(out / "result.json", record)
 
 
@@ -467,6 +641,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seeds", type=int, nargs="+", default=list(DEFAULT_SEEDS))
     parser.add_argument("--exp", type=str, default=None, help='"random" or "pair-A-B"')
     parser.add_argument("--fractions", type=float, nargs="+", default=list(DEFAULT_FRACTIONS))
+    parser.add_argument("--forget_sizes", type=int, nargs="+", default=None,
+                        help="unlearn_relearn / references: use the first n images of the forget pool (all "
+                             "of the retain set when unlearning) for each n, instead of --fractions")
+    parser.add_argument("--pt_sizes", type=int, nargs="+", default=None,
+                        help="pretrain_curve: train on this many images (0 = the untrained network) instead of "
+                             "--fractions of the training set")
+    parser.add_argument("--pt_min_steps", type=int, default=0,
+                        help="pretrain_curve: raise the epoch count until a run has at least this many steps, so "
+                             "that small training sets also train to convergence")
+    parser.add_argument("--match_retain", action="store_true",
+                        help="unlearn_relearn with --forget_sizes: also cut the retain set to the first n images, "
+                             "so n retain and n forget images are used (folders m=<n>)")
+    parser.add_argument("--augment", action="store_true",
+                        help="random crop (4 px padding) and horizontal flip on every training minibatch, in all "
+                             "training stages; evaluation is never augmented. Use a separate --out_root")
+    parser.add_argument("--theory", action="store_true",
+                        help="match the diagonal-network theory (needs --loss mse and --forget_sizes): stage 2 on n rows "
+                             "drawn from all classes with both loss terms on the same rows; stage 3 the forget-only attack "
+                             "(squared loss to onehot on forget rows, zero on retain rows) on n fresh rows; folders t=<n>")
+    parser.add_argument("--ul_from", type=int, default=None,
+                        help="relearn_sweep: the number of unlearning rows of the unlearned model to relearn")
     parser.add_argument("--n_pairs", type=int, default=3)
     parser.add_argument("--loss", choices=LOSS_KINDS, default="ce")
     parser.add_argument("--out_root", type=str, default=None,
@@ -481,7 +676,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = build_parser().parse_args(argv)
-    if args.stage in ("retrain", "unlearn_relearn", "references", "represent"):
+    train_module.set_augment(args.augment)
+    if args.theory and (args.loss != "mse" or not args.forget_sizes or args.match_retain):
+        raise SystemExit("--theory needs --loss mse and --forget_sizes, and excludes --match_retain")
+    if args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "represent"):
         if args.exp is None:
             raise SystemExit(f"--exp is required for {args.stage}")
         parse_experiment(args.exp)  # validate early
@@ -490,9 +688,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     {
         "download": stage_download,
         "pretrain": stage_pretrain,
+        "pretrain_curve": stage_pretrain_curve,
         "select_pairs": stage_select_pairs,
         "retrain": stage_retrain,
         "unlearn_relearn": stage_unlearn_relearn,
+        "relearn_sweep": stage_relearn_sweep,
         "references": stage_references,
         "represent": stage_represent,
     }[args.stage](ctx)
