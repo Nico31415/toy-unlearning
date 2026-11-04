@@ -135,3 +135,17 @@ python -m pytest experiments/cifar_unlearning/tests -q
 Synthetic data, CPU, about 30 seconds. They cover the splits, BatchNorm freezing,
 rescaling, losses, metrics, the stop rule and rollback, every stage end to end
 (including ResNet-18), aggregation, plots and the SLURM array mapping.
+
+## Rounds on blackwell (one command, results on GitHub)
+
+On a blackwell shell (`srun -p cbl -A divf --time=02:00:00 --pty bash`), from the repo:
+
+    bash experiments/cifar_unlearning/round.sh <name>
+
+pulls the code, sources `rounds/<name>.sh` (its `submit ...` lines are `sbatch` calls on cbl), and queues a
+final job that waits for them, runs `publish.sh`: every output root under `data/cifar_unlearning/` is
+aggregated into `<root>/*.csv` on the `results` branch, with a job report in `rounds/<name>.txt` (states,
+and the log tails of tasks that did not complete). The results branch lives in a separate worktree
+(`/var/tmp/na658/results-wt`), so the code checkout is never touched. `rounds/publish_only.sh` submits
+nothing and only publishes what is on disk. Pushing needs a git credential on blackwell (a fine-grained
+token with Contents read/write on this repository, stored with `git config --global credential.helper store`).
