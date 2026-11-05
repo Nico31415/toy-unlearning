@@ -26,9 +26,14 @@ for root in data/cifar_unlearning/*/; do
   mkdir -p "$WT/$tag"
   "$PY" experiments/cifar_unlearning/aggregate.py --loss "$loss" --out_root "$root" --dest "$WT/$tag" \
     > "$WT/$tag/aggregate.log" 2>&1 || echo "aggregate failed for $root" >> "$WT/$tag/aggregate.log"
+  # BatchNorm setting of stages 2 and 3, from the first unlearned model's record, for the figure titles
+  note=""; first=$(ls "$root"/unlearn/exp=*/seed=*/mu_f=*/rescale=*/*/result.json 2>/dev/null | head -1)
+  if [[ -n $first ]]; then
+    note=$("$PY" -c "import json,sys; print('BN frozen' if json.load(open(sys.argv[1]))['configs']['ul']['freeze_bn'] else 'BN unfrozen')" "$first")
+  fi
   # figures from the same tables, made here so they come back with the CSVs
   rm -rf "$WT/$tag/figures"
-  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$loss" --src "$WT/$tag" --dest "$WT/$tag/figures" \
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$loss" --note "$note" --src "$WT/$tag" --dest "$WT/$tag/figures" \
     > "$WT/$tag/figures.log" 2>&1 || echo "plot failed for $root" >> "$WT/$tag/figures.log"
 done
 

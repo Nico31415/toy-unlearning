@@ -197,6 +197,11 @@ def _title(exp: str, loss: str = "") -> str:
     return f"{exp}, {LOSS_NAMES.get(loss, loss)}" if loss else exp
 
 
+def _title_label(loss: str, note: str = "") -> str:
+    """The loss name and an optional note ("MSE loss, BN unfrozen") for the figure titles."""
+    return ", ".join(part for part in (LOSS_NAMES.get(loss, loss), note) if part)
+
+
 SCRATCH_COLOR = "#e07a1f"  # from-scratch relearning reference in the pipeline figure
 
 
@@ -353,12 +358,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--loss", default="ce")
     parser.add_argument("--src", default=None)
     parser.add_argument("--dest", default=None)
+    parser.add_argument("--note", default="", help="extra text for the figure titles, e.g. the BatchNorm setting")
     parser.add_argument("--n_ul", type=int, default=None,
                         help="the unlearning size panel (d) of the pipeline figures starts from (default: the largest)")
     args = parser.parse_args(argv)
     src = Path(args.src or f"data/processed/cifar_unlearning/{args.loss}")
     dest = Path(args.dest or f"figures/cifar_unlearning/{args.loss}")
     dest.mkdir(parents=True, exist_ok=True)
+    args.loss = _title_label(args.loss, args.note)  # the figure functions only use it in titles
 
     def read(name: str) -> pd.DataFrame:
         path = src / f"{name}.csv"

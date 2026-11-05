@@ -437,3 +437,18 @@ def test_figure_title_names_the_loss():
     assert plot._title("pair-1-7", "mse") == "pair-1-7, MSE loss"
     assert plot._title("pair-1-7", "ce") == "pair-1-7, CE loss"
     assert plot._title("pair-1-7") == "pair-1-7"
+
+
+def test_title_label_and_unfrozen_bn(tmp_path):
+    assert plot._title_label("mse", "BN unfrozen") == "MSE loss, BN unfrozen"
+    assert plot._title_label("ce") == "CE loss"
+    # stages 2 and 3 run with BatchNorm in ordinary train mode and record the setting
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--loss", "mse", "--pt_lr", "0.02"]
+    th = ["--theory", "--forget_sizes", "2", "--ul_stop_rule", "loss", "--ul_max_steps", "20", "--ul_lr", "0.01",
+          "--ul_retain_loss_threshold", "1.0", "--rl_loss_threshold", "1.0", "--ul_freeze_bn", "false",
+          "--rl_freeze_bn", "false"]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5"] + common + th)
+    r = run.read_json(out / "unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/t=2/result.json")
+    assert r["configs"]["ul"]["freeze_bn"] is False and r["configs"]["rl"]["freeze_bn"] is False
