@@ -424,3 +424,10 @@ def test_reeval_adds_r8(tmp_path):
     assert {"ul_A_r8", "rl_A_r8"} <= set(unl.columns) and "before_A_r8" in refs.columns and "rl_A_r8" in sw.columns
     paths = plot.plot_pipeline("pair-0-1", pc, unl, refs, tmp_path / "fig", sweep=sw, retain="8way")
     assert paths and paths[0].name == "pipeline_pair-0-1_2way_r8_sweep.png"
+    # a table with two unlearning sizes: panel (d) takes the requested one (default the largest), never a mix
+    n0 = int(sw["n_ul"].iloc[0])
+    two = pd.concat([sw, sw.assign(n_ul=n0 * 10)])
+    assert set(plot.select_unlearning_size(two)["n_ul"]) == {n0 * 10}
+    assert set(plot.select_unlearning_size(two, n0)["n_ul"]) == {n0}
+    assert len(plot.select_unlearning_size(two, 7)) == 0
+    assert plot.plot_pipeline("pair-0-1", pc, unl, refs, tmp_path / "fig", sweep=two, retain="8way", n_ul=n0)

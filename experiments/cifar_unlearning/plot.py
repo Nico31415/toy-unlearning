@@ -192,9 +192,17 @@ def _pair_accuracy(pretrain: pd.DataFrame, pair, forget: str, retain: str = "10w
 SCRATCH_COLOR = "#e07a1f"  # from-scratch relearning reference in the pipeline figure
 
 
+def select_unlearning_size(sweep: pd.DataFrame, n_ul: Optional[int] = None) -> pd.DataFrame:
+    """The rows of a relearn_sweep table that start from `n_ul` unlearning rows (default: the largest present), so
+    one panel never mixes unlearning sizes."""
+    if not len(sweep):
+        return sweep
+    return sweep[sweep["n_ul"] == (n_ul if n_ul is not None else sweep["n_ul"].max())]
+
+
 def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path,
                   forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
-                  retain: str = "10way") -> List[Path]:
+                  retain: str = "10way", n_ul: Optional[int] = None) -> List[Path]:
     """The three stages as test accuracy against the number of samples each used (symlog x axis, n = 0 is the model before the stage; mean and
     standard error over seeds as a line with an error bar at every point).
 
@@ -205,7 +213,8 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     kept-class accuracy is chance by construction). With `sweep` (the relearn_sweep table), panel (d) relearns the
     models unlearned with a fixed n_UL on n_RL images. Runs that diverged are left out. `retain` "8way" measures
     the kept classes with the argmax over their own logits only (A_r8), the counterpart of the 2-way forget
-    measure."""
+    measure. `n_ul`: which unlearning size panel (d) starts from when the sweep table holds several (default: the
+    largest)."""
     import numpy as np
     from matplotlib.lines import Line2D
 
@@ -228,6 +237,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     if sweep is not None:
         sweep = sweep[(sweep["exp"] == exp) & (sweep["rl_status"] != "diverged")] if "exp" in sweep.columns \
             else sweep[sweep["rl_status"] != "diverged"]
+        sweep = select_unlearning_size(sweep, n_ul)
         sweep = sweep if len(sweep) else None
 
     mu_fs = sorted(float(m) for m in u["mu_f"].unique())
@@ -334,6 +344,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--loss", default="ce")
     parser.add_argument("--src", default=None)
     parser.add_argument("--dest", default=None)
+    parser.add_argument("--n_ul", type=int, default=None,
+                        help="the unlearning size panel (d) of the pipeline figures starts from (default: the largest)")
     args = parser.parse_args(argv)
     src = Path(args.src or f"data/processed/cifar_unlearning/{args.loss}")
     dest = Path(args.dest or f"figures/cifar_unlearning/{args.loss}")
@@ -367,7 +379,7 @@ def main(argv: Optional[List[str]] = None) -> None:
                                                                                retain=retain))
                 if s is not None and len(s):
                     jobs.append(lambda retain=retain, forget=forget: plot_pipeline(
-                        exp, pretrain, u, r, dest, forget, sweep=s, retain=retain))
+                        exp, pretrain, u, r, dest, forget, sweep=s, retain=retain, n_ul=args.n_ul))
         for job in jobs:  # one failing figure must not stop the others (this runs unattended on the cluster)
             try:
                 for path in job():

@@ -25,3 +25,6 @@ UR=$LAST
 submit --array=0-4 --dependency=afterok:$PT:$RT $L references $A $E --theory --forget_sizes $SIZES $RL
 submit --array=0-19 --dependency=afterok:$UR $L relearn_sweep $A $E --theory --ul_from 10 --forget_sizes $SIZES \
   --mu_fs 0 0.25 0.5 0.75 $UL $RL
+# Panel (d) from n_UL = 100 as well (the figures use the largest n_UL present).
+submit --array=0-19 --dependency=afterok:$UR $L relearn_sweep $A $E --theory --ul_from 100 --forget_sizes $SIZES \
+  --mu_fs 0 0.25 0.5 0.75 $UL $RL
