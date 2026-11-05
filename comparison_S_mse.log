@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/plot.py", line 494, in <module>
+    main()
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/plot.py", line 452, in main
+    compare(src, Path(args.compare), dest, args.loss, args.n_ul, args.mu_fs, args.by_scale)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/plot.py", line 412, in compare
+    a, b = _as_scale(a), _as_scale(b)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/plot.py", line 395, in _as_scale
+    from experiments.cifar_unlearning.plot_scale import parse_tag
+ModuleNotFoundError: No module named 'experiments'
+S comparison failed for mse
