@@ -439,6 +439,15 @@ def test_reeval_adds_r8(tmp_path):
     plot.main(["--src", str(tmp_path / "csv"), "--compare", str(tmp_path / "csv"), "--dest", str(tmp_path / "cmpfig"),
                "--mu_fs", "0.5", "--loss", "mse"])
     assert (tmp_path / "cmpfig" / "bn_comparison_pair-0-1_2way_8way.png").exists()
+    # S sweep roots: colour by S (the rescale tag), the sweep table carries the tag too
+    import shutil
+    assert "rescale" in sw.columns and set(sw["rescale"]) == {"none"}
+    scaled = tmp_path / "csv_s"
+    shutil.copytree(tmp_path / "csv", scaled)
+    pd.concat([unl, unl.assign(rescale="all-S2-bnstat")]).to_csv(scaled / "unlearn.csv", index=False)
+    pd.concat([sw, sw.assign(rescale="all-S2-bnstat")]).to_csv(scaled / "relearn_sweep.csv", index=False)
+    plot.main(["--src", str(scaled), "--compare", str(scaled), "--dest", str(tmp_path / "sfig"), "--by_scale", "--loss", "mse"])
+    assert (tmp_path / "sfig" / "bn_comparison_pair-0-1_2way_8way.png").exists()
 
 
 def test_figure_title_names_the_loss():

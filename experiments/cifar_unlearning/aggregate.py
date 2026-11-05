@@ -86,6 +86,7 @@ def collect(out_root: Path) -> Dict[str, pd.DataFrame]:
         rl = r["relearn"]
         tables["relearn_sweep"].append({
             "exp": r["exp"], "seed": r["seed"], "mu_f": r["mu_f"], "n_ul": r["n_ul"], "n_rows": r["n_rows"],
+            "rescale": next(p[len("rescale="):] for p in path.parts if p.startswith("rescale=")),
             "n_f": r["n_f"], **_prefixed(r["after_unlearn"], "ul_"), "rl_status": rl["status"], "rl_steps": rl["steps"],
             **_prefixed(r["after_relearn"], "rl_")})
 

@@ -240,7 +240,8 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
                   forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
                   retain: str = "10way", n_ul: Optional[int] = None, loss: str = "",
                   other: Optional[dict] = None, mu_fs: Optional[List[float]] = None,
-                  labels: Tuple[str, str] = ("BN frozen", "BN unfrozen"), name: Optional[str] = None) -> List[Path]:
+                  labels: Tuple[str, str] = ("BN frozen", "BN unfrozen"), name: Optional[str] = None,
+                  color_name: str = "\\mu_f") -> List[Path]:
     """The three stages as test accuracy against the number of samples each used (symlog x axis, n = 0 is the model before the stage; mean and
     standard error over seeds as a line with an error bar at every point).
 
@@ -360,7 +361,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     axes[0, 0].set_ylabel(f"Accuracy, R ({retain[:-3]}-way)", fontsize=10)
     axes[1, 0].set_ylabel(f"Accuracy, F ({forget[:-3]}-way)", fontsize=10)
     handles = [Line2D([], [], color=colors[m], lw=2) for m in mu_fs]
-    leg = [f"$\\mu_f$ = {m:g}" for m in mu_fs]
+    leg = [f"${color_name}$ = {m:g}" for m in mu_fs]
     if (sets[0][0][1]["model"] == "scratch").any():
         handles.append(Line2D([], [], color=SCRATCH_COLOR, lw=2.2, marker="s", ms=3.5))
         leg.append("from scratch")
@@ -388,10 +389,27 @@ def _read_tables(src: Path) -> dict:
             "sweep": read("relearn_sweep")}
 
 
+def _as_scale(tables: dict) -> dict:
+    """Tables of an S sweep (rounds/rs_*.sh) with the rescaling factor S in the mu_f column and rescale = "none", so the
+    pipeline figure colours by S (all rows of such a root share one mu_f)."""
+    from experiments.cifar_unlearning.plot_scale import parse_tag
+    out = dict(tables)
+    for key in ("unlearn", "sweep"):
+        t = tables[key]
+        if not len(t) or "rescale" not in t.columns:
+            continue
+        S = t["rescale"].map(lambda tag: (parse_tag(str(tag)) or (None,))[0])
+        out[key] = t[S.notna()].assign(mu_f=S[S.notna()].astype(float), rescale="none")
+    return out
+
+
 def compare(frozen_src: Path, unfrozen_src: Path, dest: Path, loss: str, n_ul: Optional[int],
-            mu_fs: Optional[List[float]]) -> None:
-    """One pipeline figure per exp and measure with the BatchNorm-frozen runs dashed and the unfrozen ones solid."""
+            mu_fs: Optional[List[float]], by_scale: bool = False) -> None:
+    """One pipeline figure per exp and measure with the BatchNorm-frozen runs dashed and the unfrozen ones solid.
+    `by_scale`: the roots are S sweeps and the colours are the rescaling factor S."""
     a, b = _read_tables(frozen_src), _read_tables(unfrozen_src)
+    if by_scale:
+        a, b = _as_scale(a), _as_scale(b)
     if not len(a["unlearn"]) or not len(b["unlearn"]):
         print("compare: a source has no unlearn table")
         return
@@ -406,6 +424,7 @@ def compare(frozen_src: Path, unfrozen_src: Path, dest: Path, loss: str, n_ul: O
                 try:
                     for path in plot_pipeline(exp, a["pretrain"], sel(a, "unlearn"), sel(a, "refs"), dest, forget, sweep=sw_a,
                                               retain=retain, n_ul=n_ul, loss=loss, other=other, mu_fs=mu_fs,
+                                              color_name="S" if by_scale else "\\mu_f",
                                               name=f"bn_comparison_{exp}_{forget}_{retain}.png"):
                         print(f"wrote {path}")
                 except Exception as err:  # noqa: BLE001
@@ -419,6 +438,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--dest", default=None)
     parser.add_argument("--compare", default=None,
                         help="a second --src (BatchNorm unfrozen): one figure per exp with --src dashed (frozen) and this solid")
+    parser.add_argument("--by_scale", action="store_true", help="with --compare: the roots are S sweeps, colour by S")
     parser.add_argument("--mu_fs", type=float, nargs="*", default=None, help="restrict the comparison to these mu_f")
     parser.add_argument("--note", default="", help="extra text for the figure titles, e.g. the BatchNorm setting")
     parser.add_argument("--n_ul", type=int, default=None,
@@ -429,7 +449,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     args.loss = _title_label(args.loss, args.note)  # the figure functions only use it in titles
     if args.compare:
-        compare(src, Path(args.compare), dest, args.loss, args.n_ul, args.mu_fs)
+        compare(src, Path(args.compare), dest, args.loss, args.n_ul, args.mu_fs, args.by_scale)
         return
 
     def read(name: str) -> pd.DataFrame:

@@ -55,7 +55,8 @@ def main(argv=None) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     t.to_csv(dest / "scale_table.csv", index=False)
     fig, axes = plt.subplots(2, 2, figsize=(9, 6.2), sharey=True)
-    cols = {n: c for n, c in zip(sorted(t["n"].unique()), ["#3b528b", "#5ec962", "#fde725", "#440154"])}
+    sizes = sorted(t["n"].unique())
+    cols = {n: plt.get_cmap("viridis")(0.9 * i / max(len(sizes) - 1, 1)) for i, n in enumerate(sizes)}
     for j, stage in enumerate(("ul", "rl")):
         for i, (m, label) in enumerate((("A_r8", "R (8-way)"), ("A_f2", "F (2-way)"))):
             ax = axes[i, j]

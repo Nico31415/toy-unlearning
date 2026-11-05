@@ -53,6 +53,14 @@ for pair in "mse mseaug mseaug_bn2" "ce ceaug_lr3 ceaug_bn2"; do
     --dest "$WT/comparison/$l" > "$WT/comparison_$l.log" 2>&1 || echo "comparison failed for $l" >> "$WT/comparison_$l.log"
 done
 
+# the S sweeps (rounds/rs_full.sh): frozen dashed, unfrozen solid, coloured by S
+for pair in "mse mseaug_rsf mseaug_rsu" "ce ceaug_rsf ceaug_rsu"; do
+  read -r l fz uf <<< "$pair"
+  [[ -s $WT/$fz/unlearn.csv && -s $WT/$uf/unlearn.csv ]] || continue
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$l" --src "$WT/$fz" --compare "$WT/$uf" --by_scale \
+    --dest "$WT/comparison_S/$l" > "$WT/comparison_S_$l.log" 2>&1 || echo "S comparison failed for $l" >> "$WT/comparison_S_$l.log"
+done
+
 # job report: state of every job of the round, and the tail of the log of every task that did not complete
 mkdir -p "$WT/rounds"
 report="$WT/rounds/$name.txt"
