@@ -406,6 +406,24 @@ def _as_scale(tables: dict) -> dict:
     return out
 
 
+def by_scale_single(src: Path, dest: Path, loss: str, n_ul: Optional[int]) -> None:
+    """The pipeline figure of one S-sweep root: one solid line per S (no frozen/unfrozen pair)."""
+    t = _as_scale(_read_tables(src))
+    if not len(t["unlearn"]):
+        print("by_scale: no unlearn table")
+        return
+    for exp in sorted(set(t["unlearn"]["exp"])):
+        def sel(key):
+            return t[key][t[key]["exp"] == exp] if len(t[key]) else t[key]
+        sweep = sel("sweep") if len(t["sweep"]) else None
+        try:
+            for path in plot_pipeline(exp, t["pretrain"], sel("unlearn"), sel("refs"), dest, "2way", sweep=sweep, retain="8way",
+                                      n_ul=n_ul, loss=loss, color_name="S", name=f"S_{exp}_2way_8way.png"):
+                print(f"wrote {path}")
+        except Exception as err:  # noqa: BLE001
+            print(f"FAILED S figure for {exp}: {type(err).__name__}: {err}")
+
+
 def compare(frozen_src: Path, unfrozen_src: Path, dest: Path, loss: str, n_ul: Optional[int],
             mu_fs: Optional[List[float]], by_scale: bool = False) -> None:
     """One pipeline figure per exp and measure with the BatchNorm-frozen runs dashed and the unfrozen ones solid.
@@ -451,6 +469,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     dest = Path(args.dest or f"figures/cifar_unlearning/{args.loss}")
     dest.mkdir(parents=True, exist_ok=True)
     args.loss = _title_label(args.loss, args.note)  # the figure functions only use it in titles
+    if args.by_scale and not args.compare:
+        by_scale_single(src, dest, args.loss, args.n_ul)
+        return
     if args.compare:
         compare(src, Path(args.compare), dest, args.loss, args.n_ul, args.mu_fs, args.by_scale)
         return

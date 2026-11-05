@@ -448,6 +448,8 @@ def test_reeval_adds_r8(tmp_path):
     pd.concat([sw, sw.assign(rescale="all-S2-bnstat")]).to_csv(scaled / "relearn_sweep.csv", index=False)
     plot.main(["--src", str(scaled), "--compare", str(scaled), "--dest", str(tmp_path / "sfig"), "--by_scale", "--loss", "mse"])
     assert (tmp_path / "sfig" / "bn_comparison_pair-0-1_2way_8way.png").exists()
+    plot.main(["--src", str(scaled), "--by_scale", "--note", "BN unfrozen", "--dest", str(tmp_path / "s1fig"), "--loss", "mse"])
+    assert (tmp_path / "s1fig" / "S_pair-0-1_2way_8way.png").exists()
 
 
 def test_figure_title_names_the_loss():

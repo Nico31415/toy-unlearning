@@ -45,6 +45,14 @@ for root in "$WT"/*/; do
     > "${root}scale.log" 2>&1 || echo "plot_scale failed for $root" >> "${root}scale.log"
 done
 
+# one S-sweep root: the pipeline figure with a solid line per S (unfrozen-BN roots *_rsu*)
+for root in "$WT"/*_rsu*/; do
+  [[ -s ${root}unlearn.csv ]] || continue
+  tag=$(basename "$root"); l=${tag%%aug*}
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$l" --src "$root" --by_scale --note "BN unfrozen" \
+    --dest "${root}figures" > "${root}by_scale.log" 2>&1 || echo "by_scale failed for $root" >> "${root}by_scale.log"
+done
+
 # BatchNorm comparison per loss: frozen run set dashed, unfrozen solid (only if both roots were published)
 for pair in "mse mseaug mseaug_bn2" "ce ceaug_lr3 ceaug_bn2"; do
   read -r l fz uf <<< "$pair"  # not `set --`: that would overwrite the job ids in "$@" used by the report below
