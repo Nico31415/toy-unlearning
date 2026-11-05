@@ -189,31 +189,27 @@ def _pair_accuracy(pretrain: pd.DataFrame, pair, forget: str, retain: str = "10w
     return pd.DataFrame({"seed": pretrain["seed"], "n": pretrain["n_train"], **out})
 
 
-def _with_anchor(frame: pd.DataFrame, anchor: pd.DataFrame) -> pd.DataFrame:
-    """Add the n = 0 point (one row per seed, the state before the stage) to a table of n, acc_r, acc_f."""
-    start = anchor.reset_index().assign(n=0)
-    return pd.concat([start[["seed", "n", "acc_r", "acc_f"]], frame[["seed", "n", "acc_r", "acc_f"]]])
-
-
 SCRATCH_COLOR = "#e07a1f"  # from-scratch relearning reference in the pipeline figure
+ERR_FLOOR = 1e-3  # test errors are drawn on a log axis; an error of 0 is drawn at this floor
 
 
 def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path,
                   forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
                   retain: str = "10way") -> List[Path]:
-    """The three stages as accuracy against the number of samples each used (mean +/- std over seeds).
+    """The three stages as test error against the number of samples each used (log-log; mean and standard
+    error over seeds as a line with an error bar at every point).
 
-    (a) pretraining from scratch on n images of all 10 classes (the last point is the 50k model that
-        stages 2 and 3 start from); (b) unlearning that model with n retain and n forget images, one line style
-        per mu_f, starting at n = 0 from the pretrained model; (c) relearning each of those on its n forget
-        images, plus a network trained from scratch on the same images ("fresh"), starting at n = 0 from the
-        pretrained model (and from the untrained network for fresh). Teal is accuracy on the kept classes
-        (10-way), purple on the forgotten classes (2-way or 10-way, `forget`).
+    Top row: error on the kept classes R; bottom row: error on the forgotten classes F (2-way or 10-way,
+    `forget`). (a) pretraining from scratch on n images of all 10 classes (the last point is the 50k model that
+    stages 2 and 3 start from); (b) unlearning that model with n rows, one colour per mu_f; (c) relearning each
+    of those on the same n rows, plus a network trained from scratch on them (orange, forgotten classes only: its
+    kept-class error is chance by construction). With `sweep` (the relearn_sweep table), panel (d) relearns the
+    models unlearned with a fixed n_UL on n_RL images. Runs that diverged are left out. `retain` "8way" measures
+    the kept classes with the argmax over their own logits only (A_r8), the counterpart of the 2-way forget
+    measure."""
+    import numpy as np
+    from matplotlib.lines import Line2D
 
-    With `sweep` (the relearn_sweep table), a panel (d) is added: the models unlearned with a fixed n_UL,
-    relearned with every n_RL, starting at n_RL = 0 from those unlearned models. Runs that diverged are left
-    out (their record is the rolled-back unlearned model, not a relearning result). `retain` "8way" measures the
-    kept classes with the argmax over their own logits only (A_r8), the counterpart of the 2-way forget measure."""
     r_col = "A_r8" if retain == "8way" else "A_r"
     if not exp.startswith("pair-") or not len(unlearn) or "retain_matched" not in unlearn.columns:
         return []
@@ -230,84 +226,90 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
         return []
     pair = tuple(int(v) for v in exp[len("pair-"):].split("-"))
     f_col = "A_f2" if forget == "2way" else "A_f10"
-
-    def levels(model: str) -> pd.DataFrame:
-        """Per-seed accuracy of a reference model before relearning, as columns acc_r, acc_f."""
-        g = refs[refs["model"] == model].groupby("seed")[[f"before_{r_col}", f"before_{f_col}"]].first()
-        return g.rename(columns={f"before_{r_col}": "acc_r", f"before_{f_col}": "acc_f"})
-
-    colors = {"acc_r": "tab:cyan" if False else "#2a9d8f", "acc_f": "#3b1f7a"}
-    styles = {0.0: "-", 0.25: "--", 0.5: "-.", 0.75: ":"}
     if sweep is not None:
         sweep = sweep[(sweep["exp"] == exp) & (sweep["rl_status"] != "diverged")] if "exp" in sweep.columns \
             else sweep[sweep["rl_status"] != "diverged"]
         sweep = sweep if len(sweep) else None
-    fig, axes = plt.subplots(1, 4 if sweep is not None else 3, figsize=(17 if sweep is not None else 13, 3.8),
-                             sharey=True)
 
-    def draw(ax, frame: pd.DataFrame, linestyle="-", marker="o", alpha=1.0, cols=("acc_f", "acc_r"),
-             color=None, lw=1.5) -> None:
-        for col in cols:
-            stats = frame.groupby("n")[col].agg(["mean", "std"]).reset_index().sort_values("n")
-            c = color or colors[col]
-            ax.plot(stats["n"], stats["mean"], color=c, linestyle=linestyle, marker=marker, ms=3,
-                    alpha=alpha, lw=lw)
-            ax.fill_between(stats["n"], stats["mean"] - stats["std"].fillna(0), stats["mean"] + stats["std"].fillna(0),
-                            color=c, alpha=0.12, linewidth=0)
+    mu_fs = sorted(float(m) for m in u["mu_f"].unique())
+    cmap = plt.get_cmap("viridis")
+    colors = {m: cmap(0.9 * i / max(len(mu_fs) - 1, 1)) for i, m in enumerate(mu_fs)}
+    pre_color = "#444444"
+    n_cols = 4 if sweep is not None else 3
+    fig, axes = plt.subplots(2, n_cols, figsize=(3.6 * n_cols, 6.2), sharey="row")
+
+    def draw(ax, frame: pd.DataFrame, col: str, color, marker="o", lw=1.8) -> None:
+        """Test error 1 - accuracy of column `col` against n: mean line with standard-error bars."""
+        frame = frame[frame["n"] > 0].assign(err=lambda f: 1 - f[col])
+        stats = frame.groupby("n")["err"].agg(["mean", "sem"]).reset_index().sort_values("n")
+        sem = stats["sem"].fillna(0).to_numpy()
+        mean = stats["mean"].to_numpy()
+        lower = np.minimum(sem, np.maximum(mean - ERR_FLOOR, 0))  # keep the bar on the log axis
+        ax.errorbar(stats["n"], np.maximum(mean, ERR_FLOOR), yerr=[lower, sem], color=color, marker=marker, ms=3.5,
+                    lw=lw, elinewidth=1.1, capsize=2.5, capthick=1.1)
+
+    def rows(frame: pd.DataFrame, r: str, f: str) -> pd.DataFrame:
+        return frame.assign(n=frame["n_f"], acc_r=frame[r], acc_f=frame[f])
 
     # (a) pretraining
     if len(pretrain) and (forget == "10way" or f"pair_{pair[0]}_{pair[1]}" in pretrain.columns):
         frame = _pair_accuracy(pretrain, pair, forget, retain)
-        top = levels("pretrained").reset_index().assign(n=50000)
-        draw(axes[0], pd.concat([frame, top[["seed", "n", "acc_r", "acc_f"]]]))
+        top = refs[refs["model"] == "pretrained"].groupby("seed")[[f"before_{r_col}", f"before_{f_col}"]].first()
+        top = top.rename(columns={f"before_{r_col}": "acc_r", f"before_{f_col}": "acc_f"}).reset_index().assign(n=50000)
+        frame = pd.concat([frame, top[["seed", "n", "acc_r", "acc_f"]]])
+        draw(axes[0, 0], frame, "acc_r", pre_color)
+        draw(axes[1, 0], frame, "acc_f", pre_color)
     else:
-        axes[0].text(0.5, 0.5, "n/a: no pretrain_curve results", ha="center", transform=axes[0].transAxes)
+        axes[0, 0].text(0.5, 0.5, "n/a: no pretrain_curve results", ha="center", transform=axes[0, 0].transAxes)
     # (b) unlearning, (c) relearning
-    start = levels("pretrained")
-    for mu_f, group in u.groupby("mu_f"):
-        ls = styles.get(float(mu_f), "-")
-        draw(axes[1], _with_anchor(group.assign(n=group["n_f"], acc_r=group[f"ul_{r_col}"], acc_f=group[f"ul_{f_col}"]), start), ls)
-        draw(axes[2], _with_anchor(group.assign(n=group["n_f"], acc_r=group[f"rl_{r_col}"], acc_f=group[f"rl_{f_col}"]), start), ls)
+    for m in mu_fs:
+        group = u[u["mu_f"].astype(float) == m]
+        for stage, ax_col in (("ul", 1), ("rl", 2)):
+            frame = rows(group, f"{stage}_{r_col}", f"{stage}_{f_col}")
+            draw(axes[0, ax_col], frame, "acc_r", colors[m])
+            draw(axes[1, ax_col], frame, "acc_f", colors[m])
     fresh = refs[refs["model"] == "scratch"]
     if len(fresh):
-        frame = fresh.assign(n=fresh["n_f"], acc_r=fresh[f"rl_{r_col}"], acc_f=fresh[f"rl_{f_col}"])
-        # from scratch: forgotten classes only (its kept-class accuracy is near chance by construction)
-        draw(axes[2], _with_anchor(frame, levels("scratch")), linestyle="-", marker="s", cols=("acc_f",),
-             color=SCRATCH_COLOR, lw=2.2)
-    titles = ["(a) Stage 1: pretraining", "(b) Stage 2: unlearning", "(c) Stage 3: relearning"]
-    xlabels = ["images in training set  n_PT", "unlearning images  n_UL" if theory else "retain and forget images  n_UL",
-               "relearning images  n_RL (n_UL = n_RL)" if theory else "forget images  n_RL"]
+        frame = rows(fresh, f"rl_{r_col}", f"rl_{f_col}")
+        draw(axes[1, 2], frame, "acc_f", SCRATCH_COLOR, marker="s", lw=2.2)
     if sweep is not None:
-        n_ul = int(sweep["n_ul"].iloc[0])
-        for mu_f, group in sweep.groupby("mu_f"):
-            anchor = group.groupby("seed")[[f"ul_{r_col}", f"ul_{f_col}"]].first().rename(
-                columns={f"ul_{r_col}": "acc_r", f"ul_{f_col}": "acc_f"})
-            draw(axes[3], _with_anchor(group.assign(n=group["n_rows"], acc_r=group[f"rl_{r_col}"],
-                                                    acc_f=group[f"rl_{f_col}"]), anchor), styles.get(float(mu_f), "-"))
+        for m in mu_fs:
+            group = sweep[sweep["mu_f"].astype(float) == m]
+            frame = group.assign(n=group["n_rows"], acc_r=group[f"rl_{r_col}"], acc_f=group[f"rl_{f_col}"])
+            draw(axes[0, 3], frame, "acc_r", colors[m])
+            draw(axes[1, 3], frame, "acc_f", colors[m])
         if len(fresh):
-            draw(axes[3], _with_anchor(frame, levels("scratch")), linestyle="-", marker="s", cols=("acc_f",),
-                 color=SCRATCH_COLOR, lw=2.2)
-        titles.append(f"(d) Stage 3 from n_UL = {n_ul}")
-        xlabels.append("relearning images  n_RL")
+            draw(axes[1, 3], rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), "acc_f", SCRATCH_COLOR,
+                 marker="s", lw=2.2)
 
-    for ax, title, xlabel in zip(axes, titles, xlabels):
-        ax.set_title(title, fontsize=10)
-        ax.set_xlabel(xlabel)
-        ax.set_xscale("symlog", linthresh=1)
-        ax.set_xlim(left=0)  # n = 0 is the left edge; symlog would otherwise show a negative axis
-        ax.set_ylim(0, 1.05)
-    axes[0].set_ylabel("accuracy")
-    from matplotlib.lines import Line2D
-    handles = [Line2D([], [], color=colors["acc_r"], label=f"kept classes R ({retain[:-3]}-way)"),
-               Line2D([], [], color=colors["acc_f"], label=f"forgotten classes F ({forget[:-3]}-way)")]
-    handles += [Line2D([], [], color="black", linestyle=styles.get(float(m), "-"), label=f"mu_f = {m:g}")
-                for m in sorted(u["mu_f"].unique())]
+    names = ["pretraining", "unlearning", "relearning"]
+    xlabels = ["Number of samples", "Number of samples" + (" (rows)" if theory else ""), "Number of samples"]
+    if sweep is not None:
+        names.append(f"relearning from $n_{{UL}}$ = {int(sweep['n_ul'].iloc[0])}")
+        xlabels.append("Number of relearning samples")
+    for j, (name, xlabel) in enumerate(zip(names, xlabels)):
+        axes[0, j].text(-0.02, 1.12, "abcd"[j], transform=axes[0, j].transAxes, fontsize=20, fontweight="bold",
+                        va="bottom", ha="right")
+        axes[0, j].set_title(name, fontsize=11, style="italic", loc="right")
+        axes[1, j].set_xlabel(xlabel)
+        for i in range(2):
+            ax = axes[i, j]
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.spines[["top", "right"]].set_visible(False)
+            ax.tick_params(labelbottom=True)
+    axes[0, 0].set_ylabel(f"Test error, R ({retain[:-3]}-way)", fontsize=10)
+    axes[1, 0].set_ylabel(f"Test error, F ({forget[:-3]}-way)", fontsize=10)
+    handles = [Line2D([], [], color=colors[m], lw=2, label=f"{m:g}") for m in mu_fs]
+    labels = [f"$\\mu_f$ = {m:g}" for m in mu_fs]
     if len(fresh):
-        handles.append(Line2D([], [], color=SCRATCH_COLOR, lw=2.2, marker="s", ms=3,
-                              label=f"from scratch, F ({forget[:-3]}-way)"))
-    fig.legend(handles=handles, loc="lower center", ncol=len(handles), fontsize=8, frameon=False)
-    fig.suptitle(f"{exp}: three stages, accuracy against samples used")
-    fig.tight_layout(rect=(0, 0.08, 1, 1))
+        handles.append(Line2D([], [], color=SCRATCH_COLOR, lw=2.2, marker="s", ms=3.5))
+        labels.append("from scratch")
+    handles.insert(0, Line2D([], [], color=pre_color, lw=2))
+    labels.insert(0, "pretraining")
+    fig.legend(handles, labels, loc="lower center", ncol=len(handles), fontsize=9, frameon=False)
+    fig.suptitle(f"{exp}: R = kept classes, F = forgotten classes (mean $\\pm$ s.e.m. over seeds)", fontsize=10, y=0.995)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.98))
     Path(dest).mkdir(parents=True, exist_ok=True)
     path = Path(dest) / f"pipeline_{exp}_{forget}{'_r8' if retain == '8way' else ''}{'_sweep' if sweep is not None else ''}.png"
     fig.savefig(path, dpi=150)
