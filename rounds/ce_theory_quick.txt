@@ -1,0 +1,9 @@
+round ce_theory_quick, published 2026-11-05T11:39:37+00:00, code 39cf469
+              1020_0        cifar_unlearn  COMPLETED   00:05:14      0:0 
+              1021_0        cifar_unlearn  COMPLETED   00:04:12      0:0 
+              1022_0        cifar_unlearn  COMPLETED   00:01:00      0:0 
+              1023_0        cifar_unlearn  COMPLETED   00:03:02      0:0 
+              1023_1        cifar_unlearn  COMPLETED   00:00:37      0:0 
+              1024_0        cifar_unlearn  COMPLETED   00:04:32      0:0 
+              1025_0        cifar_unlearn  COMPLETED   00:00:12      0:0 
+              1025_1        cifar_unlearn  COMPLETED   00:00:12      0:0 
