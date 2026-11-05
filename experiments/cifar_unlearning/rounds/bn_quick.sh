@@ -7,14 +7,14 @@ E="--exps pair-1-7 --seeds 0"
 MU="--mu_fs 0 0.75"
 
 for arm in mse ce; do
-  from=data/cifar_unlearning/${arm}aug; to=${from}_bn
+  from=data/cifar_unlearning/${arm}aug; to=${from}_bn2
   reuse $from $to 0
   if [[ $arm == mse ]]; then
     A="--loss mse --augment --pt_lr 0.01 --pt_epochs 100 --out_root $to"
     UL="--ul_stop_rule loss --ul_lr 1e-3 --ul_eval_every 25 --ul_max_steps 20000 $BN"
   else
     A="--loss ce --augment --pt_epochs 100 --out_root $to"
-    UL="--ul_forget_clip 5 --ul_eval_every 25 $BN"
+    UL="--ul_forget_clip 5 --ul_lr 1e-3 --ul_max_steps 20000 --ul_eval_every 25 $BN"
   fi
   submit --array=0-1 $L unlearn_relearn $A $E $MU --theory --forget_sizes $SIZES $UL $RL
   UR=$LAST
