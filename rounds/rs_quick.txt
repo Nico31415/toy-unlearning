@@ -1,0 +1,17 @@
+round rs_quick, published 2026-11-05T17:38:00+00:00, code b74b2ca
+              1295_0        cifar_unlearn  COMPLETED   00:00:37      0:0 
+              1296_0        cifar_unlearn  COMPLETED   00:00:39      0:0 
+              1297_0        cifar_unlearn  COMPLETED   00:00:52      0:0 
+              1298_0        cifar_unlearn  COMPLETED   00:00:49      0:0 
+              1299_0        cifar_unlearn  COMPLETED   00:00:28      0:0 
+              1300_0        cifar_unlearn  COMPLETED   00:00:28      0:0 
+              1301_0        cifar_unlearn  COMPLETED   00:00:27      0:0 
+              1302_0        cifar_unlearn  COMPLETED   00:00:26      0:0 
+              1303_0        cifar_unlearn  COMPLETED   00:00:22      0:0 
+              1304_0        cifar_unlearn  COMPLETED   00:00:25      0:0 
+              1305_0        cifar_unlearn  COMPLETED   00:07:21      0:0 
+              1306_0        cifar_unlearn  COMPLETED   00:07:17      0:0 
+              1307_0        cifar_unlearn  COMPLETED   00:00:33      0:0 
+              1308_0        cifar_unlearn  COMPLETED   00:00:34      0:0 
+              1309_0        cifar_unlearn  COMPLETED   00:03:54      0:0 
+              1310_0        cifar_unlearn  COMPLETED   00:03:54      0:0 
