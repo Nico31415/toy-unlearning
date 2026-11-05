@@ -56,7 +56,8 @@ def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: P
                     level = refs[refs["model"] == name].groupby("seed")[col].first().mean()
                     color, label = REF_STYLE[name]
                     ax.axhline(level, color=color, linestyle="--", linewidth=1, label=label)
-            ax.set_xscale("log")
+            ax.set_xscale("symlog", linthresh=1)
+            ax.set_xlim(left=0)  # n = 0 (the model before the stage) is the left edge
             ax.set_xlabel("data fraction f")
             ax.set_title(LABELS.get(m, m), fontsize=10)
         axes[0][0].legend(fontsize=8)
@@ -80,7 +81,8 @@ def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: P
                 for name, group in refs.groupby("model"):
                     color, label = REF_STYLE.get(name, (None, name))
                     _band(ax, group, "n_f", col, label, color=color, linestyle="--")
-            ax.set_xscale("log")
+            ax.set_xscale("symlog", linthresh=1)
+            ax.set_xlim(left=0)  # n = 0 (the model before the stage) is the left edge
             ax.set_xlabel("relearning images n_f")
             ax.set_title(LABELS.get(m, m), fontsize=10)
         axes[0][0].legend(fontsize=8)
@@ -195,7 +197,7 @@ SCRATCH_COLOR = "#e07a1f"  # from-scratch relearning reference in the pipeline f
 def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path,
                   forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
                   retain: str = "10way") -> List[Path]:
-    """The three stages as test accuracy against the number of samples each used (log x axis; mean and
+    """The three stages as test accuracy against the number of samples each used (symlog x axis, n = 0 is the model before the stage; mean and
     standard error over seeds as a line with an error bar at every point).
 
     Top row: accuracy on the kept classes R; bottom row: accuracy on the forgotten classes F (2-way or 10-way,
@@ -239,7 +241,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
 
     def draw(ax, frame: pd.DataFrame, col: str, color, marker="o", lw=1.8) -> None:
         """Accuracy in column `col` against n: mean line with standard-error bars."""
-        frame = frame[frame["n"] > 0].assign(err=lambda f: f[col])
+        frame = frame.assign(err=lambda f: f[col])
         stats = frame.groupby("n")["err"].agg(["mean", "sem"]).reset_index().sort_values("n")
         sem = stats["sem"].fillna(0).to_numpy()
         mean = stats["mean"].to_numpy()
@@ -249,12 +251,19 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     def rows(frame: pd.DataFrame, r: str, f: str) -> pd.DataFrame:
         return frame.assign(n=frame["n_f"], acc_r=frame[r], acc_f=frame[f])
 
+    def levels(model: str) -> pd.DataFrame:
+        """Per-seed accuracy of a reference model before relearning, as columns seed, acc_r, acc_f."""
+        g = refs[refs["model"] == model].groupby("seed")[[f"before_{r_col}", f"before_{f_col}"]].first()
+        return g.rename(columns={f"before_{r_col}": "acc_r", f"before_{f_col}": "acc_f"}).reset_index()
+
+    def anchored(frame: pd.DataFrame, start: pd.DataFrame) -> pd.DataFrame:
+        """Add the n = 0 point (one row per seed: the model before the stage) to a table of n, acc_r, acc_f."""
+        return pd.concat([start[["seed", "acc_r", "acc_f"]].assign(n=0), frame[["seed", "n", "acc_r", "acc_f"]]])
+
     # (a) pretraining
     if len(pretrain) and (forget == "10way" or f"pair_{pair[0]}_{pair[1]}" in pretrain.columns):
         frame = _pair_accuracy(pretrain, pair, forget, retain)
-        top = refs[refs["model"] == "pretrained"].groupby("seed")[[f"before_{r_col}", f"before_{f_col}"]].first()
-        top = top.rename(columns={f"before_{r_col}": "acc_r", f"before_{f_col}": "acc_f"}).reset_index().assign(n=50000)
-        frame = pd.concat([frame, top[["seed", "n", "acc_r", "acc_f"]]])
+        frame = pd.concat([frame, levels("pretrained").assign(n=50000)[["seed", "n", "acc_r", "acc_f"]]])
         draw(axes[0, 0], frame, "acc_r", pre_color)
         draw(axes[1, 0], frame, "acc_f", pre_color)
     else:
@@ -263,21 +272,23 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     for m in mu_fs:
         group = u[u["mu_f"].astype(float) == m]
         for stage, ax_col in (("ul", 1), ("rl", 2)):
-            frame = rows(group, f"{stage}_{r_col}", f"{stage}_{f_col}")
+            frame = anchored(rows(group, f"{stage}_{r_col}", f"{stage}_{f_col}"), levels("pretrained"))
             draw(axes[0, ax_col], frame, "acc_r", colors[m])
             draw(axes[1, ax_col], frame, "acc_f", colors[m])
     fresh = refs[refs["model"] == "scratch"]
     if len(fresh):
-        frame = rows(fresh, f"rl_{r_col}", f"rl_{f_col}")
+        frame = anchored(rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), levels("scratch"))
         draw(axes[1, 2], frame, "acc_f", SCRATCH_COLOR, marker="s", lw=2.2)
     if sweep is not None:
         for m in mu_fs:
             group = sweep[sweep["mu_f"].astype(float) == m]
-            frame = group.assign(n=group["n_rows"], acc_r=group[f"rl_{r_col}"], acc_f=group[f"rl_{f_col}"])
+            start = group.groupby("seed")[[f"ul_{r_col}", f"ul_{f_col}"]].first().rename(
+                columns={f"ul_{r_col}": "acc_r", f"ul_{f_col}": "acc_f"}).reset_index()
+            frame = anchored(group.assign(n=group["n_rows"], acc_r=group[f"rl_{r_col}"], acc_f=group[f"rl_{f_col}"]), start)
             draw(axes[0, 3], frame, "acc_r", colors[m])
             draw(axes[1, 3], frame, "acc_f", colors[m])
         if len(fresh):
-            draw(axes[1, 3], rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), "acc_f", SCRATCH_COLOR,
+            draw(axes[1, 3], anchored(rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), levels("scratch")), "acc_f", SCRATCH_COLOR,
                  marker="s", lw=2.2)
 
     names = ["pretraining", "unlearning", "relearning ($n_{UL}$ = $n_{RL}$)"]
@@ -292,7 +303,8 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
         axes[1, j].set_xlabel(xlabel)
         for i in range(2):
             ax = axes[i, j]
-            ax.set_xscale("log")
+            ax.set_xscale("symlog", linthresh=1)
+            ax.set_xlim(left=0)  # n = 0 (the model before the stage) is the left edge
             ax.set_ylim(0, 1.05)
             ax.spines[["top", "right"]].set_visible(False)
             ax.tick_params(labelbottom=True)
