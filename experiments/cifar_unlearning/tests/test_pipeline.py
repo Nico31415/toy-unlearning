@@ -446,6 +446,12 @@ def test_reeval_adds_r8(tmp_path):
     shutil.copytree(tmp_path / "csv", scaled)
     pd.concat([unl, unl.assign(rescale="all-S2-bnstat")]).to_csv(scaled / "unlearn.csv", index=False)
     pd.concat([sw, sw.assign(rescale="all-S2-bnstat")]).to_csv(scaled / "relearn_sweep.csv", index=False)
+    head_root = tmp_path / "csv_h"  # a head-only S sweep (body_head tags) is coloured by S as well
+    shutil.copytree(tmp_path / "csv", head_root)
+    pd.concat([unl, unl.assign(rescale="body_head-b1-h2")]).to_csv(head_root / "unlearn.csv", index=False)
+    pd.concat([sw, sw.assign(rescale="body_head-b1-h2")]).to_csv(head_root / "relearn_sweep.csv", index=False)
+    plot.main(["--src", str(head_root), "--by_scale", "--dest", str(tmp_path / "hfig"), "--loss", "mse"])
+    assert (tmp_path / "hfig" / "S_pair-0-1_2way_8way.png").exists()
     plot.main(["--src", str(scaled), "--compare", str(scaled), "--dest", str(tmp_path / "sfig"), "--by_scale", "--loss", "mse"])
     assert (tmp_path / "sfig" / "bn_comparison_pair-0-1_2way_8way.png").exists()
     plot.main(["--src", str(scaled), "--by_scale", "--note", "BN unfrozen", "--dest", str(tmp_path / "s1fig"), "--loss", "mse"])

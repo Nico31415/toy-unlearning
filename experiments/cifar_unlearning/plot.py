@@ -393,15 +393,15 @@ def _as_scale(tables: dict) -> dict:
     """Tables of an S sweep (rounds/rs_*.sh) with the rescaling factor S in the mu_f column and rescale = "none", so the
     pipeline figure colours by S (all rows of such a root share one mu_f)."""
     try:
-        from experiments.cifar_unlearning.plot_scale import parse_tag
+        from experiments.cifar_unlearning.plot_scale import parse_mode
     except ImportError:  # run as a script (publish.sh): plot_scale.py sits next to this file
-        from plot_scale import parse_tag
+        from plot_scale import parse_mode
     out = dict(tables)
     for key in ("unlearn", "sweep"):
         t = tables[key]
         if not len(t) or "rescale" not in t.columns:
             continue
-        S = t["rescale"].map(lambda tag: (parse_tag(str(tag)) or (None,))[0])
+        S = t["rescale"].map(lambda tag: (parse_mode(str(tag)) or (None, None))[1])  # the factor, whichever mode
         out[key] = t[S.notna()].assign(mu_f=S[S.notna()].astype(float), rescale="none")
     return out
 

@@ -46,10 +46,11 @@ for root in "$WT"/*/; do
 done
 
 # one S-sweep root: the pipeline figure with a solid line per S (unfrozen-BN roots *_rsu*)
-for root in "$WT"/*_rsu*/; do
+for root in "$WT"/*_rs[uhc]*/; do
   [[ -s ${root}unlearn.csv ]] || continue
   tag=$(basename "$root"); l=${tag%%aug*}
-  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$l" --src "$root" --by_scale --note "BN unfrozen" \
+  case $tag in *_rsh*) how="BN unfrozen, head only x S";; *_rsc*) how="BN unfrozen, conv only x S";; *) how="BN unfrozen, all params x S";; esac
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$l" --src "$root" --by_scale --note "$how" \
     --dest "${root}figures" > "${root}by_scale.log" 2>&1 || echo "by_scale failed for $root" >> "${root}by_scale.log"
 done
 
