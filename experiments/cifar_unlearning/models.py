@@ -72,7 +72,7 @@ def _head(model: nn.Module) -> nn.Linear:
 
 @torch.no_grad()
 def rescale_(model: nn.Module, mode: str = "none", S: float = 1.0,
-             alpha_body: float = 1.0, alpha_head: float = 1.0) -> None:
+             alpha_body: float = 1.0, alpha_head: float = 1.0, scale_bn_stats: bool = False) -> None:
     """Rescale a trained model in place, before unlearning.
 
     none       no change
@@ -85,10 +85,18 @@ def rescale_(model: nn.Module, mode: str = "none", S: float = 1.0,
 
     BatchNorm running statistics are buffers and are never touched here. With frozen
     BatchNorm they are fixed, so rescaling conv weights changes the network's
-    function; use `recalibrate_bn` to recompute them instead.
+    function; use `recalibrate_bn` to recompute them from data, or `scale_bn_stats` to scale them
+    exactly (mean times c, variance times c^2, c = the factor on the convs: S for all / weights,
+    alpha_body for body_head; for "all" the BN affine parameters are scaled as well, as always).
     """
     if mode not in RESCALE_MODES:
         raise ValueError(f"unknown rescale mode {mode!r}; expected one of {RESCALE_MODES}")
+    if scale_bn_stats:
+        c = {"all": S, "weights": S, "body_head": alpha_body}.get(mode, 1.0)
+        for module in model.modules():
+            if isinstance(module, _BatchNorm) and module.running_mean is not None:
+                module.running_mean.mul_(c)
+                module.running_var.mul_(c * c)
     if mode == "all":
         for p in model.parameters():
             p.mul_(S)

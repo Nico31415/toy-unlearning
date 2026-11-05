@@ -237,13 +237,13 @@ class Context:
 
     def rescale_tag(self) -> str:
         rs = self.cfg["rs"]
-        if is_identity_rescale(rs.mode, rs.S, rs.alpha_body, rs.alpha_head) and not rs.recalibrate_bn:
+        if is_identity_rescale(rs.mode, rs.S, rs.alpha_body, rs.alpha_head) and not rs.recalibrate_bn and not rs.scale_bn_stats:
             return "none"
         if rs.mode == "body_head":
             tag = f"body_head-b{fmt(rs.alpha_body)}-h{fmt(rs.alpha_head)}"
         else:
             tag = f"{rs.mode}-S{fmt(rs.S)}"
-        return tag + ("-bnrecal" if rs.recalibrate_bn else "")
+        return tag + ("-bnrecal" if rs.recalibrate_bn else "") + ("-bnstat" if rs.scale_bn_stats else "")
 
     def unlearn_dir(self, exp: str, seed: int, mu_f: float, fraction: float, size: Optional[int] = None) -> Path:
         return (self.out / "unlearn" / f"exp={exp}" / f"seed={seed}" / f"mu_f={fmt(mu_f)}"
@@ -471,7 +471,7 @@ def stage_unlearn_relearn(ctx: Context) -> None:
         if ctx.rescale_tag() != "none":
             rescale_info["before"] = {"weight_norms": weight_norms(model),
                                       "mean_logit_norm": mean_logit_norm(model, ev.x_test_retain)}
-            rescale_(model, rs.mode, rs.S, rs.alpha_body, rs.alpha_head)
+            rescale_(model, rs.mode, rs.S, rs.alpha_body, rs.alpha_head, rs.scale_bn_stats)
             if rs.recalibrate_bn:
                 recalibrate_bn(model, x_r)
             rescale_info["after"] = {"weight_norms": weight_norms(model),

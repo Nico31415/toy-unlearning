@@ -100,6 +100,9 @@ class RescaleConfig:
     alpha_head: float = 1.0  # "body_head": factor on the final linear layer
     # Recompute BatchNorm running statistics on the n_r retain images after rescaling.
     recalibrate_bn: bool = False
+    # Exact alternative to recalibrate_bn that needs no data: every BatchNorm follows a bias-free conv, so scaling that conv
+    # by c scales its pre-BN activations by c; multiply the running mean by c and the running variance by c^2.
+    scale_bn_stats: bool = False
 
 
 @dataclass

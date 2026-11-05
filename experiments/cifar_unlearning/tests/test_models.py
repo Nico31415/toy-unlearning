@@ -79,3 +79,22 @@ def test_fp16_checkpoint_roundtrip():
     restored = load_state(TinyNet(), state_dict_fp16(model))
     assert next(restored.parameters()).dtype == torch.float32
     assert torch.allclose(_logits(restored, x), _logits(model, x), atol=5e-2)
+
+
+@pytest.mark.parametrize("make", [TinyNet, resnet18_cifar])
+def test_scale_bn_stats_keeps_the_function_when_only_convs_are_scaled(make):
+    """Conv weights times c with the BN running mean times c and variance times c^2: same eval-mode logits."""
+    torch.manual_seed(0)
+    model = make()
+    for m in model.modules():  # non-trivial running statistics
+        if isinstance(m, nn.BatchNorm2d):
+            m.running_mean.normal_()
+            m.running_var.uniform_(0.5, 2.0)
+    x = torch.randn(4, 3, 32, 32)
+    ref = _logits(model, x)
+    scaled = copy.deepcopy(model)
+    rescale_(scaled, "body_head", alpha_body=3.0, scale_bn_stats=True)
+    assert torch.allclose(_logits(scaled, x), ref, atol=1e-4, rtol=1e-4)
+    stale = copy.deepcopy(model)
+    rescale_(stale, "body_head", alpha_body=3.0)  # without the fix the function changes
+    assert not torch.allclose(_logits(stale, x), ref, atol=1e-2)

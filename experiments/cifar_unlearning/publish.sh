@@ -37,6 +37,14 @@ for root in data/cifar_unlearning/*/; do
     > "$WT/$tag/figures.log" 2>&1 || echo "plot failed for $root" >> "$WT/$tag/figures.log"
 done
 
+# S sweeps (rounds/rs_*.sh): accuracy against the rescaling factor, for every root that holds rescaled runs
+for root in "$WT"/*/; do
+  [[ -s ${root}unlearn.csv ]] && grep -q "all-S\|weights-S" "${root}unlearn.csv" || continue
+  l=$(basename "$root")
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot_scale.py --src "$root" --dest "${root}figures" --loss "$l" \
+    > "${root}scale.log" 2>&1 || echo "plot_scale failed for $root" >> "${root}scale.log"
+done
+
 # BatchNorm comparison per loss: frozen run set dashed, unfrozen solid (only if both roots were published)
 for pair in "mse mseaug mseaug_bn2" "ce ceaug_lr3 ceaug_bn2"; do
   read -r l fz uf <<< "$pair"  # not `set --`: that would overwrite the job ids in "$@" used by the report below
