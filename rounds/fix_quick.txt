@@ -1,0 +1,8 @@
+round fix_quick, published 2026-11-05T12:43:41+00:00, code d17af51
+              1154_0        cifar_unlearn  COMPLETED   00:00:50      0:0 
+              1154_1        cifar_unlearn  COMPLETED   00:00:42      0:0 
+              1154_2        cifar_unlearn  COMPLETED   00:00:35      0:0 
+              1154_3        cifar_unlearn  COMPLETED   00:00:41      0:0 
+              1154_4        cifar_unlearn  COMPLETED   00:00:34      0:0 
+              1155_0        cifar_unlearn  COMPLETED   00:00:19      0:0 
+              1155_1        cifar_unlearn  COMPLETED   00:01:08      0:0 
