@@ -56,8 +56,7 @@ def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: P
                     level = refs[refs["model"] == name].groupby("seed")[col].first().mean()
                     color, label = REF_STYLE[name]
                     ax.axhline(level, color=color, linestyle="--", linewidth=1, label=label)
-            ax.set_xscale("symlog", linthresh=1)
-            ax.set_xlim(left=0)  # n = 0 (the model before the stage) is the left edge
+            ax.set_xscale("log")
             ax.set_xlabel("data fraction f")
             ax.set_title(LABELS.get(m, m), fontsize=10)
         axes[0][0].legend(fontsize=8)
@@ -81,8 +80,7 @@ def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: P
                 for name, group in refs.groupby("model"):
                     color, label = REF_STYLE.get(name, (None, name))
                     _band(ax, group, "n_f", col, label, color=color, linestyle="--")
-            ax.set_xscale("symlog", linthresh=1)
-            ax.set_xlim(left=0)  # n = 0 (the model before the stage) is the left edge
+            ax.set_xscale("log")
             ax.set_xlabel("relearning images n_f")
             ax.set_title(LABELS.get(m, m), fontsize=10)
         axes[0][0].legend(fontsize=8)
@@ -263,6 +261,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     # (a) pretraining
     if len(pretrain) and (forget == "10way" or f"pair_{pair[0]}_{pair[1]}" in pretrain.columns):
         frame = _pair_accuracy(pretrain, pair, forget, retain)
+        frame = frame[frame["n"] > 0]  # no point at n = 0 (the untrained network)
         frame = pd.concat([frame, levels("pretrained").assign(n=50000)[["seed", "n", "acc_r", "acc_f"]]])
         draw(axes[0, 0], frame, "acc_r", pre_color)
         draw(axes[1, 0], frame, "acc_f", pre_color)
@@ -303,8 +302,11 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
         axes[1, j].set_xlabel(xlabel)
         for i in range(2):
             ax = axes[i, j]
-            ax.set_xscale("symlog", linthresh=1)
-            ax.set_xlim(left=0)  # n = 0 (the model before the stage) is the left edge
+            if j == 0:
+                ax.set_xscale("log")
+            else:
+                ax.set_xscale("symlog", linthresh=1)
+                ax.set_xlim(left=0)  # n = 0 (the model before the stage) is the left edge
             ax.set_ylim(0, 1.05)
             ax.spines[["top", "right"]].set_visible(False)
             ax.tick_params(labelbottom=True)
