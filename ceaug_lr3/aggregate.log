@@ -2,7 +2,7 @@ pretrain.csv: 5 rows
 pretrain_curve.csv: 35 rows
 retrain.csv: 5 rows
 unlearn.csv: 160 rows
-references.csv: 117 rows
-curves.csv: 1730 rows
+references.csv: 120 rows
+curves.csv: 1762 rows
 representation.csv: 0 rows
 relearn_sweep.csv: 320 rows
