@@ -86,17 +86,24 @@ def rescale_(model: nn.Module, mode: str = "none", S: float = 1.0,
     BatchNorm running statistics are buffers and are never touched here. With frozen
     BatchNorm they are fixed, so rescaling conv weights changes the network's
     function; use `recalibrate_bn` to recompute them from data, or `scale_bn_stats` to scale them
-    exactly (mean times c, variance times c^2, c = the factor on the convs: S for all / weights,
-    alpha_body for body_head; for "all" the BN affine parameters are scaled as well, as always).
+    exactly (mean times c, variance times c^2, with c the factor on the BN's pre-activation: the conv's factor, and
+    for "all" an extra S on every BN but the stem's, because every BN output is scaled by S there; the BN affine
+    parameters are scaled as well, as always).
     """
     if mode not in RESCALE_MODES:
         raise ValueError(f"unknown rescale mode {mode!r}; expected one of {RESCALE_MODES}")
     if scale_bn_stats:
-        c = {"all": S, "weights": S, "body_head": alpha_body}.get(mode, 1.0)
+        # c = the factor on a BN's pre-activation: the conv weights' factor times that of the conv's input. In `all` every BN
+        # output is scaled by S too (gamma, beta), so the input of every conv but the first (the image) is scaled by S.
+        conv = {"all": S, "weights": S, "body_head": alpha_body}.get(mode, 1.0)
+        inputs = S if mode == "all" else 1.0
+        stem = True
         for module in model.modules():
             if isinstance(module, _BatchNorm) and module.running_mean is not None:
+                c = conv * (1.0 if stem else inputs)
                 module.running_mean.mul_(c)
                 module.running_var.mul_(c * c)
+                stem = False
     if mode == "all":
         for p in model.parameters():
             p.mul_(S)

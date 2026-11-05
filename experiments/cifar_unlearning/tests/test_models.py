@@ -98,3 +98,23 @@ def test_scale_bn_stats_keeps_the_function_when_only_convs_are_scaled(make):
     stale = copy.deepcopy(model)
     rescale_(stale, "body_head", alpha_body=3.0)  # without the fix the function changes
     assert not torch.allclose(_logits(stale, x), ref, atol=1e-2)
+
+
+def test_scale_bn_stats_all_mode_gives_the_scaled_function():
+    """Mode `all` with exact BN statistics: eval-mode logits become S^2 (old - bias) + S bias (body features times S, head weight
+    times S again, bias times S). An earlier version scaled the stats by S only and the logits blew up as S^20."""
+    torch.manual_seed(0)
+    model = resnet18_cifar()
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            m.running_mean.normal_(0, 0.1)
+            m.running_var.uniform_(0.5, 2.0)
+    x = torch.randn(4, 3, 32, 32)
+    head = [m for m in model.modules() if isinstance(m, nn.Linear)][-1]
+    ref = _logits(model, x)
+    for S in (0.5, 2.0):
+        scaled = copy.deepcopy(model)
+        rescale_(scaled, "all", S, scale_bn_stats=True)
+        bias = head.bias.detach()
+        expected = S * S * (ref - bias) + S * bias
+        assert torch.allclose(_logits(scaled, x), expected, atol=1e-3, rtol=1e-3)
