@@ -1,0 +1,5 @@
+round r8_quick, published 2026-11-05T10:38:08+00:00, code 60d43e4
+              1009_0        cifar_unlearn  COMPLETED   00:01:04      0:0 
+              1010_0        cifar_unlearn  COMPLETED   00:00:02      0:0 
+              1011_0        cifar_unlearn  COMPLETED   00:00:03      0:0 
+              1011_1        cifar_unlearn  COMPLETED   00:00:03      0:0 
