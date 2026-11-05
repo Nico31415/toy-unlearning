@@ -431,3 +431,9 @@ def test_reeval_adds_r8(tmp_path):
     assert set(plot.select_unlearning_size(two, n0)["n_ul"]) == {n0}
     assert len(plot.select_unlearning_size(two, 7)) == 0
     assert plot.plot_pipeline("pair-0-1", pc, unl, refs, tmp_path / "fig", sweep=two, retain="8way", n_ul=n0)
+
+
+def test_figure_title_names_the_loss():
+    assert plot._title("pair-1-7", "mse") == "pair-1-7, MSE loss"
+    assert plot._title("pair-1-7", "ce") == "pair-1-7, CE loss"
+    assert plot._title("pair-1-7") == "pair-1-7"

@@ -28,7 +28,7 @@ for root in data/cifar_unlearning/*/; do
     > "$WT/$tag/aggregate.log" 2>&1 || echo "aggregate failed for $root" >> "$WT/$tag/aggregate.log"
   # figures from the same tables, made here so they come back with the CSVs
   rm -rf "$WT/$tag/figures"
-  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --src "$WT/$tag" --dest "$WT/$tag/figures" \
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$loss" --src "$WT/$tag" --dest "$WT/$tag/figures" \
     > "$WT/$tag/figures.log" 2>&1 || echo "plot failed for $root" >> "$WT/$tag/figures.log"
 done
 

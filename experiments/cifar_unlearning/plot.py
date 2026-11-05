@@ -40,7 +40,7 @@ def _band(ax, frame: pd.DataFrame, x: str, y: str, label: str, color=None, lines
                     color=line.get_color(), alpha=0.15, linewidth=0)
 
 
-def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path) -> List[Path]:
+def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path, loss: str = "") -> List[Path]:
     kind = unlearn["kind"].iloc[0] if len(unlearn) else refs["kind"].iloc[0]
     written = []
 
@@ -60,7 +60,7 @@ def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: P
             ax.set_xlabel("data fraction f")
             ax.set_title(LABELS.get(m, m), fontsize=10)
         axes[0][0].legend(fontsize=8)
-        fig.suptitle(f"{exp}: after unlearning")
+        fig.suptitle(f"{_title(exp, loss)}: after unlearning")
         fig.tight_layout()
         path = dest / f"after_unlearning_{exp}.png"
         fig.savefig(path, dpi=150)
@@ -84,7 +84,7 @@ def plot_experiment(exp: str, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: P
             ax.set_xlabel("relearning images n_f")
             ax.set_title(LABELS.get(m, m), fontsize=10)
         axes[0][0].legend(fontsize=8)
-        fig.suptitle(f"{exp}: after relearning")
+        fig.suptitle(f"{_title(exp, loss)}: after relearning")
         fig.tight_layout()
         path = dest / f"after_relearning_{exp}.png"
         fig.savefig(path, dpi=150)
@@ -105,7 +105,7 @@ def _pair_errors(pretrain: pd.DataFrame, pair) -> pd.DataFrame:
 
 
 def plot_sample_efficiency(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame,
-                           dest: Path) -> List[Path]:
+                           dest: Path, loss: str = "") -> List[Path]:
     """Rows: one metric each, the same in every column. Columns: the three stages, each against the number
     of images it used. Mean +/- std over seeds.
 
@@ -167,7 +167,7 @@ def plot_sample_efficiency(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFra
     axes[0][0].legend(fontsize=7, loc="upper right")
     axes[0][1].legend(fontsize=7, loc="upper right", ncol=2)
     axes[0][2].legend(fontsize=6, loc="upper right", ncol=2)
-    fig.suptitle(f"{exp}: sample efficiency")
+    fig.suptitle(f"{_title(exp, loss)}: sample efficiency")
     fig.tight_layout()
     path = dest / f"sample_efficiency_{exp}.png"
     fig.savefig(path, dpi=150)
@@ -189,6 +189,14 @@ def _pair_accuracy(pretrain: pd.DataFrame, pair, forget: str, retain: str = "10w
     return pd.DataFrame({"seed": pretrain["seed"], "n": pretrain["n_train"], **out})
 
 
+LOSS_NAMES = {"ce": "CE loss", "mse": "MSE loss"}
+
+
+def _title(exp: str, loss: str = "") -> str:
+    """Figure title prefix: the experiment and, when known, the loss the models were trained with."""
+    return f"{exp}, {LOSS_NAMES.get(loss, loss)}" if loss else exp
+
+
 SCRATCH_COLOR = "#e07a1f"  # from-scratch relearning reference in the pipeline figure
 
 
@@ -202,7 +210,7 @@ def select_unlearning_size(sweep: pd.DataFrame, n_ul: Optional[int] = None) -> p
 
 def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path,
                   forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
-                  retain: str = "10way", n_ul: Optional[int] = None) -> List[Path]:
+                  retain: str = "10way", n_ul: Optional[int] = None, loss: str = "") -> List[Path]:
     """The three stages as test accuracy against the number of samples each used (symlog x axis, n = 0 is the model before the stage; mean and
     standard error over seeds as a line with an error bar at every point).
 
@@ -330,7 +338,8 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     handles.insert(0, Line2D([], [], color=pre_color, lw=2))
     labels.insert(0, "pretraining")
     fig.legend(handles, labels, loc="lower center", ncol=len(handles), fontsize=9, frameon=False)
-    fig.suptitle(f"{exp}: R = kept classes, F = forgotten classes (mean $\\pm$ s.e.m. over seeds)", fontsize=10, y=0.995)
+    fig.suptitle(f"{_title(exp, loss)}: R = kept classes, F = forgotten classes (mean $\\pm$ s.e.m. over seeds)",
+                 fontsize=10, y=0.995)
     fig.tight_layout(rect=(0, 0.05, 1, 0.98))
     Path(dest).mkdir(parents=True, exist_ok=True)
     path = Path(dest) / f"pipeline_{exp}_{forget}{'_r8' if retain == '8way' else ''}{'_sweep' if sweep is not None else ''}.png"
@@ -372,14 +381,15 @@ def main(argv: Optional[List[str]] = None) -> None:
         has_r8 = ("ul_A_r8" in u.columns and u["ul_A_r8"].notna().all() and "before_A_r8" in r.columns
                   and (not len(pretrain) or f"r8_{exp.split('-')[1]}_{exp.split('-')[-1]}" in pretrain.columns)
                   if exp.startswith("pair-") else False)
-        jobs = [lambda: plot_experiment(exp, us, r, dest), lambda: plot_sample_efficiency(exp, pretrain, u, r, dest)]
+        jobs = [lambda: plot_experiment(exp, us, r, dest, args.loss),
+                lambda: plot_sample_efficiency(exp, pretrain, u, r, dest, loss=args.loss)]
         for retain in ("10way", "8way") if has_r8 else ("10way",):
             for forget in ("2way", "10way"):
                 jobs.append(lambda retain=retain, forget=forget: plot_pipeline(exp, pretrain, u, r, dest, forget,
-                                                                               retain=retain))
+                                                                               retain=retain, loss=args.loss))
                 if s is not None and len(s):
                     jobs.append(lambda retain=retain, forget=forget: plot_pipeline(
-                        exp, pretrain, u, r, dest, forget, sweep=s, retain=retain, n_ul=args.n_ul))
+                        exp, pretrain, u, r, dest, forget, sweep=s, retain=retain, n_ul=args.n_ul, loss=args.loss))
         for job in jobs:  # one failing figure must not stop the others (this runs unattended on the cluster)
             try:
                 for path in job():
