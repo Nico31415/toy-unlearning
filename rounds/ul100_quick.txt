@@ -1,0 +1,5 @@
+round ul100_quick, published 2026-11-05T11:46:37+00:00, code eabe56e
+              1031_0        cifar_unlearn  COMPLETED   00:00:20      0:0 
+              1031_1        cifar_unlearn  COMPLETED   00:00:46      0:0 
+              1032_0        cifar_unlearn  COMPLETED   00:00:18      0:0 
+              1032_1        cifar_unlearn  COMPLETED   00:00:30      0:0 
