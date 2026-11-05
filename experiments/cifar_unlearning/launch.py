@@ -27,7 +27,7 @@ from experiments.cifar_unlearning import run  # noqa: E402
 from experiments.cifar_unlearning.config import DEFAULT_FRACTIONS, DEFAULT_MU_F, DEFAULT_SEEDS  # noqa: E402
 
 ARRAY_STAGES = ("pretrain", "pretrain_curve", "select_pairs", "retrain", "unlearn_relearn", "relearn_sweep", "references",
-                "represent")
+                "reeval", "represent")
 
 
 def experiments(out_root: Path, exps: Optional[List[str]], all_pairs: bool, num_classes: int = 10) -> List[str]:
@@ -57,6 +57,8 @@ def build_array(stage: str, exps: List[str], mu_fs: Optional[List[float]] = None
     if stage == "unlearn_relearn":
         return ArgparseArray(posarg0="unlearn_relearn", exp=exps, seed=seeds, ul_mu_f=list(mu_fs or DEFAULT_MU_F),
                              niarg_fractions=fractions)
+    if stage == "reeval":
+        return ArgparseArray(posarg0="reeval", exp=exps, seed=seeds)
     if stage == "relearn_sweep":
         return ArgparseArray(posarg0="relearn_sweep", exp=exps, seed=seeds, ul_mu_f=list(mu_fs or DEFAULT_MU_F))
     if stage == "references":
@@ -100,7 +102,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     args, passthrough = parser.parse_known_args(argv)
     out_root = Path(args.out_root or f"data/cifar_unlearning/{args.loss}")
 
-    needs_exps = args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "represent")
+    needs_exps = args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent")
     exps = experiments(out_root, args.exps, args.all_pairs) if needs_exps else []
     array = build_array(args.stage, exps, args.mu_fs)
     if args.count:

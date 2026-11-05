@@ -55,7 +55,9 @@ def collect(out_root: Path) -> Dict[str, pd.DataFrame]:
             # per-class test accuracy; a pair's retain / forget accuracy is read off these
             **{f"acc_c{k}": conf[k, k] / conf[k].sum() for k in range(len(conf))},
             # share of class-a test images whose class-a logit beats the class-b logit (2-way accuracy of a pair)
-            **{f"pair_{a}_{b}": v for a, row in enumerate(r.get("pairwise", [])) for b, v in enumerate(row) if a != b}})
+            **{f"pair_{a}_{b}": v for a, row in enumerate(r.get("pairwise", [])) for b, v in enumerate(row) if a != b},
+            # 8-way accuracy on the other classes for the pair (a, b), a < b (runs from after it was added)
+            **{f"r8_{a}_{b}": v for a, row in enumerate(r.get("retain8", [])) for b, v in enumerate(row) if a < b}})
 
     for path in sorted(out_root.glob("retrain/exp=*/seed=*/result.json")):
         r = _load(path)

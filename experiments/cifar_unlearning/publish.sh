@@ -1,5 +1,5 @@
 #!/bin/bash
-# Aggregate every output root and push the CSVs plus a job report to the `results` branch.
+# Aggregate every output root, draw its figures, and push the CSVs, figures and a job report to the `results` branch.
 # Called by round.sh's final job:  publish.sh <round name> [job ids...]
 # The results branch is kept in a separate worktree, so the code checkout is never touched.
 set -uo pipefail
@@ -26,6 +26,10 @@ for root in data/cifar_unlearning/*/; do
   mkdir -p "$WT/$tag"
   "$PY" experiments/cifar_unlearning/aggregate.py --loss "$loss" --out_root "$root" --dest "$WT/$tag" \
     > "$WT/$tag/aggregate.log" 2>&1 || echo "aggregate failed for $root" >> "$WT/$tag/aggregate.log"
+  # figures from the same tables, made here so they come back with the CSVs
+  rm -rf "$WT/$tag/figures"
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --src "$WT/$tag" --dest "$WT/$tag/figures" \
+    > "$WT/$tag/figures.log" 2>&1 || echo "plot failed for $root" >> "$WT/$tag/figures.log"
 done
 
 # job report: state of every job of the round, and the tail of the log of every task that did not complete

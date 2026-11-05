@@ -61,10 +61,18 @@ class EvalSets:
     y_probe: torch.Tensor
 
 
+def kept_class_accuracy(logits: torch.Tensor, y: torch.Tensor, pair: Sequence[int]) -> float:
+    """Accuracy with the argmax taken over every class except the pair (the kept classes only)."""
+    keep = torch.tensor([k for k in range(logits.shape[1]) if k not in pair], device=logits.device)
+    return (keep[logits[:, keep].argmax(dim=1)] == y).float().mean().item()
+
+
 def evaluate(model: nn.Module, ev: EvalSets, pair: Optional[Sequence[int]]) -> Dict[str, float]:
     """All post-stage measurements. Keys:
 
     A_r            10-way accuracy on T_r (whole test set in the random split)
+    A_r8           8-way accuracy on T_r: argmax over the kept classes' logits only (class split only),
+                   the retain counterpart of A_f2
     A_f10, A_f2    10-way and 2-way accuracy on T_f (class split only)
     ce_f           10-way CE on T_f (class split only)
     probe_acc      10-way accuracy on P_f, the removed images never used
@@ -85,6 +93,7 @@ def evaluate(model: nn.Module, ev: EvalSets, pair: Optional[Sequence[int]]) -> D
         logits_f = predict_logits(model, ev.x_test_forget)
         out["A_f10"] = accuracy(logits_f, ev.y_test_forget)
         out["A_f2"] = two_way_accuracy(logits_f, ev.y_test_forget, pair)
+        out["A_r8"] = kept_class_accuracy(logits_r, ev.y_test_retain, pair)
         out["ce_f"] = per_sample_ce(logits_f, ev.y_test_forget).mean().item()
         out["probe_acc2"] = two_way_accuracy(logits_p, ev.y_probe, pair)
         nonmember_losses = per_sample_ce(logits_f, ev.y_test_forget)

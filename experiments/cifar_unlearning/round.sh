@@ -17,11 +17,13 @@ round_file=experiments/cifar_unlearning/rounds/$name.sh
 
 JOBS=()
 # submit <sbatch args...>: submit one job (array) on cbl and remember its id for the final publish job.
+# The id is also left in $LAST, so a later submit can wait for it (--dependency=afterok:$LAST).
 submit() {
   local id
   id=$(sbatch --parsable -p cbl -A divf "$@")
-  JOBS+=("${id%%;*}")
-  echo "submitted ${id%%;*}: $*"
+  LAST=${id%%;*}
+  JOBS+=("$LAST")
+  echo "submitted $LAST: $*"
 }
 L=experiments/cifar_unlearning/launch.sh
 source "$round_file"

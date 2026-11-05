@@ -187,7 +187,7 @@ def test_launch_arrays(tmp_path):
     exps = launch.experiments(tmp_path, None, False)
     assert exps == ["pair-3-5", "pair-0-8", "random"]
     counts = {stage: launch.task_count(launch.build_array(stage, exps)) for stage in launch.ARRAY_STAGES}
-    assert counts == {"pretrain": 5, "pretrain_curve": 5, "select_pairs": 1, "retrain": 15, "unlearn_relearn": 45, "relearn_sweep": 45, "references": 15,
+    assert counts == {"pretrain": 5, "pretrain_curve": 5, "select_pairs": 1, "retrain": 15, "unlearn_relearn": 45, "relearn_sweep": 45, "references": 15, "reeval": 15,
                       "represent": 15}
     argv = launch.to_argv(launch.build_array("unlearn_relearn", exps).get_args(0))
     assert argv[0] == "unlearn_relearn"
@@ -335,3 +335,50 @@ def test_relearn_sweep(tmp_path):
                   "--forget_sizes", "2"] + common + th)
     with pytest.raises(SystemExit):  # different unlearning settings than the saved model
         run.main(sweep + common + th + ["--ul_lr", "0.02"])
+
+
+def test_reeval_adds_r8(tmp_path):
+    """A_r8 (argmax over the kept classes only) is recorded by new runs and added to old records by reeval,
+    without changing stored values; the pretraining curve stores it per pair; the figure can use it."""
+    import torch
+    from experiments.cifar_unlearning import metrics
+    logits = torch.tensor([[5.0, 4.0, 0.0], [0.0, 9.0, 1.0]])
+    assert metrics.kept_class_accuracy(logits, torch.tensor([1, 1]), (0,)) == 1.0
+    assert metrics.kept_class_accuracy(logits, torch.tensor([1, 1]), (2,)) == 0.5
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--loss", "mse", "--pt_lr", "0.02"]
+    th = ["--theory", "--forget_sizes", "4", "--ul_stop_rule", "loss", "--ul_max_steps", "40", "--ul_lr", "0.01",
+          "--ul_retain_loss_threshold", "1.0", "--rl_loss_threshold", "1.0"]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["retrain", "--exp", "pair-0-1", "--seed", "0"] + common)
+    run.main(["pretrain_curve", "--seed", "0", "--pt_sizes", "0", "30"] + common)
+    run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5"] + common + th)
+    run.main(["references", "--exp", "pair-0-1", "--seed", "0"] + common + th)
+    run.main(["relearn_sweep", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5", "--ul_from", "4"] + common + th)
+    res = out / "unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/t=4/result.json"
+    assert (res.parent / "relearn_sweep/t=4/model_relearned_fp16.pt").exists()
+    r = run.read_json(res)
+    fresh_r8 = r["after_unlearn"]["A_r8"]
+    # simulate a record from before A_r8 existed
+    for key in ("after_unlearn", "after_relearn"):
+        del r[key]["A_r8"]
+    r["after_unlearn"]["A_r"] = 0.123456  # a stored value must survive
+    run.write_json(res, r)
+    before = out / "references/exp=pair-0-1/seed=0/before.json"
+    b = run.read_json(before)
+    del b["metrics"]["pretrained"]["A_r8"]
+    run.write_json(before, b)
+    run.main(["reeval", "--exp", "pair-0-1", "--seed", "0"] + common)
+    r = run.read_json(res)
+    assert abs(r["after_unlearn"]["A_r8"] - fresh_r8) < 0.05  # fp16 model, same value up to rounding
+    assert "A_r8" in r["after_relearn"] and r["after_unlearn"]["A_r"] == 0.123456
+    assert "A_r8" in run.read_json(before)["metrics"]["pretrained"]
+    aggregate.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    pc = pd.read_csv(tmp_path / "csv" / "pretrain_curve.csv")
+    assert "r8_0_1" in pc.columns and pc["r8_0_1"].between(0, 1).all()
+    unl = pd.read_csv(tmp_path / "csv" / "unlearn.csv")
+    refs = pd.read_csv(tmp_path / "csv" / "references.csv")
+    sw = pd.read_csv(tmp_path / "csv" / "relearn_sweep.csv")
+    assert {"ul_A_r8", "rl_A_r8"} <= set(unl.columns) and "before_A_r8" in refs.columns and "rl_A_r8" in sw.columns
+    paths = plot.plot_pipeline("pair-0-1", pc, unl, refs, tmp_path / "fig", sweep=sw, retain="8way")
+    assert paths and paths[0].name == "pipeline_pair-0-1_2way_r8_sweep.png"

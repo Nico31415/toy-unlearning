@@ -175,12 +175,13 @@ def plot_sample_efficiency(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFra
     return [path]
 
 
-def _pair_accuracy(pretrain: pd.DataFrame, pair, forget: str) -> pd.DataFrame:
-    """Test accuracy on the kept classes (10-way) and on the forgotten classes, from per-class accuracies
-    ("10way") or from the pairwise logit comparisons ("2way")."""
+def _pair_accuracy(pretrain: pd.DataFrame, pair, forget: str, retain: str = "10way") -> pd.DataFrame:
+    """Test accuracy on the kept classes (10-way from per-class accuracies, or "8way": argmax over the kept
+    classes only) and on the forgotten classes, from per-class accuracies ("10way") or from the pairwise
+    logit comparisons ("2way")."""
     a, b = pair
     kept = [f"acc_c{k}" for k in range(10) if k not in pair]
-    out = {"acc_r": pretrain[kept].mean(axis=1)}
+    out = {"acc_r": pretrain[f"r8_{min(a, b)}_{max(a, b)}"] if retain == "8way" else pretrain[kept].mean(axis=1)}
     if forget == "2way":
         out["acc_f"] = (pretrain[f"pair_{a}_{b}"] + pretrain[f"pair_{b}_{a}"]) / 2
     else:
@@ -198,7 +199,8 @@ SCRATCH_COLOR = "#e07a1f"  # from-scratch relearning reference in the pipeline f
 
 
 def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path,
-                  forget: str = "2way", sweep: Optional[pd.DataFrame] = None) -> List[Path]:
+                  forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
+                  retain: str = "10way") -> List[Path]:
     """The three stages as accuracy against the number of samples each used (mean +/- std over seeds).
 
     (a) pretraining from scratch on n images of all 10 classes (the last point is the 50k model that
@@ -210,7 +212,9 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
 
     With `sweep` (the relearn_sweep table), a panel (d) is added: the models unlearned with a fixed n_UL,
     relearned with every n_RL, starting at n_RL = 0 from those unlearned models. Runs that diverged are left
-    out (their record is the rolled-back unlearned model, not a relearning result)."""
+    out (their record is the rolled-back unlearned model, not a relearning result). `retain` "8way" measures the
+    kept classes with the argmax over their own logits only (A_r8), the counterpart of the 2-way forget measure."""
+    r_col = "A_r8" if retain == "8way" else "A_r"
     if not exp.startswith("pair-") or not len(unlearn) or "retain_matched" not in unlearn.columns:
         return []
     # --theory runs (n = rows of both kinds) take precedence over matched-retain runs (n = forget images)
@@ -229,8 +233,8 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
 
     def levels(model: str) -> pd.DataFrame:
         """Per-seed accuracy of a reference model before relearning, as columns acc_r, acc_f."""
-        g = refs[refs["model"] == model].groupby("seed")[[f"before_A_r", f"before_{f_col}"]].first()
-        return g.rename(columns={"before_A_r": "acc_r", f"before_{f_col}": "acc_f"})
+        g = refs[refs["model"] == model].groupby("seed")[[f"before_{r_col}", f"before_{f_col}"]].first()
+        return g.rename(columns={f"before_{r_col}": "acc_r", f"before_{f_col}": "acc_f"})
 
     colors = {"acc_r": "tab:cyan" if False else "#2a9d8f", "acc_f": "#3b1f7a"}
     styles = {0.0: "-", 0.25: "--", 0.5: "-.", 0.75: ":"}
@@ -253,7 +257,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
 
     # (a) pretraining
     if len(pretrain) and (forget == "10way" or f"pair_{pair[0]}_{pair[1]}" in pretrain.columns):
-        frame = _pair_accuracy(pretrain, pair, forget)
+        frame = _pair_accuracy(pretrain, pair, forget, retain)
         top = levels("pretrained").reset_index().assign(n=50000)
         draw(axes[0], pd.concat([frame, top[["seed", "n", "acc_r", "acc_f"]]]))
     else:
@@ -262,11 +266,11 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     start = levels("pretrained")
     for mu_f, group in u.groupby("mu_f"):
         ls = styles.get(float(mu_f), "-")
-        draw(axes[1], _with_anchor(group.assign(n=group["n_f"], acc_r=group["ul_A_r"], acc_f=group[f"ul_{f_col}"]), start), ls)
-        draw(axes[2], _with_anchor(group.assign(n=group["n_f"], acc_r=group["rl_A_r"], acc_f=group[f"rl_{f_col}"]), start), ls)
+        draw(axes[1], _with_anchor(group.assign(n=group["n_f"], acc_r=group[f"ul_{r_col}"], acc_f=group[f"ul_{f_col}"]), start), ls)
+        draw(axes[2], _with_anchor(group.assign(n=group["n_f"], acc_r=group[f"rl_{r_col}"], acc_f=group[f"rl_{f_col}"]), start), ls)
     fresh = refs[refs["model"] == "scratch"]
     if len(fresh):
-        frame = fresh.assign(n=fresh["n_f"], acc_r=fresh["rl_A_r"], acc_f=fresh[f"rl_{f_col}"])
+        frame = fresh.assign(n=fresh["n_f"], acc_r=fresh[f"rl_{r_col}"], acc_f=fresh[f"rl_{f_col}"])
         # from scratch: forgotten classes only (its kept-class accuracy is near chance by construction)
         draw(axes[2], _with_anchor(frame, levels("scratch")), linestyle="-", marker="s", cols=("acc_f",),
              color=SCRATCH_COLOR, lw=2.2)
@@ -276,9 +280,9 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     if sweep is not None:
         n_ul = int(sweep["n_ul"].iloc[0])
         for mu_f, group in sweep.groupby("mu_f"):
-            anchor = group.groupby("seed")[["ul_A_r", f"ul_{f_col}"]].first().rename(
-                columns={"ul_A_r": "acc_r", f"ul_{f_col}": "acc_f"})
-            draw(axes[3], _with_anchor(group.assign(n=group["n_rows"], acc_r=group["rl_A_r"],
+            anchor = group.groupby("seed")[[f"ul_{r_col}", f"ul_{f_col}"]].first().rename(
+                columns={f"ul_{r_col}": "acc_r", f"ul_{f_col}": "acc_f"})
+            draw(axes[3], _with_anchor(group.assign(n=group["n_rows"], acc_r=group[f"rl_{r_col}"],
                                                     acc_f=group[f"rl_{f_col}"]), anchor), styles.get(float(mu_f), "-"))
         if len(fresh):
             draw(axes[3], _with_anchor(frame, levels("scratch")), linestyle="-", marker="s", cols=("acc_f",),
@@ -294,7 +298,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
         ax.set_ylim(0, 1.05)
     axes[0].set_ylabel("accuracy")
     from matplotlib.lines import Line2D
-    handles = [Line2D([], [], color=colors["acc_r"], label="kept classes R (10-way)"),
+    handles = [Line2D([], [], color=colors["acc_r"], label=f"kept classes R ({retain[:-3]}-way)"),
                Line2D([], [], color=colors["acc_f"], label=f"forgotten classes F ({forget[:-3]}-way)")]
     handles += [Line2D([], [], color="black", linestyle=styles.get(float(m), "-"), label=f"mu_f = {m:g}")
                 for m in sorted(u["mu_f"].unique())]
@@ -305,7 +309,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     fig.suptitle(f"{exp}: three stages, accuracy against samples used")
     fig.tight_layout(rect=(0, 0.08, 1, 1))
     Path(dest).mkdir(parents=True, exist_ok=True)
-    path = Path(dest) / f"pipeline_{exp}_{forget}{'_sweep' if sweep is not None else ''}.png"
+    path = Path(dest) / f"pipeline_{exp}_{forget}{'_r8' if retain == '8way' else ''}{'_sweep' if sweep is not None else ''}.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return [path]
@@ -326,6 +330,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         return pd.read_csv(path) if path.exists() and path.stat().st_size > 1 else pd.DataFrame()
 
     unlearn, refs, pretrain = read("unlearn"), read("references"), read("pretrain_curve")
+    sweep = read("relearn_sweep")
     if len(unlearn):
         unlearn = unlearn[unlearn["rescale"] == "none"]
     scaled = unlearn  # runs whose retain set shrinks with the fraction (the figures against f)
@@ -336,9 +341,25 @@ def main(argv: Optional[List[str]] = None) -> None:
         u = unlearn[unlearn["exp"] == exp] if len(unlearn) else unlearn
         us = scaled[scaled["exp"] == exp] if len(scaled) else scaled
         r = refs[refs["exp"] == exp] if len(refs) else refs
-        three = [p for forget in ("2way", "10way") for p in plot_pipeline(exp, pretrain, u, r, dest, forget)]
-        for path in plot_experiment(exp, us, r, dest) + plot_sample_efficiency(exp, pretrain, u, r, dest) + three:
-            print(f"wrote {path}")
+        s = sweep[sweep["exp"] == exp] if len(sweep) else None
+        # 8-way retain needs A_r8 in every table the figure reads (records from before it was added lack it)
+        has_r8 = ("ul_A_r8" in u.columns and u["ul_A_r8"].notna().all() and "before_A_r8" in r.columns
+                  and (not len(pretrain) or f"r8_{exp.split('-')[1]}_{exp.split('-')[-1]}" in pretrain.columns)
+                  if exp.startswith("pair-") else False)
+        jobs = [lambda: plot_experiment(exp, us, r, dest), lambda: plot_sample_efficiency(exp, pretrain, u, r, dest)]
+        for retain in ("10way", "8way") if has_r8 else ("10way",):
+            for forget in ("2way", "10way"):
+                jobs.append(lambda retain=retain, forget=forget: plot_pipeline(exp, pretrain, u, r, dest, forget,
+                                                                               retain=retain))
+                if s is not None and len(s):
+                    jobs.append(lambda retain=retain, forget=forget: plot_pipeline(
+                        exp, pretrain, u, r, dest, forget, sweep=s, retain=retain))
+        for job in jobs:  # one failing figure must not stop the others (this runs unattended on the cluster)
+            try:
+                for path in job():
+                    print(f"wrote {path}")
+            except Exception as err:  # noqa: BLE001
+                print(f"FAILED a figure for {exp}: {type(err).__name__}: {err}")
 
 
 if __name__ == "__main__":

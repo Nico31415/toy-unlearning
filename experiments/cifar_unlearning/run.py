@@ -46,7 +46,7 @@ from experiments.cifar_unlearning.data import (  # noqa: E402
     parse_experiment, save_split, stratified_order)
 from experiments.cifar_unlearning.losses import LOSS_KINDS  # noqa: E402
 from experiments.cifar_unlearning.metrics import (  # noqa: E402
-    EvalSets, confusion_matrix, evaluate, predict_logits)
+    EvalSets, confusion_matrix, evaluate, kept_class_accuracy, predict_logits)
 from experiments.cifar_unlearning.representation import (  # noqa: E402
     RepSets, reference_features, representation_metrics)
 from experiments.cifar_unlearning.models import (  # noqa: E402
@@ -58,7 +58,7 @@ from experiments.cifar_unlearning.train import (  # noqa: E402
 
 log = partial(print, flush=True)
 STAGES = ("download", "pretrain", "pretrain_curve", "select_pairs", "retrain", "unlearn_relearn", "relearn_sweep",
-          "references", "represent")
+          "references", "reeval", "represent")
 REFERENCE_MODELS = ("pretrained", "retrain", "scratch")
 
 
@@ -275,6 +275,7 @@ STAGE_GROUPS = {
     "retrain": ("data", "model", "pt"),
     "unlearn_relearn": ("data", "model", "ul", "rl", "rs"),
     "relearn_sweep": ("data", "model", "ul", "rl", "rs"),
+    "reeval": (),
     "references": ("data", "model", "rl"),
     "represent": ("data", "model", "rep"),
 }
@@ -366,10 +367,17 @@ def stage_pretrain_curve(ctx: Context) -> None:
         # accuracy for the pair (a, b) is then (pairwise[a][b] + pairwise[b][a]) / 2 (equal test images per class).
         pairwise = torch.stack([(logits[y_test == a][:, [a]] > logits[y_test == a]).float().mean(dim=0)
                                 for a in range(ds.num_classes)]).cpu()
+        # retain8[a][b] (a < b): accuracy on the test images of the other 8 classes, argmax over their logits
+        k = ds.num_classes
+        retain8 = [[0.0] * k for _ in range(k)]
+        for a, b in itertools.combinations(range(k), 2):
+            kept = (y_test != a) & (y_test != b)
+            retain8[a][b] = retain8[b][a] = kept_class_accuracy(logits[kept], y_test[kept], (a, b))
         out.mkdir(parents=True, exist_ok=True)
+        torch.save(state_dict_fp16(model), out / "model_fp16.pt")
         write_json(out / "result.json", ctx.base_record(
             stage="pretrain_curve", seed=seed, fraction=f, n_train=n, train=train,
-            test_acc=(conf.diag().sum() / conf.sum()).item(), confusion=conf, pairwise=pairwise))
+            test_acc=(conf.diag().sum() / conf.sum()).item(), confusion=conf, pairwise=pairwise, retain8=retain8))
 
 
 def stage_select_pairs(ctx: Context) -> None:
@@ -521,9 +529,74 @@ def stage_relearn_sweep(ctx: Context) -> None:
                                         seed=derive_seed("relearn-sweep", exp, seed, ul.mu_f, n_ul, size),
                                         freeze_bn=ctx.cfg["rl"].freeze_bn, targets=t_rl)
         out.mkdir(parents=True, exist_ok=True)
+        torch.save(state_dict_fp16(model), out / "model_relearned_fp16.pt")
         write_json(out / "result.json", ctx.base_record(
             stage="relearn_sweep", exp=exp, seed=seed, kind=split.kind, pair=split.pair, mu_r=ul.mu_r, mu_f=ul.mu_f,
             theory=True, n_ul=n_ul, n_rows=size, n_r=n_r, n_f=n_f, after_unlearn=source["after_unlearn"], **relearned))
+
+
+def _add_missing(old: Dict, new: Dict) -> int:
+    """Add the keys of `new` that `old` lacks (never changes a stored value). Returns how many were added."""
+    added = [key for key in new if key not in old]
+    old.update({key: new[key] for key in added})
+    return len(added)
+
+
+def stage_reeval(ctx: Context) -> None:
+    """Re-evaluate every saved model of one (experiment, seed) and add the metrics its records lack (e.g. A_r8,
+    added after the runs). Covers the unlearned and relearned models of unlearn_relearn, relearn_sweep models,
+    the references and their starting models (before.json). Stored values are never changed; records whose
+    model was not saved are left as they are."""
+    exp, seed = ctx.args.exp, ctx.args.seed
+    split = ctx.split(exp, seed)
+    ev = ctx.eval_sets(split)
+
+    def metrics(path: Path) -> Dict:
+        return evaluate(load_state(ctx.new_model(0), torch.load(path, map_location=ctx.device)), ev, split.pair)
+
+    count = 0
+    for res in sorted((ctx.out / "unlearn" / f"exp={exp}" / f"seed={seed}").glob("mu_f=*/rescale=*/*=*/result.json")):
+        r, d = read_json(res), res.parent
+        n = 0
+        if (d / "model_fp16.pt").exists():
+            n += _add_missing(r["after_unlearn"], metrics(d / "model_fp16.pt"))
+        if (d / "model_relearned_fp16.pt").exists():
+            n += _add_missing(r["after_relearn"], metrics(d / "model_relearned_fp16.pt"))
+        if n:
+            write_json(res, r)
+            count += 1
+        for sweep in sorted(d.glob("relearn_sweep/*=*/result.json")):
+            s = read_json(sweep)
+            m = _add_missing(s["after_unlearn"], r["after_unlearn"])
+            if (sweep.parent / "model_relearned_fp16.pt").exists():
+                m += _add_missing(s["after_relearn"], metrics(sweep.parent / "model_relearned_fp16.pt"))
+            if m:
+                write_json(sweep, s)
+                count += 1
+    base = ctx.references_dir(exp, seed)
+    if (base / "before.json").exists():
+        b = read_json(base / "before.json")
+        sources = {"pretrained": ctx.pretrain_dir(seed, read=True) / "model.pt",
+                   "retrain": ctx.retrain_dir(exp, seed) / "model.pt"}
+        n = 0
+        for name in b["metrics"]:
+            if name == "scratch":
+                model = ctx.new_model(derive_seed("scratch-init", exp, seed, None))
+            elif sources.get(name, Path("-")).exists():
+                model = ctx.load_model(sources[name])
+            else:
+                continue
+            n += _add_missing(b["metrics"][name], evaluate(model, ev, split.pair))
+        if n:
+            write_json(base / "before.json", b)
+            count += 1
+    for res in sorted(base.glob("model=*/*=*/result.json")):
+        if (res.parent / "model_fp16.pt").exists():
+            r = read_json(res)
+            if _add_missing(r["after_relearn"], metrics(res.parent / "model_fp16.pt")):
+                write_json(res, r)
+                count += 1
+    log(f"reeval {exp} seed {seed}: updated {count} records")
 
 
 def stage_references(ctx: Context) -> None:
@@ -679,7 +752,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     train_module.set_augment(args.augment)
     if args.theory and (args.loss != "mse" or not args.forget_sizes or args.match_retain):
         raise SystemExit("--theory needs --loss mse and --forget_sizes, and excludes --match_retain")
-    if args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "represent"):
+    if args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent"):
         if args.exp is None:
             raise SystemExit(f"--exp is required for {args.stage}")
         parse_experiment(args.exp)  # validate early
@@ -693,6 +766,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "retrain": stage_retrain,
         "unlearn_relearn": stage_unlearn_relearn,
         "relearn_sweep": stage_relearn_sweep,
+        "reeval": stage_reeval,
         "references": stage_references,
         "represent": stage_represent,
     }[args.stage](ctx)
