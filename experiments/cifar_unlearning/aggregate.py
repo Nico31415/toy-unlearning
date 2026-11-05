@@ -73,7 +73,9 @@ def collect(out_root: Path) -> Dict[str, pd.DataFrame]:
                 "theory": r.get("theory", False), "n_rows": r.get("n_rows", r["n_r"] + r["n_f"])}
         ul, rl = r["unlearn"], r["relearn"]
         tables["unlearn"].append({
-            **keys, "ul_status": ul["status"], "ul_steps": ul["steps"],
+            **keys, "logit_norm_before": r["rescale"].get("before", {}).get("mean_logit_norm"),
+            "logit_norm_after": r["rescale"].get("after", {}).get("mean_logit_norm"),
+            "ul_status": ul["status"], "ul_steps": ul["steps"],
             "ul_forget_reached_step": ul.get("forget_reached_step"), "ul_rollback_step": ul.get("rollback_step"),
             "ul_train_retain_loss": ul["final_retain_loss"], "ul_train_forget_acc": ul["final_forget_acc"],
             **_prefixed(r["after_unlearn"], "ul_"),

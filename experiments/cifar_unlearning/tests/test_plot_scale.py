@@ -10,6 +10,14 @@ def test_parse_tag():
     assert plot_scale.parse_tag("body_head-b1-h0.5") is None
 
 
+def test_parse_mode():
+    assert plot_scale.parse_mode("none") == ("none", 1.0, "stale")
+    assert plot_scale.parse_mode("all-S0.5-bnstat") == ("all", 0.5, "scaled")
+    assert plot_scale.parse_mode("body_head-b1-h0.125") == ("head", 0.125, "stale")
+    assert plot_scale.parse_mode("body_head-b4-h1-bnstat") == ("conv", 4.0, "scaled")
+    assert plot_scale.parse_mode("body_head-b2-h2") is None
+
+
 def test_scale_figure(tmp_path):
     rows = []
     for tag in ("none", "all-S0.5", "all-S0.5-bnstat", "all-S2", "all-S2-bnstat"):

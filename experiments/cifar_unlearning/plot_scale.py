@@ -29,13 +29,29 @@ def parse_tag(tag: str):
     return float(m["S"]), "scaled" if m["stat"] else "stale"
 
 
+BODY_HEAD = re.compile(r"^body_head-b(?P<b>[\d.]+)-h(?P<h>[\d.]+)(?P<bn>-bnrecal)?(?P<stat>-bnstat)?$")
+
+
+def parse_mode(tag: str):
+    """(mode, S, bn treatment) of a rescale tag. mode: none, all (every parameter times S), head (only the final linear layer, so the
+    logits scale by S exactly) or conv (only the conv weights; BatchNorm cancels their scale, so this changes only the effective learning rate)."""
+    m = BODY_HEAD.match(tag)
+    if m:
+        b, h = float(m["b"]), float(m["h"])
+        if b != 1.0 and h != 1.0:
+            return None
+        return ("conv", b, "scaled" if m["stat"] else "stale") if b != 1.0 else ("head", h, "scaled" if m["stat"] else "stale")
+    parsed = parse_tag(tag)
+    return None if parsed is None else ("none" if tag == "none" else "all", *parsed)
+
+
 def table(unlearn: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for _, r in unlearn[unlearn["theory"].astype(bool)].iterrows():
-        parsed = parse_tag(str(r["rescale"]))
+        parsed = parse_mode(str(r["rescale"]))
         if parsed:
-            rows.append(dict(S=parsed[0], bn=parsed[1], mu_f=r["mu_f"], n=r["n_rows"], seed=r["seed"],
-                             **{k: r[k] for k in ("ul_A_r8", "ul_A_f2", "rl_A_r8", "rl_A_f2", "ul_steps", "ul_status")
+            rows.append(dict(mode=parsed[0], S=parsed[1], bn=parsed[2], mu_f=r["mu_f"], n=r["n_rows"], seed=r["seed"],
+                             **{k: r[k] for k in ("ul_A_r8", "ul_A_f2", "rl_A_r8", "rl_A_f2", "ul_steps", "ul_status", "logit_norm_before", "logit_norm_after")
                                 if k in r}))
     return pd.DataFrame(rows).sort_values(["bn", "n", "S"]) if rows else pd.DataFrame()
 
@@ -54,6 +70,9 @@ def main(argv=None) -> None:
     dest = Path(args.dest)
     dest.mkdir(parents=True, exist_ok=True)
     t.to_csv(dest / "scale_table.csv", index=False)
+    t = t[t["mode"].isin(["all", "none"])]  # the figure is for the `all` convention; other modes are compared from the table
+    if t.empty or t["S"].nunique() < 2:
+        return
     fig, axes = plt.subplots(2, 2, figsize=(9, 6.2), sharey=True)
     sizes = sorted(t["n"].unique())
     cols = {n: plt.get_cmap("viridis")(0.9 * i / max(len(sizes) - 1, 1)) for i, n in enumerate(sizes)}
