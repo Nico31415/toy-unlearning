@@ -39,7 +39,7 @@ done
 
 # BatchNorm comparison per loss: frozen run set dashed, unfrozen solid (only if both roots were published)
 for pair in "mse mseaug mseaug_bn2" "ce ceaug_lr3 ceaug_bn2"; do
-  set -- $pair; l=$1; fz=$2; uf=$3
+  read -r l fz uf <<< "$pair"  # not `set --`: that would overwrite the job ids in "$@" used by the report below
   [[ -s $WT/$fz/unlearn.csv && -s $WT/$uf/unlearn.csv ]] || continue
   MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$l" --src "$WT/$fz" --compare "$WT/$uf" --mu_fs 0 0.75 \
     --dest "$WT/comparison/$l" > "$WT/comparison_$l.log" 2>&1 || echo "comparison failed for $l" >> "$WT/comparison_$l.log"
