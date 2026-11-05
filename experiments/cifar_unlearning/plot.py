@@ -392,7 +392,10 @@ def _read_tables(src: Path) -> dict:
 def _as_scale(tables: dict) -> dict:
     """Tables of an S sweep (rounds/rs_*.sh) with the rescaling factor S in the mu_f column and rescale = "none", so the
     pipeline figure colours by S (all rows of such a root share one mu_f)."""
-    from experiments.cifar_unlearning.plot_scale import parse_tag
+    try:
+        from experiments.cifar_unlearning.plot_scale import parse_tag
+    except ImportError:  # run as a script (publish.sh): plot_scale.py sits next to this file
+        from plot_scale import parse_tag
     out = dict(tables)
     for key in ("unlearn", "sweep"):
         t = tables[key]
