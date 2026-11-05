@@ -1,2 +1,10 @@
-FAILED a figure for pair-1-7: KeyError: 'kind'
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/after_relearning_pair-1-7.png
 wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/sample_efficiency_pair-1-7.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_2way.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_2way_sweep.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_10way.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_10way_sweep.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_2way_r8.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_2way_r8_sweep.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_10way_r8.png
+wrote /var/tmp/na658/results-wt/ceaug_lr3/figures/pipeline_pair-1-7_10way_r8_sweep.png
