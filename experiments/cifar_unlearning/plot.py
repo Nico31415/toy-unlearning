@@ -190,20 +190,19 @@ def _pair_accuracy(pretrain: pd.DataFrame, pair, forget: str, retain: str = "10w
 
 
 SCRATCH_COLOR = "#e07a1f"  # from-scratch relearning reference in the pipeline figure
-ERR_FLOOR = 1e-3  # test errors are drawn on a log axis; an error of 0 is drawn at this floor
 
 
 def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path,
                   forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
                   retain: str = "10way") -> List[Path]:
-    """The three stages as test error against the number of samples each used (log-log; mean and standard
-    error over seeds as a line with an error bar at every point).
+    """The three stages as test accuracy against the number of samples each used (log x axis; mean and
+    standard error over seeds as a line with an error bar at every point).
 
-    Top row: error on the kept classes R; bottom row: error on the forgotten classes F (2-way or 10-way,
+    Top row: accuracy on the kept classes R; bottom row: accuracy on the forgotten classes F (2-way or 10-way,
     `forget`). (a) pretraining from scratch on n images of all 10 classes (the last point is the 50k model that
     stages 2 and 3 start from); (b) unlearning that model with n rows, one colour per mu_f; (c) relearning each
     of those on the same n rows, plus a network trained from scratch on them (orange, forgotten classes only: its
-    kept-class error is chance by construction). With `sweep` (the relearn_sweep table), panel (d) relearns the
+    kept-class accuracy is chance by construction). With `sweep` (the relearn_sweep table), panel (d) relearns the
     models unlearned with a fixed n_UL on n_RL images. Runs that diverged are left out. `retain` "8way" measures
     the kept classes with the argmax over their own logits only (A_r8), the counterpart of the 2-way forget
     measure."""
@@ -239,13 +238,12 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     fig, axes = plt.subplots(2, n_cols, figsize=(3.6 * n_cols, 6.2), sharey="row")
 
     def draw(ax, frame: pd.DataFrame, col: str, color, marker="o", lw=1.8) -> None:
-        """Test error 1 - accuracy of column `col` against n: mean line with standard-error bars."""
-        frame = frame[frame["n"] > 0].assign(err=lambda f: 1 - f[col])
+        """Accuracy in column `col` against n: mean line with standard-error bars."""
+        frame = frame[frame["n"] > 0].assign(err=lambda f: f[col])
         stats = frame.groupby("n")["err"].agg(["mean", "sem"]).reset_index().sort_values("n")
         sem = stats["sem"].fillna(0).to_numpy()
         mean = stats["mean"].to_numpy()
-        lower = np.minimum(sem, np.maximum(mean - ERR_FLOOR, 0))  # keep the bar on the log axis
-        ax.errorbar(stats["n"], np.maximum(mean, ERR_FLOOR), yerr=[lower, sem], color=color, marker=marker, ms=3.5,
+        ax.errorbar(stats["n"], mean, yerr=sem, color=color, marker=marker, ms=3.5,
                     lw=lw, elinewidth=1.1, capsize=2.5, capthick=1.1)
 
     def rows(frame: pd.DataFrame, r: str, f: str) -> pd.DataFrame:
@@ -282,7 +280,7 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
             draw(axes[1, 3], rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), "acc_f", SCRATCH_COLOR,
                  marker="s", lw=2.2)
 
-    names = ["pretraining", "unlearning", "relearning"]
+    names = ["pretraining", "unlearning", "relearning ($n_{UL}$ = $n_{RL}$)"]
     xlabels = ["Number of samples", "Number of samples" + (" (rows)" if theory else ""), "Number of samples"]
     if sweep is not None:
         names.append(f"relearning from $n_{{UL}}$ = {int(sweep['n_ul'].iloc[0])}")
@@ -295,11 +293,11 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
         for i in range(2):
             ax = axes[i, j]
             ax.set_xscale("log")
-            ax.set_yscale("log")
+            ax.set_ylim(0, 1.05)
             ax.spines[["top", "right"]].set_visible(False)
             ax.tick_params(labelbottom=True)
-    axes[0, 0].set_ylabel(f"Test error, R ({retain[:-3]}-way)", fontsize=10)
-    axes[1, 0].set_ylabel(f"Test error, F ({forget[:-3]}-way)", fontsize=10)
+    axes[0, 0].set_ylabel(f"Accuracy, R ({retain[:-3]}-way)", fontsize=10)
+    axes[1, 0].set_ylabel(f"Accuracy, F ({forget[:-3]}-way)", fontsize=10)
     handles = [Line2D([], [], color=colors[m], lw=2, label=f"{m:g}") for m in mu_fs]
     labels = [f"$\\mu_f$ = {m:g}" for m in mu_fs]
     if len(fresh):
