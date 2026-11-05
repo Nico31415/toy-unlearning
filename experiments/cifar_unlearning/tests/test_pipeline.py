@@ -452,3 +452,25 @@ def test_title_label_and_unfrozen_bn(tmp_path):
     run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", "0.5"] + common + th)
     r = run.read_json(out / "unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/t=2/result.json")
     assert r["configs"]["ul"]["freeze_bn"] is False and r["configs"]["rl"]["freeze_bn"] is False
+
+
+def test_unfrozen_bn_unlearning_uses_one_pass_for_both_batches():
+    """With BatchNorm in train mode, retain and forget images share one forward pass (shared batch statistics);
+    with frozen BatchNorm each batch has its own pass (the layers act on each image alone, so the result is the same)."""
+    import torch
+    from experiments.cifar_unlearning import train as T
+    from experiments.cifar_unlearning.config import UnlearnConfig
+    from experiments.cifar_unlearning.models import build_model
+
+    def passes(freeze_bn: bool):
+        model = build_model("tiny", 4)
+        sizes = []
+        model.register_forward_pre_hook(lambda m, inp: sizes.append(len(inp[0])) if m.training else None)
+        torch.manual_seed(0)
+        x_r, y_r = torch.randn(6, 3, 8, 8), torch.randint(0, 4, (6,))
+        x_f, y_f = torch.randn(2, 3, 8, 8), torch.randint(0, 4, (2,))
+        cfg = UnlearnConfig(mu_f=0.5, max_steps=3, eval_every=3, stop_rule="none", freeze_bn=freeze_bn, batch_size=6)
+        T.unlearn(model, x_r, y_r, x_f, y_f, cfg, seed=0, loss_kind="mse", row_weights=(0.75, 0.25))
+        return sizes
+    assert passes(False) == [8, 8, 8]  # 6 retain + 2 forget images in one pass per step
+    assert passes(True) == [6, 2, 6, 2, 6, 2]

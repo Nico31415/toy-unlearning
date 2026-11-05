@@ -180,7 +180,12 @@ def unlearn(model: nn.Module, x_r: torch.Tensor, y_r: torch.Tensor,
     while step < cfg.max_steps:
         set_train_mode(model, cfg.freeze_bn)
         ir, i_f = next(stream_r), next(stream_f)
-        loss = signed_unlearning_loss(model(augment_batch(x_r[ir])), y_r[ir], model(augment_batch(x_f[i_f])), y_f[i_f],
+        if cfg.freeze_bn:  # BN layers act on each image alone, so one pass per batch is the same as one pass for both
+            logits_r, logits_f = model(augment_batch(x_r[ir])), model(augment_batch(x_f[i_f]))
+        else:  # BN batch statistics: one pass over retain and forget images together, not each kind on its own
+            logits = model(torch.cat([augment_batch(x_r[ir]), augment_batch(x_f[i_f])]))
+            logits_r, logits_f = logits[:len(ir)], logits[len(ir):]
+        loss = signed_unlearning_loss(logits_r, y_r[ir], logits_f, y_f[i_f],
                                       cfg.mu_r, cfg.mu_f, loss_kind, forget_clip=cfg.forget_clip,
                                       w_r=row_weights[0], w_f=row_weights[1])
         if not torch.isfinite(loss):
