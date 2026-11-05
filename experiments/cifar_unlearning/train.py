@@ -14,7 +14,8 @@ import torch.nn as nn
 
 from experiments.cifar_unlearning.config import RelearnConfig, ScratchConfig, UnlearnConfig
 from experiments.cifar_unlearning.losses import (
-    _squared, classification_loss, signed_unlearning_loss, unlearning_forget_loss, unlearning_retain_loss)
+    classification_loss, signed_unlearning_loss, target_loss, unlearning_forget_loss,
+    unlearning_retain_loss)
 from experiments.cifar_unlearning.metrics import accuracy, predict_logits
 from experiments.cifar_unlearning.models import set_train_mode
 
@@ -78,12 +79,13 @@ def full_loss(model: nn.Module, x: torch.Tensor, y: torch.Tensor, kind: str,
     return total / len(x)
 
 
-def full_target_loss(model: nn.Module, x: torch.Tensor, targets: torch.Tensor, batch_size: int = 1000) -> float:
-    """Mean squared loss against per-row target vectors over the whole set, in eval mode."""
+def full_target_loss(model: nn.Module, x: torch.Tensor, targets: torch.Tensor, batch_size: int = 1000,
+                     loss_kind: str = "mse") -> float:
+    """Mean loss against per-row target vectors (`target_loss`) over the whole set, in eval mode."""
     model.eval()
     total = 0.0
     for i in range(0, len(x), batch_size):
-        total += _squared(model(x[i:i + batch_size]), targets[i:i + batch_size]).item() * len(x[i:i + batch_size])
+        total += target_loss(model(x[i:i + batch_size]), targets[i:i + batch_size], loss_kind).item() * len(x[i:i + batch_size])
     return total / len(x)
 
 
@@ -236,9 +238,9 @@ def relearn(model: nn.Module, x: torch.Tensor, y: torch.Tensor, cfg: RelearnConf
     it is the ordinary 10-way loss (random split). `eval_fn` is called at the steps
     in CURVE_STEPS and at the end to record a relearning curve.
 
-    With `targets` (one target vector per row of x), the loss is the squared loss against those vectors
-    over all outputs instead (the theory mode's forget-only attack: onehot for forget rows, zero for retain
-    rows); `y` and `pair` are then ignored for the loss.
+    With `targets` (one target vector per row of x), the loss is `target_loss` against those vectors
+    instead (the theory mode's forget-only attack: onehot for forget rows; zero (mse) or uniform (ce) for
+    retain rows); `y` and `pair` are then ignored for the loss.
     """
     device = x.device
     gen = torch.Generator().manual_seed(seed)
@@ -256,11 +258,11 @@ def relearn(model: nn.Module, x: torch.Tensor, y: torch.Tensor, cfg: RelearnConf
     def batch_loss(idx: torch.Tensor) -> torch.Tensor:
         logits = model(augment_batch(x[idx]))
         if targets is not None:
-            return _squared(logits, targets[idx])
+            return target_loss(logits, targets[idx], loss_kind)
         return classification_loss(logits, y[idx], loss_kind, pair)
 
     def set_loss() -> float:
-        return full_target_loss(model, x, targets) if targets is not None else full_loss(model, x, y, loss_kind, pair)
+        return full_target_loss(model, x, targets, loss_kind=loss_kind) if targets is not None else full_loss(model, x, y, loss_kind, pair)
 
     train_loss = set_loss()
     if train_loss < cfg.loss_threshold:  # e.g. Pretrained already fits these images

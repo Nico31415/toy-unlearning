@@ -99,13 +99,17 @@ def theory_rows(split: "Split", n: int, fresh: bool = False):
 
 
 def theory_relearn_set(ctx: "Context", split: "Split", n: int):
-    """Rows and target vectors of the theory's forget-only attack (nu_r = 0): the squared loss towards
-    y_f = y * M_f, i.e. onehot for forget rows and the zero vector for retain rows, over all outputs."""
+    """Rows and target vectors of the theory's forget-only attack (nu_r = 0): the loss towards y_f = y * M_f,
+    i.e. onehot for forget rows and, for retain rows, the zero vector (mse) or the uniform distribution (ce,
+    where equal logits are the counterpart of zero), over all outputs."""
     r_idx, f_idx = theory_rows(split, n, fresh=True)
     x_r, y_r = ctx.train_subset(r_idx)
     x_f, y_f = ctx.train_subset(f_idx)
     k = ctx.dataset.num_classes
-    targets = torch.cat([torch.zeros(len(y_r), k, device=x_r.device),
+    retain_target = torch.zeros(len(y_r), k, device=x_r.device)
+    if ctx.loss == "ce":
+        retain_target += 1.0 / k
+    targets = torch.cat([retain_target,
                          torch.nn.functional.one_hot(y_f, k).float()])
     return torch.cat([x_r, x_f]), torch.cat([y_r, y_f]), targets, len(r_idx), len(f_idx)
 
@@ -730,9 +734,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="random crop (4 px padding) and horizontal flip on every training minibatch, in all "
                              "training stages; evaluation is never augmented. Use a separate --out_root")
     parser.add_argument("--theory", action="store_true",
-                        help="match the diagonal-network theory (needs --loss mse and --forget_sizes): stage 2 on n rows "
-                             "drawn from all classes with both loss terms on the same rows; stage 3 the forget-only attack "
-                             "(squared loss to onehot on forget rows, zero on retain rows) on n fresh rows; folders t=<n>")
+                        help="match the diagonal-network theory (needs --forget_sizes): stage 2 on n rows drawn from all "
+                             "classes with both loss terms on the same rows; stage 3 the forget-only attack on n fresh "
+                             "rows (mse: squared loss to onehot on forget rows, zero on retain rows; ce: KL to onehot "
+                             "on forget rows, uniform on retain rows); folders t=<n>")
     parser.add_argument("--ul_from", type=int, default=None,
                         help="relearn_sweep: the number of unlearning rows of the unlearned model to relearn")
     parser.add_argument("--n_pairs", type=int, default=3)
@@ -750,8 +755,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = build_parser().parse_args(argv)
     train_module.set_augment(args.augment)
-    if args.theory and (args.loss != "mse" or not args.forget_sizes or args.match_retain):
-        raise SystemExit("--theory needs --loss mse and --forget_sizes, and excludes --match_retain")
+    if args.theory and (not args.forget_sizes or args.match_retain):
+        raise SystemExit("--theory needs --forget_sizes and excludes --match_retain")
     if args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent"):
         if args.exp is None:
             raise SystemExit(f"--exp is required for {args.stage}")

@@ -306,8 +306,50 @@ def test_theory_mode(tmp_path):
     tg = torch.zeros(5, 4)
     assert abs(T.full_target_loss(model, x, tg) - 0.5 * model(x).pow(2).sum(1).mean().item()) < 1e-6
     with pytest.raises(SystemExit):
-        run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--theory", "--forget_sizes", "4"] + SYN
-                 + ["--out_root", str(out)])  # needs --loss mse
+        run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--theory"] + SYN
+                 + ["--out_root", str(out), "--loss", "mse"])  # needs --forget_sizes
+
+
+def test_theory_mode_ce(tmp_path):
+    """--theory with --loss ce: row-share weights in the signed CE loss, stage 3 a KL loss towards onehot (forget
+    rows) and the uniform distribution (retain rows); the whole pipeline runs and the table has the same columns."""
+    import torch
+    from experiments.cifar_unlearning import losses
+    from experiments.cifar_unlearning import train as T
+    # target_loss: ce = KL(target || softmax); zero at the target, uniform row = equal logits
+    logits = torch.tensor([[2.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]])
+    onehot = torch.nn.functional.one_hot(torch.tensor([0, 0]), 4).float()
+    uniform = torch.full((2, 4), 0.25)
+    expect = (torch.log(torch.tensor(0.25)) - torch.log_softmax(logits[0], 0).mean()).item()  # row 0; row 1 is 0
+    assert losses.target_loss(logits, uniform, "ce").item() == pytest.approx(0.5 * expect, abs=1e-6)
+    assert losses.target_loss(logits[1:], uniform[1:], "ce").item() == pytest.approx(0.0, abs=1e-6)
+    assert losses.target_loss(logits[1:], onehot[1:], "ce").item() == pytest.approx(
+        torch.log(torch.tensor(4.0)).item(), abs=1e-6)
+    # row weights scale the two CE terms
+    y = torch.tensor([0, 1])
+    base = losses.signed_unlearning_loss(logits, y, logits, y, 1.0, 0.5, "ce")
+    half = losses.signed_unlearning_loss(logits, y, logits, y, 1.0, 0.5, "ce", w_r=0.5, w_f=0.5)
+    assert half.item() == pytest.approx(0.5 * base.item(), abs=1e-6)
+
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--loss", "ce", "--pt_lr", "0.02"]
+    th = ["--theory", "--forget_sizes", "2", "12", "--ul_stop_rule", "none", "--ul_max_steps", "30",
+          "--ul_lr", "0.01", "--ul_forget_clip", "5", "--rl_loss_threshold", "1.0"]
+    run.main(["pretrain", "--seed", "0"] + common)
+    run.main(["retrain", "--exp", "pair-0-1", "--seed", "0"] + common)
+    for mu_f in ("0", "0.5"):
+        run.main(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0", "--ul_mu_f", mu_f] + common + th)
+    run.main(["references", "--exp", "pair-0-1", "--seed", "0"] + common + th)
+    r = run.read_json(out / "unlearn/exp=pair-0-1/seed=0/mu_f=0.5/rescale=none/t=12/result.json")
+    assert r["theory"] and r["n_rows"] == 12 and r["n_r"] + r["n_f"] == 12
+    split = run.load_split(str(out / "splits/exp=pair-0-1/seed=0.npz"))
+    ctx = run.Context(run.build_parser().parse_args(["unlearn_relearn", "--exp", "pair-0-1", "--seed", "0"] + common + th))
+    _, _, targets, n_r, n_f = run.theory_relearn_set(ctx, split, 12)
+    assert torch.allclose(targets[:n_r], torch.full((n_r, 10), 0.1).to(targets.device))
+    assert torch.allclose(targets[n_r:].sum(1), torch.ones(n_f).to(targets.device)) and targets[n_r:].max() == 1.0
+    aggregate.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    unl = pd.read_csv(tmp_path / "csv" / "unlearn.csv")
+    assert unl["theory"].all() and sorted(set(unl["n_rows"])) == [2, 12] and "rl_A_r8" in unl.columns
 
 
 

@@ -49,7 +49,8 @@ def signed_unlearning_loss(logits_r: torch.Tensor, y_r: torch.Tensor,
 
     ce:  mu_r * CE(retain) - mu_f * CE(forget). Unbounded below; the training loop's
          stop rule halts it. With forget_clip > 0 each forget image's CE is clipped at
-         that value, so the loss is bounded below by -mu_f * forget_clip.
+         that value, so the loss is bounded below by -mu_f * forget_clip. `w_r`, `w_f` weight the two terms
+         (row shares in --theory mode, as for mse).
     mse: the workshop paper's effective-target form, needing mu_r > mu_f. With
          rho = mu_f / (mu_r - mu_f), retain images regress to (1 + rho) * onehot and
          forget images to -rho * onehot, weighted by A = mu_r - mu_f. `w_r`, `w_f` weight the retain and
@@ -60,7 +61,7 @@ def signed_unlearning_loss(logits_r: torch.Tensor, y_r: torch.Tensor,
         ce_f = F.cross_entropy(logits_f, y_f, reduction="none")
         if forget_clip > 0:
             ce_f = ce_f.clamp(max=forget_clip)
-        return mu_r * F.cross_entropy(logits_r, y_r) - mu_f * ce_f.mean()
+        return mu_r * w_r * F.cross_entropy(logits_r, y_r) - mu_f * w_f * ce_f.mean()
     if kind == "mse":
         if not mu_r > mu_f:
             raise ValueError("the MSE effective-target loss needs mu_r > mu_f")
@@ -69,6 +70,18 @@ def signed_unlearning_loss(logits_r: torch.Tensor, y_r: torch.Tensor,
         target_r = (1.0 + rho) * F.one_hot(y_r, k).float()
         target_f = -rho * F.one_hot(y_f, k).float()
         return (mu_r - mu_f) * (w_r * _squared(logits_r, target_r) + w_f * _squared(logits_f, target_f))
+    raise ValueError(f"unknown loss kind {kind!r}")
+
+
+def target_loss(logits: torch.Tensor, targets: torch.Tensor, kind: str = "mse") -> torch.Tensor:
+    """Loss towards one target vector per row. mse: the squared loss over all outputs. ce: the KL divergence
+    from the target distribution to softmax(logits), i.e. soft-target cross-entropy minus the target's entropy, so
+    it reaches 0 (a one-hot row is the plain CE; a uniform row asks for equal logits, the CE counterpart of the
+    zero vector)."""
+    if kind == "mse":
+        return _squared(logits, targets)
+    if kind == "ce":
+        return F.kl_div(F.log_softmax(logits, dim=-1), targets, reduction="batchmean")
     raise ValueError(f"unknown loss kind {kind!r}")
 
 
