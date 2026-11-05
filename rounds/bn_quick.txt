@@ -1,0 +1,15 @@
+round bn_quick, published 2026-11-05T12:37:04+00:00, code f35404f
+              1100_0        cifar_unlearn  COMPLETED   00:10:36      0:0 
+              1100_1        cifar_unlearn  COMPLETED   00:10:40      0:0 
+              1101_0        cifar_unlearn  COMPLETED   00:02:56      0:0 
+              1102_0        cifar_unlearn  COMPLETED   00:00:12      0:0 
+              1102_1        cifar_unlearn  COMPLETED   00:00:16      0:0 
+              1103_0        cifar_unlearn  COMPLETED   00:00:13      0:0 
+              1103_1        cifar_unlearn  COMPLETED   00:00:20      0:0 
+              1104_0        cifar_unlearn  COMPLETED   00:02:56      0:0 
+              1104_1        cifar_unlearn  COMPLETED   00:00:38      0:0 
+              1105_0        cifar_unlearn  COMPLETED   00:01:49      0:0 
+              1106_0        cifar_unlearn  COMPLETED   00:00:16      0:0 
+              1106_1        cifar_unlearn  COMPLETED   00:00:27      0:0 
+              1107_0        cifar_unlearn  COMPLETED   00:00:18      0:0 
+              1107_1        cifar_unlearn  COMPLETED   00:00:24      0:0 
