@@ -431,6 +431,14 @@ def test_reeval_adds_r8(tmp_path):
     assert set(plot.select_unlearning_size(two, n0)["n_ul"]) == {n0}
     assert len(plot.select_unlearning_size(two, 7)) == 0
     assert plot.plot_pipeline("pair-0-1", pc, unl, refs, tmp_path / "fig", sweep=two, retain="8way", n_ul=n0)
+    # BatchNorm comparison: a second run set drawn solid over the first (dashed), restricted to the given mu_f
+    other = {"unlearn": unl, "refs": refs, "sweep": sw}
+    cmp_ = plot.plot_pipeline("pair-0-1", pc, unl, refs, tmp_path / "fig", sweep=sw, retain="8way", other=other,
+                              mu_fs=[0.5], name="cmp.png")
+    assert cmp_ and cmp_[0].name == "cmp.png" and cmp_[0].exists()
+    plot.main(["--src", str(tmp_path / "csv"), "--compare", str(tmp_path / "csv"), "--dest", str(tmp_path / "cmpfig"),
+               "--mu_fs", "0.5", "--loss", "mse"])
+    assert (tmp_path / "cmpfig" / "bn_comparison_pair-0-1_2way_8way.png").exists()
 
 
 def test_figure_title_names_the_loss():

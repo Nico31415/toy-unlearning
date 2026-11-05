@@ -37,6 +37,14 @@ for root in data/cifar_unlearning/*/; do
     > "$WT/$tag/figures.log" 2>&1 || echo "plot failed for $root" >> "$WT/$tag/figures.log"
 done
 
+# BatchNorm comparison per loss: frozen run set dashed, unfrozen solid (only if both roots were published)
+for pair in "mse mseaug mseaug_bn2" "ce ceaug_lr3 ceaug_bn2"; do
+  set -- $pair; l=$1; fz=$2; uf=$3
+  [[ -s $WT/$fz/unlearn.csv && -s $WT/$uf/unlearn.csv ]] || continue
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot.py --loss "$l" --src "$WT/$fz" --compare "$WT/$uf" --mu_fs 0 0.75 \
+    --dest "$WT/comparison/$l" > "$WT/comparison_$l.log" 2>&1 || echo "comparison failed for $l" >> "$WT/comparison_$l.log"
+done
+
 # job report: state of every job of the round, and the tail of the log of every task that did not complete
 mkdir -p "$WT/rounds"
 report="$WT/rounds/$name.txt"

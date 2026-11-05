@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import matplotlib
 
@@ -213,9 +213,34 @@ def select_unlearning_size(sweep: pd.DataFrame, n_ul: Optional[int] = None) -> p
     return sweep[sweep["n_ul"] == (n_ul if n_ul is not None else sweep["n_ul"].max())]
 
 
+def _pipeline_tables(exp, unlearn, refs, sweep, n_ul):
+    """The unlearn / references / sweep tables of one run set, reduced to what the pipeline figure draws
+    (theory rows take precedence over matched-retain rows; diverged relearning runs dropped). None if empty."""
+    if not len(unlearn) or "retain_matched" not in unlearn.columns:
+        return None
+    theory = "theory" in unlearn.columns and unlearn["theory"].astype(bool).any()
+    keep = unlearn["theory"].astype(bool) if theory else unlearn["retain_matched"].astype(bool)
+    u = unlearn[keep & (unlearn["rescale"] == "none")] if "rescale" in unlearn.columns else unlearn[keep]
+    if theory:
+        u = u.assign(n_f=u["n_rows"])
+        if "theory" in refs.columns:
+            refs = refs[refs["theory"].astype(bool) | (refs["model"] == "pretrained")]
+            refs = refs.assign(n_f=refs["n_rows"].where(refs["theory"].astype(bool), refs["n_f"]))
+    if not len(u) or not len(refs):
+        return None
+    if sweep is not None:
+        sweep = sweep[(sweep["exp"] == exp) & (sweep["rl_status"] != "diverged")] if "exp" in sweep.columns \
+            else sweep[sweep["rl_status"] != "diverged"]
+        sweep = select_unlearning_size(sweep, n_ul)
+        sweep = sweep if len(sweep) else None
+    return u, refs, sweep, theory
+
+
 def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs: pd.DataFrame, dest: Path,
                   forget: str = "2way", sweep: Optional[pd.DataFrame] = None,
-                  retain: str = "10way", n_ul: Optional[int] = None, loss: str = "") -> List[Path]:
+                  retain: str = "10way", n_ul: Optional[int] = None, loss: str = "",
+                  other: Optional[dict] = None, mu_fs: Optional[List[float]] = None,
+                  labels: Tuple[str, str] = ("BN frozen", "BN unfrozen"), name: Optional[str] = None) -> List[Path]:
     """The three stages as test accuracy against the number of samples each used (symlog x axis, n = 0 is the model before the stage; mean and
     standard error over seeds as a line with an error bar at every point).
 
@@ -227,101 +252,100 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
     models unlearned with a fixed n_UL on n_RL images. Runs that diverged are left out. `retain` "8way" measures
     the kept classes with the argmax over their own logits only (A_r8), the counterpart of the 2-way forget
     measure. `n_ul`: which unlearning size panel (d) starts from when the sweep table holds several (default: the
-    largest)."""
+    largest). `other`: a second run set (dict with unlearn, refs, sweep) drawn solid over the first, which is then
+    dashed (the two labelled by `labels` = (first, second)); `mu_fs` restricts the mu_f drawn."""
     import numpy as np
     from matplotlib.lines import Line2D
 
     r_col = "A_r8" if retain == "8way" else "A_r"
-    if not exp.startswith("pair-") or not len(unlearn) or "retain_matched" not in unlearn.columns:
+    if not exp.startswith("pair-"):
         return []
-    # --theory runs (n = rows of both kinds) take precedence over matched-retain runs (n = forget images)
-    theory = "theory" in unlearn.columns and unlearn["theory"].astype(bool).any()
-    keep = unlearn["theory"].astype(bool) if theory else unlearn["retain_matched"].astype(bool)
-    u = unlearn[keep & (unlearn["rescale"] == "none")] if "rescale" in unlearn.columns else unlearn[keep]
-    if theory:
-        u = u.assign(n_f=u["n_rows"])
-        if "theory" in refs.columns:
-            refs = refs[refs["theory"].astype(bool) | (refs["model"] == "pretrained")]
-            refs = refs.assign(n_f=refs["n_rows"].where(refs["theory"].astype(bool), refs["n_f"]))
-    if not len(u) or not len(refs):
+    sets = [(_pipeline_tables(exp, unlearn, refs, sweep, n_ul), "--" if other else "-")]
+    if other:
+        sets.append((_pipeline_tables(exp, other["unlearn"], other["refs"], other.get("sweep"), n_ul), "-"))
+    if any(t is None for t, _ in sets):
         return []
+    theory = sets[0][0][3]
+    has_sweep = all(t[2] is not None for t, _ in sets)
     pair = tuple(int(v) for v in exp[len("pair-"):].split("-"))
     f_col = "A_f2" if forget == "2way" else "A_f10"
-    if sweep is not None:
-        sweep = sweep[(sweep["exp"] == exp) & (sweep["rl_status"] != "diverged")] if "exp" in sweep.columns \
-            else sweep[sweep["rl_status"] != "diverged"]
-        sweep = select_unlearning_size(sweep, n_ul)
-        sweep = sweep if len(sweep) else None
 
-    mu_fs = sorted(float(m) for m in u["mu_f"].unique())
+    all_mu = sorted({float(m) for (t, _) in sets for m in t[0]["mu_f"].unique()})
+    mu_fs = [m for m in all_mu if mu_fs is None or m in mu_fs]
     cmap = plt.get_cmap("viridis")
     colors = {m: cmap(0.9 * i / max(len(mu_fs) - 1, 1)) for i, m in enumerate(mu_fs)}
     pre_color = "#444444"
-    n_cols = 4 if sweep is not None else 3
+    n_cols = 4 if has_sweep else 3
     fig, axes = plt.subplots(2, n_cols, figsize=(3.6 * n_cols, 6.2), sharey="row")
 
-    def draw(ax, frame: pd.DataFrame, col: str, color, marker="o", lw=1.8) -> None:
+    def draw(ax, frame: pd.DataFrame, col: str, color, marker="o", lw=1.8, ls="-") -> None:
         """Accuracy in column `col` against n: mean line with standard-error bars."""
         frame = frame.assign(err=lambda f: f[col])
         stats = frame.groupby("n")["err"].agg(["mean", "sem"]).reset_index().sort_values("n")
         sem = stats["sem"].fillna(0).to_numpy()
         mean = stats["mean"].to_numpy()
-        ax.errorbar(stats["n"], mean, yerr=sem, color=color, marker=marker, ms=3.5,
+        ax.errorbar(stats["n"], mean, yerr=sem, color=color, marker=marker, ms=3.5, ls=ls,
                     lw=lw, elinewidth=1.1, capsize=2.5, capthick=1.1)
 
     def rows(frame: pd.DataFrame, r: str, f: str) -> pd.DataFrame:
         return frame.assign(n=frame["n_f"], acc_r=frame[r], acc_f=frame[f])
 
-    def levels(model: str) -> pd.DataFrame:
-        """Per-seed accuracy of a reference model before relearning, as columns seed, acc_r, acc_f."""
-        g = refs[refs["model"] == model].groupby("seed")[[f"before_{r_col}", f"before_{f_col}"]].first()
-        return g.rename(columns={f"before_{r_col}": "acc_r", f"before_{f_col}": "acc_f"}).reset_index()
-
     def anchored(frame: pd.DataFrame, start: pd.DataFrame) -> pd.DataFrame:
         """Add the n = 0 point (one row per seed: the model before the stage) to a table of n, acc_r, acc_f."""
         return pd.concat([start[["seed", "acc_r", "acc_f"]].assign(n=0), frame[["seed", "n", "acc_r", "acc_f"]]])
 
-    # (a) pretraining
-    if len(pretrain) and (forget == "10way" or f"pair_{pair[0]}_{pair[1]}" in pretrain.columns):
-        frame = _pair_accuracy(pretrain, pair, forget, retain)
-        frame = frame[frame["n"] > 0]  # no point at n = 0 (the untrained network)
-        frame = pd.concat([frame, levels("pretrained").assign(n=50000)[["seed", "n", "acc_r", "acc_f"]]])
-        draw(axes[0, 0], frame, "acc_r", pre_color)
-        draw(axes[1, 0], frame, "acc_f", pre_color)
-    else:
-        axes[0, 0].text(0.5, 0.5, "n/a: no pretrain_curve results", ha="center", transform=axes[0, 0].transAxes)
-    # (b) unlearning, (c) relearning
-    for m in mu_fs:
-        group = u[u["mu_f"].astype(float) == m]
-        for stage, ax_col in (("ul", 1), ("rl", 2)):
-            frame = anchored(rows(group, f"{stage}_{r_col}", f"{stage}_{f_col}"), levels("pretrained"))
-            draw(axes[0, ax_col], frame, "acc_r", colors[m])
-            draw(axes[1, ax_col], frame, "acc_f", colors[m])
-    fresh = refs[refs["model"] == "scratch"]
-    if len(fresh):
-        frame = anchored(rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), levels("scratch"))
-        draw(axes[1, 2], frame, "acc_f", SCRATCH_COLOR, marker="s", lw=2.2)
-    if sweep is not None:
+    for idx, ((u, refs_, sw, _), ls) in enumerate(sets):
+        def levels(model: str) -> pd.DataFrame:
+            """Per-seed accuracy of a reference model before relearning, as columns seed, acc_r, acc_f."""
+            g = refs_[refs_["model"] == model].groupby("seed")[[f"before_{r_col}", f"before_{f_col}"]].first()
+            return g.rename(columns={f"before_{r_col}": "acc_r", f"before_{f_col}": "acc_f"}).reset_index()
+
+        # (a) pretraining (stage 1 is shared by both run sets, drawn once)
+        if idx == 0:
+            if len(pretrain) and (forget == "10way" or f"pair_{pair[0]}_{pair[1]}" in pretrain.columns):
+                frame = _pair_accuracy(pretrain, pair, forget, retain)
+                frame = frame[frame["n"] > 0]  # no point at n = 0 (the untrained network)
+                frame = pd.concat([frame, levels("pretrained").assign(n=50000)[["seed", "n", "acc_r", "acc_f"]]])
+                draw(axes[0, 0], frame, "acc_r", pre_color)
+                draw(axes[1, 0], frame, "acc_f", pre_color)
+            else:
+                axes[0, 0].text(0.5, 0.5, "n/a: no pretrain_curve results", ha="center", transform=axes[0, 0].transAxes)
+        # (b) unlearning, (c) relearning
         for m in mu_fs:
-            group = sweep[sweep["mu_f"].astype(float) == m]
-            start = group.groupby("seed")[[f"ul_{r_col}", f"ul_{f_col}"]].first().rename(
-                columns={f"ul_{r_col}": "acc_r", f"ul_{f_col}": "acc_f"}).reset_index()
-            frame = anchored(group.assign(n=group["n_rows"], acc_r=group[f"rl_{r_col}"], acc_f=group[f"rl_{f_col}"]), start)
-            draw(axes[0, 3], frame, "acc_r", colors[m])
-            draw(axes[1, 3], frame, "acc_f", colors[m])
+            group = u[u["mu_f"].astype(float) == m]
+            if not len(group):
+                continue
+            for stage, ax_col in (("ul", 1), ("rl", 2)):
+                frame = anchored(rows(group, f"{stage}_{r_col}", f"{stage}_{f_col}"), levels("pretrained"))
+                draw(axes[0, ax_col], frame, "acc_r", colors[m], ls=ls)
+                draw(axes[1, ax_col], frame, "acc_f", colors[m], ls=ls)
+        fresh = refs_[refs_["model"] == "scratch"]
         if len(fresh):
-            draw(axes[1, 3], anchored(rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), levels("scratch")), "acc_f", SCRATCH_COLOR,
-                 marker="s", lw=2.2)
+            frame = anchored(rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), levels("scratch"))
+            draw(axes[1, 2], frame, "acc_f", SCRATCH_COLOR, marker="s", lw=2.2, ls=ls)
+        if has_sweep:
+            for m in mu_fs:
+                group = sw[sw["mu_f"].astype(float) == m]
+                if not len(group):
+                    continue
+                start = group.groupby("seed")[[f"ul_{r_col}", f"ul_{f_col}"]].first().rename(
+                    columns={f"ul_{r_col}": "acc_r", f"ul_{f_col}": "acc_f"}).reset_index()
+                frame = anchored(group.assign(n=group["n_rows"], acc_r=group[f"rl_{r_col}"], acc_f=group[f"rl_{f_col}"]), start)
+                draw(axes[0, 3], frame, "acc_r", colors[m], ls=ls)
+                draw(axes[1, 3], frame, "acc_f", colors[m], ls=ls)
+            if len(fresh):
+                draw(axes[1, 3], anchored(rows(fresh, f"rl_{r_col}", f"rl_{f_col}"), levels("scratch")), "acc_f", SCRATCH_COLOR,
+                     marker="s", lw=2.2, ls=ls)
 
     names = ["pretraining", "unlearning", "relearning ($n_{UL}$ = $n_{RL}$)"]
     xlabels = ["Number of samples", "Number of samples" + (" (rows)" if theory else ""), "Number of samples"]
-    if sweep is not None:
-        names.append(f"relearning from $n_{{UL}}$ = {int(sweep['n_ul'].iloc[0])}")
+    if has_sweep:
+        names.append(f"relearning from $n_{{UL}}$ = {int(sets[0][0][2]['n_ul'].iloc[0])}")
         xlabels.append("Number of relearning samples")
-    for j, (name, xlabel) in enumerate(zip(names, xlabels)):
+    for j, (title, xlabel) in enumerate(zip(names, xlabels)):
         axes[0, j].text(-0.02, 1.12, "abcd"[j], transform=axes[0, j].transAxes, fontsize=20, fontweight="bold",
                         va="bottom", ha="right")
-        axes[0, j].set_title(name, fontsize=11, style="italic", loc="right")
+        axes[0, j].set_title(title, fontsize=11, style="italic", loc="right")
         axes[1, j].set_xlabel(xlabel)
         for i in range(2):
             ax = axes[i, j]
@@ -335,22 +359,57 @@ def plot_pipeline(exp: str, pretrain: pd.DataFrame, unlearn: pd.DataFrame, refs:
             ax.tick_params(labelbottom=True)
     axes[0, 0].set_ylabel(f"Accuracy, R ({retain[:-3]}-way)", fontsize=10)
     axes[1, 0].set_ylabel(f"Accuracy, F ({forget[:-3]}-way)", fontsize=10)
-    handles = [Line2D([], [], color=colors[m], lw=2, label=f"{m:g}") for m in mu_fs]
-    labels = [f"$\\mu_f$ = {m:g}" for m in mu_fs]
-    if len(fresh):
+    handles = [Line2D([], [], color=colors[m], lw=2) for m in mu_fs]
+    leg = [f"$\\mu_f$ = {m:g}" for m in mu_fs]
+    if (sets[0][0][1]["model"] == "scratch").any():
         handles.append(Line2D([], [], color=SCRATCH_COLOR, lw=2.2, marker="s", ms=3.5))
-        labels.append("from scratch")
+        leg.append("from scratch")
     handles.insert(0, Line2D([], [], color=pre_color, lw=2))
-    labels.insert(0, "pretraining")
-    fig.legend(handles, labels, loc="lower center", ncol=len(handles), fontsize=9, frameon=False)
+    leg.insert(0, "pretraining")
+    if other:
+        handles += [Line2D([], [], color="k", lw=2, ls="--"), Line2D([], [], color="k", lw=2, ls="-")]
+        leg += list(labels)
+    fig.legend(handles, leg, loc="lower center", ncol=len(handles), fontsize=9, frameon=False)
     fig.suptitle(f"{_title(exp, loss)}: R = kept classes, F = forgotten classes (mean $\\pm$ s.e.m. over seeds)",
                  fontsize=10, y=0.995)
     fig.tight_layout(rect=(0, 0.05, 1, 0.98))
     Path(dest).mkdir(parents=True, exist_ok=True)
-    path = Path(dest) / f"pipeline_{exp}_{forget}{'_r8' if retain == '8way' else ''}{'_sweep' if sweep is not None else ''}.png"
+    path = Path(dest) / (name or f"pipeline_{exp}_{forget}{'_r8' if retain == '8way' else ''}{'_sweep' if has_sweep else ''}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return [path]
+
+
+def _read_tables(src: Path) -> dict:
+    def read(name: str) -> pd.DataFrame:
+        path = src / f"{name}.csv"
+        return pd.read_csv(path) if path.exists() and path.stat().st_size > 1 else pd.DataFrame()
+    return {"unlearn": read("unlearn"), "refs": read("references"), "pretrain": read("pretrain_curve"),
+            "sweep": read("relearn_sweep")}
+
+
+def compare(frozen_src: Path, unfrozen_src: Path, dest: Path, loss: str, n_ul: Optional[int],
+            mu_fs: Optional[List[float]]) -> None:
+    """One pipeline figure per exp and measure with the BatchNorm-frozen runs dashed and the unfrozen ones solid."""
+    a, b = _read_tables(frozen_src), _read_tables(unfrozen_src)
+    if not len(a["unlearn"]) or not len(b["unlearn"]):
+        print("compare: a source has no unlearn table")
+        return
+    for exp in sorted(set(a["unlearn"]["exp"]) & set(b["unlearn"]["exp"])):
+        def sel(t, key):
+            return t[key][t[key]["exp"] == exp] if len(t[key]) else t[key]
+        sw_a = sel(a, "sweep") if len(a["sweep"]) else None
+        sw_b = sel(b, "sweep") if len(b["sweep"]) else None
+        other = {"unlearn": sel(b, "unlearn"), "refs": sel(b, "refs"), "sweep": sw_b}
+        for retain in ("8way",):
+            for forget in ("2way",):
+                try:
+                    for path in plot_pipeline(exp, a["pretrain"], sel(a, "unlearn"), sel(a, "refs"), dest, forget, sweep=sw_a,
+                                              retain=retain, n_ul=n_ul, loss=loss, other=other, mu_fs=mu_fs,
+                                              name=f"bn_comparison_{exp}_{forget}_{retain}.png"):
+                        print(f"wrote {path}")
+                except Exception as err:  # noqa: BLE001
+                    print(f"FAILED comparison for {exp}: {type(err).__name__}: {err}")
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -358,6 +417,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--loss", default="ce")
     parser.add_argument("--src", default=None)
     parser.add_argument("--dest", default=None)
+    parser.add_argument("--compare", default=None,
+                        help="a second --src (BatchNorm unfrozen): one figure per exp with --src dashed (frozen) and this solid")
+    parser.add_argument("--mu_fs", type=float, nargs="*", default=None, help="restrict the comparison to these mu_f")
     parser.add_argument("--note", default="", help="extra text for the figure titles, e.g. the BatchNorm setting")
     parser.add_argument("--n_ul", type=int, default=None,
                         help="the unlearning size panel (d) of the pipeline figures starts from (default: the largest)")
@@ -366,6 +428,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     dest = Path(args.dest or f"figures/cifar_unlearning/{args.loss}")
     dest.mkdir(parents=True, exist_ok=True)
     args.loss = _title_label(args.loss, args.note)  # the figure functions only use it in titles
+    if args.compare:
+        compare(src, Path(args.compare), dest, args.loss, args.n_ul, args.mu_fs)
+        return
 
     def read(name: str) -> pd.DataFrame:
         path = src / f"{name}.csv"
