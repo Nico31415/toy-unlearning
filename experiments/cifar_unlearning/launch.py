@@ -43,8 +43,9 @@ def experiments(out_root: Path, exps: Optional[List[str]], all_pairs: bool, num_
     return pairs + ["random"]
 
 
-def build_array(stage: str, exps: List[str], mu_fs: Optional[List[float]] = None) -> ArgparseArray:
-    seeds = list(DEFAULT_SEEDS)
+def build_array(stage: str, exps: List[str], mu_fs: Optional[List[float]] = None,
+                seeds: Optional[List[int]] = None) -> ArgparseArray:
+    seeds = list(seeds or DEFAULT_SEEDS)
     fractions = list(DEFAULT_FRACTIONS)
     if stage == "pretrain":
         return ArgparseArray(posarg0="pretrain", seed=seeds)
@@ -96,6 +97,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--loss", default="ce")
     parser.add_argument("--out_root", default=None)
     parser.add_argument("--exps", nargs="+", default=None)
+    parser.add_argument("--seeds", type=int, nargs="+", default=None,
+                        help="the seeds of the array (default all five); e.g. --seeds 0 for a quick round")
     parser.add_argument("--mu_fs", type=float, nargs="+", default=None,
                         help="unlearn_relearn: the mu_f values of the array (default 0.25 0.5 0.75)")
     parser.add_argument("--all_pairs", action="store_true")
@@ -104,7 +107,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     needs_exps = args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent")
     exps = experiments(out_root, args.exps, args.all_pairs) if needs_exps else []
-    array = build_array(args.stage, exps, args.mu_fs)
+    array = build_array(args.stage, exps, args.mu_fs, args.seeds)
     if args.count:
         print(task_count(array))
         return
