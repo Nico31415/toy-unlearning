@@ -149,3 +149,30 @@ and the log tails of tasks that did not complete). The results branch lives in a
 (`/var/tmp/na658/results-wt`), so the code checkout is never touched. `rounds/publish_only.sh` submits
 nothing and only publishes what is on disk. Pushing needs a git credential on blackwell (a fine-grained
 token with Contents read/write on this repository, stored with `git config --global credential.helper store`).
+
+## Phase experiments (the CIFAR plan, E0-E8)
+
+Code: `phase.py` (stages `family`, `phase`, `phase_relearn`), `probes.py` (layer read-outs), `aggregate_phase.py`,
+`plot_phase.py`. Rounds: `rounds/ph_*.sh` with shared settings in `rounds/_phase.sh` (root `mseaug_ph`, pair-1-7, MSE,
+augmentation, BatchNorm unfrozen in stages 2 and 3). Run them in this order:
+
+    bash experiments/cifar_unlearning/round.sh ph_quick   # 3 family members + one cell of everything, seed 0 (~4 GPU-h)
+    bash experiments/cifar_unlearning/round.sh ph_e0      # the pretraining family, 16 L x 3 seeds (E0, E1)
+    bash experiments/cifar_unlearning/round.sh ph_e2      # after ph_e0: phase diagram of the forget loss (E2, E8 dynamics)
+    bash experiments/cifar_unlearning/round.sh ph_e3      # which loss: F, FR, R (E3)
+    bash experiments/cifar_unlearning/round.sh ph_e4      # rescaling, incl. the homogeneous VGG-11 without BatchNorm (E4)
+    bash experiments/cifar_unlearning/round.sh ph_e5      # three single classes, targets ybar / oracle / approx (E5)
+    bash experiments/cifar_unlearning/round.sh ph_e6      # full, readout-only and linearised removal (E6)
+    bash experiments/cifar_unlearning/round.sh ph_e7      # after the stage-2 rounds: relearning attacks (E7)
+
+The probes (E8) run inside every `phase` job. Results land on the `results` branch under `<root>/phase/`: family.csv,
+phase.csv, phase_relearn.csv, noise.csv and figures (phase maps on axes in units of n_learn, residual decodability per
+layer, relearning cost against residual decodability).
+
+Design. The pretraining family A(L) trains on every retain image plus the first L images of a nested forget order (the
+last `--ph_n_attack` images of the forget pool are reserved for attacks and never trained on). S is the last n_S of
+S_full = the first L_full, so A(D minus S) = A(L_full - n_S) and A(D minus S_full) = A(0) are family members. Distances
+are measured on held-out forget-class test images (logits for MSE, log-probabilities for CE), normalised by the distance
+between A(D) and A(0). `--ph_rs_mode function` scales the network's function by S: only the head in a BatchNorm ResNet,
+every weight by S^(1/L) in the homogeneous `vgg11_plain` (a ResNet is not homogeneous: its skips bypass the residual
+branches). See phase.py's docstring for the methods, targets and arms.

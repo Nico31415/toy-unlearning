@@ -114,6 +114,23 @@ class RepresentationConfig:
     max_support_retain: int = 5000
 
 
+@dataclass
+class PhaseConfig:
+    """The phase experiments (E0-E8 of the CIFAR plan): pretraining family, stage-2 grid, read-outs."""
+    # The last n_attack images of the forget pool are reserved for relearning attacks; the pretraining family
+    # draws its forget images from the rest, so attack images are never in any model's training set.
+    n_attack: int = 1000
+    # Probe fitting: this many removed images never trained on (P_f) plus this many kept-class test images.
+    probe_train_forget: int = 1000
+    probe_train_retain: int = 1000
+    # Probe evaluation: every forget-class test image plus at most this many other kept-class test images.
+    probe_eval_retain: int = 2000
+    # Stage 2 checks every source's loss on at most this many of its rows.
+    loss_eval_max: int = 2000
+    # Read-outs (probes, distances) every this many stage-2 steps (0 = only at the end).
+    track_every: int = 0
+
+
 # group name -> (dataclass, flag prefix)
 GROUPS = {
     "data": (DataConfig, ""),
@@ -123,6 +140,7 @@ GROUPS = {
     "rl": (RelearnConfig, "rl_"),
     "rs": (RescaleConfig, "rs_"),
     "rep": (RepresentationConfig, "rep_"),
+    "ph": (PhaseConfig, "ph_"),
 }
 
 

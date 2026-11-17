@@ -27,7 +27,7 @@ from experiments.cifar_unlearning import run  # noqa: E402
 from experiments.cifar_unlearning.config import DEFAULT_FRACTIONS, DEFAULT_MU_F, DEFAULT_SEEDS  # noqa: E402
 
 ARRAY_STAGES = ("pretrain", "pretrain_curve", "select_pairs", "retrain", "unlearn_relearn", "relearn_sweep", "references",
-                "reeval", "represent")
+                "reeval", "represent", "family", "phase", "phase_relearn")
 
 
 def experiments(out_root: Path, exps: Optional[List[str]], all_pairs: bool, num_classes: int = 10) -> List[str]:
@@ -44,8 +44,18 @@ def experiments(out_root: Path, exps: Optional[List[str]], all_pairs: bool, num_
 
 
 def build_array(stage: str, exps: List[str], mu_fs: Optional[List[float]] = None,
-                seeds: Optional[List[int]] = None) -> ArgparseArray:
+                seeds: Optional[List[int]] = None, fam_Ls: Optional[List[int]] = None,
+                Lfulls: Optional[List[int]] = None, methods: Optional[List[str]] = None) -> ArgparseArray:
+    """Phase stages: family is one task per (exp, seed, L); phase one task per (exp, seed, L_full, method), looping
+    over the n_S, targets, arms and rescalings given as run.py flags; phase_relearn one task per (exp, seed, L_full)."""
     seeds = list(seeds or DEFAULT_SEEDS)
+    if stage == "family":
+        return ArgparseArray(posarg0="family", exp=exps, seed=seeds, fam_L=list(fam_Ls or [0]))
+    if stage == "phase":
+        return ArgparseArray(posarg0="phase", exp=exps, seed=seeds, ph_Lfull=list(Lfulls or [1000]),
+                             ph_methods=list(methods or ["F"]))
+    if stage == "phase_relearn":
+        return ArgparseArray(posarg0="phase_relearn", exp=exps, seed=seeds, ph_Lfull=list(Lfulls or [1000]))
     fractions = list(DEFAULT_FRACTIONS)
     if stage == "pretrain":
         return ArgparseArray(posarg0="pretrain", seed=seeds)
@@ -102,12 +112,18 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--mu_fs", type=float, nargs="+", default=None,
                         help="unlearn_relearn: the mu_f values of the array (default 0.25 0.5 0.75)")
     parser.add_argument("--all_pairs", action="store_true")
+    parser.add_argument("--fam_Ls", type=int, nargs="+", default=None, help="family: one task per L")
+    parser.add_argument("--Lfulls", type=int, nargs="+", default=None, help="phase, phase_relearn: one task per L_full")
+    parser.add_argument("--methods", nargs="+", default=None, help="phase: one task per method (F, FR, R)")
     args, passthrough = parser.parse_known_args(argv)
     out_root = Path(args.out_root or f"data/cifar_unlearning/{args.loss}")
 
-    needs_exps = args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent")
+    needs_exps = args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent",
+                                "family", "phase", "phase_relearn")
+    if args.stage in ("family", "phase", "phase_relearn") and not args.exps:
+        raise SystemExit(f"{args.stage} needs --exps (e.g. pair-1-7 or class-1)")
     exps = experiments(out_root, args.exps, args.all_pairs) if needs_exps else []
-    array = build_array(args.stage, exps, args.mu_fs, args.seeds)
+    array = build_array(args.stage, exps, args.mu_fs, args.seeds, args.fam_Ls, args.Lfulls, args.methods)
     if args.count:
         print(task_count(array))
         return

@@ -37,6 +37,18 @@ for root in data/cifar_unlearning/*/; do
     > "$WT/$tag/figures.log" 2>&1 || echo "plot failed for $root" >> "$WT/$tag/figures.log"
 done
 
+# phase experiments (rounds/ph_*.sh): family, stage-2 grid, read-outs and relearning, into <root>/phase/
+for root in data/cifar_unlearning/*/; do
+  root=${root%/}; tag=$(basename "$root")
+  [[ -d $root/family || -d $root/phase ]] || continue
+  dest="$WT/$tag/phase"; mkdir -p "$dest"
+  "$PY" experiments/cifar_unlearning/aggregate_phase.py --out_root "$root" --dest "$dest" > "$dest/aggregate.log" 2>&1 \
+    || echo "aggregate_phase failed for $root" >> "$dest/aggregate.log"
+  rm -rf "$dest/figures"
+  MPLBACKEND=Agg "$PY" experiments/cifar_unlearning/plot_phase.py --src "$dest" --dest "$dest/figures" > "$dest/figures.log" 2>&1 \
+    || echo "plot_phase failed for $root" >> "$dest/figures.log"
+done
+
 # S sweeps (rounds/rs_*.sh): accuracy against the rescaling factor, for every root that holds rescaled runs
 for root in "$WT"/*/; do
   [[ -s ${root}unlearn.csv ]] && grep -q "all-S\|weights-S" "${root}unlearn.csv" || continue

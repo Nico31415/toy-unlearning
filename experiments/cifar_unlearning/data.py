@@ -141,8 +141,10 @@ def load_split(path: str) -> Split:
                      **{name: blob[name] for name in SPLIT_ARRAYS})
 
 
-def experiment_name(kind: str, pair: Optional[Tuple[int, int]] = None) -> str:
+def experiment_name(kind: str, pair: Optional[Tuple[int, ...]] = None) -> str:
     if kind == "class":
+        if len(pair) == 1:
+            return f"class-{pair[0]}"
         a, b = sorted(pair)
         return f"pair-{a}-{b}"
     if kind == "random":
@@ -153,12 +155,14 @@ def experiment_name(kind: str, pair: Optional[Tuple[int, int]] = None) -> str:
 def parse_experiment(name: str) -> Tuple[str, Optional[Tuple[int, int]]]:
     if name == "random":
         return "random", None
+    if name.startswith("class-"):  # a single forgotten class: pair is then the 1-tuple (K,)
+        return "class", (int(name[len("class-"):]),)
     if name.startswith("pair-"):
         a, b = (int(v) for v in name[len("pair-"):].split("-"))
         if a == b:
             raise ValueError(f"a pair needs two different classes, got {name!r}")
         return "class", (min(a, b), max(a, b))
-    raise ValueError(f"unknown experiment {name!r}; expected 'random' or 'pair-A-B'")
+    raise ValueError(f"unknown experiment {name!r}; expected 'random', 'pair-A-B' or 'class-K'")
 
 
 def make_split(ds: Dataset, experiment: str, seed: int, n_forget: int = 10000,

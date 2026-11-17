@@ -92,10 +92,11 @@ def evaluate(model: nn.Module, ev: EvalSets, pair: Optional[Sequence[int]]) -> D
     if pair is not None:
         logits_f = predict_logits(model, ev.x_test_forget)
         out["A_f10"] = accuracy(logits_f, ev.y_test_forget)
-        out["A_f2"] = two_way_accuracy(logits_f, ev.y_test_forget, pair)
+        if len(pair) == 2:  # the 2-way accuracies exist only for a forgotten pair (not for class-K)
+            out["A_f2"] = two_way_accuracy(logits_f, ev.y_test_forget, pair)
+            out["probe_acc2"] = two_way_accuracy(logits_p, ev.y_probe, pair)
         out["A_r8"] = kept_class_accuracy(logits_r, ev.y_test_retain, pair)
         out["ce_f"] = per_sample_ce(logits_f, ev.y_test_forget).mean().item()
-        out["probe_acc2"] = two_way_accuracy(logits_p, ev.y_probe, pair)
         nonmember_losses = per_sample_ce(logits_f, ev.y_test_forget)
     else:
         # In the random split the non-members are the whole test set, which is T_r.

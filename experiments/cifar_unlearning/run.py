@@ -12,8 +12,13 @@ Stages, in order:
                      (--forget_sizes n1 n2 ...: n forget images and the whole retain set instead)
     references       --exp E --seed S              relearn Pretrained, Retrain and Scratch at every fraction
     represent        --exp E --seed S              CKA and k-NN analysis of every saved model (post hoc)
+    family           --exp E --seed S --fam_L L..  pretraining family A(L) (phase experiments, see phase.py)
+    phase            --exp E --seed S --ph_Lfull L stage-2 grid from A(L) with distances and layer read-outs
+    phase_relearn    --exp E --seed S --ph_Lfull L relearning attacks from the phase models and the references
 
-E is "random" or "pair-A-B". Every model is saved: Pretrained and Retrain in fp32,
+E is "random", "pair-A-B" or "class-K" (one forgotten class; phase experiments only need a class split).
+
+Every model is saved: Pretrained and Retrain in fp32,
 every unlearned model before and after relearning and every relearned reference in
 fp16. Every run writes result.json under --out_root and is skipped when its result.json exists, so a SLURM
 array can be resubmitted safely. A run that fails a check writes failed.json and
@@ -52,13 +57,15 @@ from experiments.cifar_unlearning.representation import (  # noqa: E402
 from experiments.cifar_unlearning.models import (  # noqa: E402
     build_model, is_identity_rescale, load_state, mean_logit_norm, recalibrate_bn, rescale_,
     state_dict_fp16, weight_norms)
+from experiments.cifar_unlearning import phase  # noqa: E402
+from experiments.cifar_unlearning.phase import ARMS, METHODS, TARGETS  # noqa: E402
 from experiments.cifar_unlearning import train as train_module  # noqa: E402
 from experiments.cifar_unlearning.train import (  # noqa: E402
     relearn, train_from_scratch, unlearn)
 
 log = partial(print, flush=True)
 STAGES = ("download", "pretrain", "pretrain_curve", "select_pairs", "retrain", "unlearn_relearn", "relearn_sweep",
-          "references", "reeval", "represent")
+          "references", "reeval", "represent", "family", "phase", "phase_relearn")
 REFERENCE_MODELS = ("pretrained", "retrain", "scratch")
 
 
@@ -282,6 +289,9 @@ STAGE_GROUPS = {
     "reeval": (),
     "references": ("data", "model", "rl"),
     "represent": ("data", "model", "rep"),
+    "family": ("data", "model", "pt"),
+    "phase": ("data", "model", "ul", "ph"),
+    "phase_relearn": ("data", "model", "rl"),
 }
 
 
@@ -740,6 +750,20 @@ def build_parser() -> argparse.ArgumentParser:
                              "on forget rows, uniform on retain rows); folders t=<n>")
     parser.add_argument("--ul_from", type=int, default=None,
                         help="relearn_sweep: the number of unlearning rows of the unlearned model to relearn")
+    parser.add_argument("--fam_L", type=int, nargs="+", default=None,
+                        help="family: train A(L) for each L (every retain image plus the first L forget images)")
+    parser.add_argument("--ph_Lfull", type=int, default=None, help="phase, phase_relearn: |S_full| (L of A(D))")
+    parser.add_argument("--family_root", type=str, default=None,
+                        help="phase, phase_relearn: read the pretraining family from this root instead of --out_root")
+    parser.add_argument("--ph_nS", type=int, nargs="+", default=[100], help="phase: forget-set sizes n_S")
+    parser.add_argument("--ph_methods", nargs="+", default=["F"], help="phase: F, FR and/or R")
+    parser.add_argument("--ph_targets", nargs="+", default=["ybar"], help="phase: ybar, neg, oracle and/or approx")
+    parser.add_argument("--ph_arms", nargs="+", default=["full"], help="phase: full, readout and/or linear")
+    parser.add_argument("--ph_S", type=float, nargs="+", default=[1.0], help="phase: rescaling factors")
+    parser.add_argument("--ph_rs_mode", default="function",
+                        help="phase: rescaling mode (function: the logits times S, as in the toy; see models.rescale_)")
+    parser.add_argument("--ph_nRL", type=int, nargs="+", default=[10, 30, 100, 300, 1000],
+                        help="phase_relearn: attack sizes")
     parser.add_argument("--n_pairs", type=int, default=3)
     parser.add_argument("--loss", choices=LOSS_KINDS, default="ce")
     parser.add_argument("--out_root", type=str, default=None,
@@ -757,7 +781,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     train_module.set_augment(args.augment)
     if args.theory and (not args.forget_sizes or args.match_retain):
         raise SystemExit("--theory needs --forget_sizes and excludes --match_retain")
-    if args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent"):
+    for name, allowed in (("ph_methods", METHODS), ("ph_targets", TARGETS), ("ph_arms", ARMS)):
+        bad = [v for v in getattr(args, name) if v not in allowed]
+        if bad:
+            raise SystemExit(f"--{name}: {bad} not in {allowed}")
+    if args.stage in ("retrain", "unlearn_relearn", "relearn_sweep", "references", "reeval", "represent", "family",
+                      "phase", "phase_relearn"):
         if args.exp is None:
             raise SystemExit(f"--exp is required for {args.stage}")
         parse_experiment(args.exp)  # validate early
@@ -774,6 +803,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "reeval": stage_reeval,
         "references": stage_references,
         "represent": stage_represent,
+        "family": phase.stage_family,
+        "phase": phase.stage_phase,
+        "phase_relearn": phase.stage_phase_relearn,
     }[args.stage](ctx)
 
 

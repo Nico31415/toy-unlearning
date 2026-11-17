@@ -188,7 +188,15 @@ def test_launch_arrays(tmp_path):
     assert exps == ["pair-3-5", "pair-0-8", "random"]
     counts = {stage: launch.task_count(launch.build_array(stage, exps)) for stage in launch.ARRAY_STAGES}
     assert counts == {"pretrain": 5, "pretrain_curve": 5, "select_pairs": 1, "retrain": 15, "unlearn_relearn": 45, "relearn_sweep": 45, "references": 15, "reeval": 15,
-                      "represent": 15}
+                      "represent": 15, "family": 15, "phase": 15, "phase_relearn": 15}
+    fam = launch.build_array("family", ["pair-1-7"], seeds=[0, 1], fam_Ls=[0, 100, 1000])
+    assert launch.task_count(fam) == 6
+    argv = launch.to_argv(fam.get_args(5))
+    assert argv[argv.index("--fam_L") + 1] == "1000" and argv[argv.index("--seed") + 1] == "1"
+    run.build_parser().parse_args(argv)
+    ph = launch.build_array("phase", ["pair-1-7"], seeds=[0], Lfulls=[300, 1000], methods=["F", "FR", "R"])
+    assert launch.task_count(ph) == 6
+    run.build_parser().parse_args(launch.to_argv(ph.get_args(5)))
     argv = launch.to_argv(launch.build_array("unlearn_relearn", exps).get_args(0))
     assert argv[0] == "unlearn_relearn"
     assert argv[argv.index("--exp") + 1] == "pair-3-5" and argv[argv.index("--ul_mu_f") + 1] == "0.25"
