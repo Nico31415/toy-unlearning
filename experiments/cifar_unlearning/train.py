@@ -247,6 +247,11 @@ def relearn(model: nn.Module, x: torch.Tensor, y: torch.Tensor, cfg: RelearnConf
     instead (the theory mode's forget-only attack: onehot for forget rows; zero (mse) or uniform (ce) for
     retain rows); `y` and `pair` are then ignored for the loss.
     """
+    if cfg.stop_rule not in ("loss", "budget") or cfg.classes not in ("pair", "all"):
+        raise ValueError(f"rl stop_rule must be loss|budget and classes pair|all, got {cfg.stop_rule}, {cfg.classes}")
+    if cfg.classes == "all":
+        pair = None
+    budget = cfg.stop_rule == "budget"
     device = x.device
     gen = torch.Generator().manual_seed(seed)
     stream = _index_stream(len(x), cfg.batch_size, gen, device)
@@ -270,7 +275,7 @@ def relearn(model: nn.Module, x: torch.Tensor, y: torch.Tensor, cfg: RelearnConf
         return full_target_loss(model, x, targets, loss_kind=loss_kind) if targets is not None else full_loss(model, x, y, loss_kind, pair)
 
     train_loss = set_loss()
-    if train_loss < cfg.loss_threshold:  # e.g. Pretrained already fits these images
+    if train_loss < cfg.loss_threshold and not budget:  # e.g. Pretrained already fits these images
         status = "converged"
     while status == "step_cap" and step < cfg.max_steps:
         set_train_mode(model, freeze_bn)
@@ -288,10 +293,12 @@ def relearn(model: nn.Module, x: torch.Tensor, y: torch.Tensor, cfg: RelearnConf
             record(step)
         if step % cfg.eval_every == 0 or step == cfg.max_steps:
             train_loss = set_loss()
-            if train_loss < cfg.loss_threshold:
+            if train_loss < cfg.loss_threshold and not budget:
                 status = "converged"
                 break
             snapshot, snapshot_step = _snapshot(model), step
+    if budget and status == "step_cap":
+        status = "budget"
     if not curve or curve[-1]["step"] != step:
         record(step)
     log(f"relearn: {status} after {step} steps, train loss {train_loss:.4f}")

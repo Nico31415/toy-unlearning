@@ -63,7 +63,9 @@ def _relearn_row(r: Dict, key: Dict, source: str) -> Dict:
     curve = r["relearn"]["curve"]
     return {**key, "source": source, "n_RL": r["n_RL"], "status": r["relearn"]["status"],
             "steps": r["relearn"]["steps"], "A_f10_after": curve[-1].get("A_f10") if curve else None,
-            "A_r_after": curve[-1].get("A_r") if curve else None}
+            "A_r_after": curve[-1].get("A_r") if curve else None,
+            # the curve at fixed attack costs (relearning with --rl_stop_rule budget)
+            **{f"A_f10_at{c['step']}": c.get("A_f10") for c in curve if c["step"] in (10, 50, 100, 200, 500, 1000)}}
 
 
 def noise_rows(out_root: Path) -> List[Dict]:

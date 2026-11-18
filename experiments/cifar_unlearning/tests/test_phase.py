@@ -198,3 +198,18 @@ def test_mix_plot(tmp_path):
     aggregate_phase.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
     plot_phase.main(["--src", str(tmp_path / "csv"), "--dest", str(tmp_path / "fig")])
     assert (tmp_path / "fig" / "mix_untraining.png").exists()
+
+
+def test_relearn_budget(tmp_path):
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out)]
+    run.main(["family", "--exp", "pair-0-1", "--seed", "0", "--fam_L", "0", "10"] + common)
+    run.main(["phase", "--exp", "pair-0-1", "--seed", "0", "--ph_Lfull", "10", "--ph_nS", "10", "--ph_methods", "R",
+              "--ph_arms", "full"] + common)
+    run.main(["phase_relearn", "--exp", "pair-0-1", "--seed", "0", "--ph_Lfull", "10", "--ph_nRL", "5",
+              "--rl_stop_rule", "budget", "--rl_classes", "all", "--rl_max_steps", "20", "--rl_loss_threshold", "100"]
+             + common)
+    aggregate_phase.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    rl = pd.read_csv(tmp_path / "csv" / "phase_relearn.csv")
+    assert (rl.steps == 20).all() and (rl.status == "budget").all()  # a huge threshold does not stop a budget run
+    assert rl["A_f10_at10"].notna().all()

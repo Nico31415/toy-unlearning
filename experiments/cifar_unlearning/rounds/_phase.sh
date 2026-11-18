@@ -8,7 +8,10 @@ SEEDS=${SEEDS:-"0 1 2"}
 A="--loss mse --augment --pt_lr 0.01 --pt_epochs 100 --out_root $ROOT"
 BN="--ul_freeze_bn false --rl_freeze_bn false"
 UL="--ul_stop_rule loss --ul_lr 1e-3 --ul_eval_every 25 --ul_max_steps 20000 $BN"
-RL="--rl_lr 1e-3 --rl_eval_every 10 --rl_max_steps 20000 $BN"
+# Relearning attacks: 10-way loss on forget images with true labels, a fixed budget of 1000 steps for every model
+# (curve at 10, 20, 50, 100, 200, 500, 1000), so models are compared at equal attack cost rather than at the step a
+# loss threshold happened to be reached (in ph_quick every pretrained model stopped within 50-120 steps).
+RL="--rl_lr 1e-3 --rl_eval_every 50 --rl_max_steps 1000 --rl_stop_rule budget --rl_classes all $BN"
 # |S_full| values and the pretraining family: every L_full, every L_full - 10 and L_full - 100 (small forget sets),
 # and a log grid below, so that A(D minus S) = A(L_full - n_S) is a family member for every cell.
 LFULLS=${LFULLS:-"300 1000 3000 5000"}

@@ -90,6 +90,12 @@ class RelearnConfig:
     loss_threshold: float = 1e-2
     # Scratch ignores this and always trains BatchNorm normally.
     freeze_bn: bool = True
+    # "loss": stop once the relearning set's loss is below loss_threshold (or at max_steps). "budget": always run
+    # max_steps steps, so every model gets the same attack and the curve compares them step for step.
+    stop_rule: str = "loss"
+    # Loss of a class-split attack: "pair" = 2-way on the two forget logits (the original protocol); "all" = the
+    # ordinary 10-way loss (what a forget-class attack with true labels is in the theory).
+    classes: str = "pair"
 
 
 @dataclass
