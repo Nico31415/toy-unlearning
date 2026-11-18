@@ -213,3 +213,17 @@ def test_relearn_budget(tmp_path):
     rl = pd.read_csv(tmp_path / "csv" / "phase_relearn.csv")
     assert (rl.steps == 20).all() and (rl.status == "budget").all()  # a huge threshold does not stop a budget run
     assert rl["A_f10_at10"].notna().all()
+
+
+def test_keep_forget_omega(tmp_path):
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out)]
+    run.main(["family", "--exp", "pair-0-1", "--seed", "0", "--fam_L", "0", "4", "10"] + common)
+    run.main(["phase", "--exp", "pair-0-1", "--seed", "0", "--ph_Lfull", "10", "--ph_nS", "6", "--ph_methods", "F", "R",
+              "--ph_targets", "ybar", "--ph_omegas", "0.5", "1", "--ph_arms", "full"] + common)
+    aggregate_phase.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    ph = pd.read_csv(tmp_path / "csv" / "phase.csv")
+    f = ph[ph.method == "F"].set_index("target")
+    assert set(f.index) == {"ybar", "ybar@w0.5"} and f.loc["ybar@w0.5", "omega"] == 0.5
+    assert (ph[ph.method == "R"].omega == 1.0).all() and len(ph[ph.method == "R"]) == 1  # R has no forget term
+    assert len(list((out / "phase").glob("**/t=ybar@w0.5/**/result.json"))) == 1

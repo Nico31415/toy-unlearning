@@ -41,7 +41,8 @@ def collect(out_root: Path) -> Dict[str, pd.DataFrame]:
     for p in sorted(out_root.glob("phase/exp=*/seed=*/L=*/nS=*/m=*/t=*/arm=*/rescale=*/result.json")):
         r = _load(p)
         key = {"exp": r["exp"], "seed": r["seed"], "L_full": r["L_full"], "n_S": r["n_S"], "L_left": r["L_left"],
-               "method": r["method"], "target": r["target"], "arm": r["arm"], "rs_mode": r["rescale"]["mode"],
+               "method": r["method"], "arm": r["arm"], "omega": r.get("omega", 1.0),
+               "target": r["target"] if r.get("omega", 1.0) == 1.0 else f"{r['target']}@w{r['omega']:g}", "rs_mode": r["rescale"]["mode"],
                "S": r["rescale"]["S"], "loss": r["loss"]}
         rows["phase"].append({**key, "status": r["fit"]["status"], "steps": r["fit"]["steps"],
                               **{f"final_loss_{i}": v for i, v in enumerate(r["fit"]["final_losses"])},

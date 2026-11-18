@@ -22,6 +22,8 @@ Forget targets (method F and FR):
     neg     the workshop paper's signed loss: retain rows (1 + rho) onehot, forget rows -rho onehot (mse only)
     oracle  A(D minus S_full)'s outputs on S (logits for mse, its softmax for ce)
     approx  A(D)'s outputs on S without the forget classes (forget logits 0 for mse; softmax over kept classes for ce)
+Keep + forget (--ph_omegas): each forget image also keeps a term on its true label; omega = mu_f / (mu_r + mu_f) mixes
+the two targets, (1 - omega) onehot + omega target (stored as target "<name>@w<omega>"; omega = 1 is pure relabelling).
 Arms (removal geometry): full (every weight), readout (only `fc`), linear (the linearised network around the start).
 Each source of rows (retain, forget) gives one batch per step and the per-source mean losses are added with equal
 weight; under gradient flow to interpolation the end point does not depend on these weights, and equal weights keep a
@@ -453,19 +455,23 @@ def stage_phase(ctx) -> None:
         x_left, y_left = ctx.train_subset(left_idx)
         for method in ctx.args.ph_methods:
             targets = ["-"] if method == "R" else ctx.args.ph_targets
-            for target in targets:
+            omegas = [1.0] if method == "R" else sorted(set(ctx.args.ph_omegas))
+            for target, omega in [(t, w) for t in targets for w in omegas]:
+                if not 0.0 <= omega <= 1.0:
+                    raise SystemExit(f"--ph_omegas {omega} must be in [0, 1]")
+                tname = target if omega == 1.0 else f"{target}@w{fmt(omega)}"
                 for arm in ctx.args.ph_arms:
                     for S in ctx.args.ph_S:
-                        out = phase_dir(ctx, exp, seed, l_full, n_s, method, target, arm, ctx.args.ph_rs_mode, S)
+                        out = phase_dir(ctx, exp, seed, l_full, n_s, method, tname, arm, ctx.args.ph_rs_mode, S)
                         if R._done(out / "result.json", ctx, "phase"):
                             continue
-                        R.log(f"=== phase {exp} seed {seed} L={l_full} nS={n_s} {method} {target} {arm} S={fmt(S)}")
+                        R.log(f"=== phase {exp} seed {seed} L={l_full} nS={n_s} {method} {tname} {arm} S={fmt(S)}")
                         run_one(ctx, refs, out, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
-                                x_ret, y_ret, x_s, y_s, x_left, y_left)
+                                x_ret, y_ret, x_s, y_s, x_left, y_left, omega=omega)
 
 
 def run_one(ctx, refs: References, out: Path, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
-            x_ret, y_ret, x_s, y_s, x_left, y_left) -> None:
+            x_ret, y_ret, x_s, y_s, x_left, y_left, omega: float = 1.0) -> None:
     from experiments.cifar_unlearning import run as R
 
     ul, ph = ctx.cfg["ul"], ctx.cfg["ph"]
@@ -488,7 +494,12 @@ def run_one(ctx, refs: References, out: Path, exp, seed, l_full, n_s, method, ta
     if method in ("F", "FR"):
         oracle = R.predict_logits(refs.model(0), x_s) if target == "oracle" else None
         ad = R.predict_logits(refs.model(l_full), x_s) if target == "approx" else None
-        sources.append((x_s, forget_targets(ctx.loss, target, oracle, ad, y_s, k, pair, rho)))
+        t_s = forget_targets(ctx.loss, target, oracle, ad, y_s, k, pair, rho)
+        if omega < 1.0:
+            # keep + forget: the forget image also keeps a term on its true label. Both losses are linear in the target
+            # (mse after expanding, ce exactly), so the pair is one loss against the omega-mixture of the two targets.
+            t_s = (1.0 - omega) * onehot_targets(y_s, k, keep_scale) + omega * t_s
+        sources.append((x_s, t_s))
 
     seed2 = R.derive_seed("phase", exp, seed, l_full, n_s, method, target, arm, S)
     if arm == "linear":
@@ -532,7 +543,7 @@ def run_one(ctx, refs: References, out: Path, exp, seed, l_full, n_s, method, ta
     else:
         torch.save(state_dict_fp16(model), out / "model_fp16.pt")
     record = ctx.base_record(stage="phase", exp=exp, seed=seed, pair=pair, L_full=l_full, n_S=n_s,
-                             L_left=l_full - n_s, method=method, target=target, arm=arm,
+                             L_left=l_full - n_s, method=method, target=target, omega=omega, arm=arm,
                              rescale={"mode": ctx.args.ph_rs_mode, "S": S}, n_retain_rows=len(sources[0][0]),
                              n_forget_rows=len(x_s) if method != "R" else 0, fit=fit, metrics=metrics)
     R.write_json(out / "result.json", record)

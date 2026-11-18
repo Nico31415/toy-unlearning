@@ -759,6 +759,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ph_nS", type=int, nargs="+", default=[100], help="phase: forget-set sizes n_S")
     parser.add_argument("--ph_methods", nargs="+", default=["F"], help="phase: F, FR and/or R")
     parser.add_argument("--ph_targets", nargs="+", default=["ybar"], help="phase: ybar, neg, oracle and/or approx")
+    parser.add_argument("--ph_omegas", nargs="+", type=float, default=[1.0],
+                        help="phase, methods F/FR: the keep + forget loss. Each forget image keeps a term on its true label "
+                             "(weight mu_r) besides the forget term (weight mu_f); by Lemma 1 that is one target "
+                             "(1 - omega) onehot + omega g, omega = mu_f / (mu_r + mu_f). 1 = pure relabelling (default)")
     parser.add_argument("--ph_arms", nargs="+", default=["full"], help="phase: full, readout and/or linear")
     parser.add_argument("--ph_S", type=float, nargs="+", default=[1.0], help="phase: rescaling factors")
     parser.add_argument("--ph_rs_mode", default="function",
