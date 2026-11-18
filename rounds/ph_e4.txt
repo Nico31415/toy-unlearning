@@ -1,0 +1,313 @@
+round ph_e4, published 2026-11-18T13:48:39+00:00, code 488da48
+              2603_0        cifar_unlearn     FAILED   00:00:22      1:0 
+              2603_1        cifar_unlearn     FAILED   00:00:20      1:0 
+              2603_2        cifar_unlearn     FAILED   00:00:20      1:0 
+              2603_3        cifar_unlearn     FAILED   00:00:20      1:0 
+              2603_4        cifar_unlearn     FAILED   00:00:20      1:0 
+              2603_5        cifar_unlearn     FAILED   00:00:20      1:0 
+              2604_0        cifar_unlearn  COMPLETED   00:01:24      0:0 
+              2604_1        cifar_unlearn  COMPLETED   00:01:30      0:0 
+              2604_2        cifar_unlearn  COMPLETED   00:01:31      0:0 
+              2604_3        cifar_unlearn  COMPLETED   00:01:31      0:0 
+              2604_4        cifar_unlearn  COMPLETED   00:01:23      0:0 
+              2604_5        cifar_unlearn  COMPLETED   00:01:31      0:0 
+              2604_6        cifar_unlearn  COMPLETED   00:01:32      0:0 
+              2604_7        cifar_unlearn  COMPLETED   00:01:32      0:0 
+              2604_8        cifar_unlearn  COMPLETED   00:01:23      0:0 
+              2604_9        cifar_unlearn  COMPLETED   00:01:30      0:0 
+             2604_10        cifar_unlearn  COMPLETED   00:01:31      0:0 
+             2604_11        cifar_unlearn  COMPLETED   00:01:31      0:0 
+              2605_0        cifar_unlearn     FAILED   00:00:06      1:0 
+              2605_1        cifar_unlearn     FAILED   00:00:06      1:0 
+              2605_2        cifar_unlearn     FAILED   00:00:06      1:0 
+              2605_3        cifar_unlearn     FAILED   00:00:05      1:0 
+              2605_4        cifar_unlearn     FAILED   00:00:05      1:0 
+              2605_5        cifar_unlearn     FAILED   00:00:04      1:0 
+== logs/cifar_unlearn_2603_0.out
+[cifar_unlearn] job 2713 task 0 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph
+=== phase pair-1-7 seed 0 L=5000 nS=100 F ybar full S=0.1
+stage 2: success after 475 steps, source losses [0.0093, 0.00043]
+== logs/cifar_unlearn_2603_0.err
+Traceback (most recent call last):
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 140, in <module>
+    main()
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 136, in main
+    run.main(run_argv + passthrough)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/run.py", line 796, in main
+    {
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 445, in stage_phase
+    run_one(ctx, refs, out, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 510, in run_one
+    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 406, in member_metrics
+    out[f"{pre}mia_{part}"] = auc(-ls, -lhl)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 370, in auc
+    from scipy.stats import rankdata
+ModuleNotFoundError: No module named 'scipy'
+== logs/cifar_unlearn_2603_1.out
+[cifar_unlearn] job 2714 task 1 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph
+=== phase pair-1-7 seed 0 L=5000 nS=100 R - full S=0.1
+stage 2: success after 550 steps, source losses [0.00941]
+== logs/cifar_unlearn_2603_1.err
+Traceback (most recent call last):
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 140, in <module>
+    main()
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 136, in main
+    run.main(run_argv + passthrough)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/run.py", line 796, in main
+    {
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 445, in stage_phase
+    run_one(ctx, refs, out, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 510, in run_one
+    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 406, in member_metrics
+    out[f"{pre}mia_{part}"] = auc(-ls, -lhl)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 370, in auc
+    from scipy.stats import rankdata
+ModuleNotFoundError: No module named 'scipy'
+== logs/cifar_unlearn_2603_2.out
+[cifar_unlearn] job 2715 task 2 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph
+=== phase pair-1-7 seed 1 L=5000 nS=100 F ybar full S=0.1
+stage 2: success after 325 steps, source losses [0.00967, 0.00071]
+== logs/cifar_unlearn_2603_2.err
+Traceback (most recent call last):
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 140, in <module>
+    main()
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 136, in main
+    run.main(run_argv + passthrough)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/run.py", line 796, in main
+    {
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 445, in stage_phase
+    run_one(ctx, refs, out, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 510, in run_one
+    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 406, in member_metrics
+    out[f"{pre}mia_{part}"] = auc(-ls, -lhl)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 370, in auc
+    from scipy.stats import rankdata
+ModuleNotFoundError: No module named 'scipy'
+== logs/cifar_unlearn_2603_3.out
+[cifar_unlearn] job 2716 task 3 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph
+=== phase pair-1-7 seed 1 L=5000 nS=100 R - full S=0.1
+stage 2: success after 425 steps, source losses [0.00973]
+== logs/cifar_unlearn_2603_3.err
+Traceback (most recent call last):
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 140, in <module>
+    main()
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 136, in main
+    run.main(run_argv + passthrough)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/run.py", line 796, in main
+    {
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 445, in stage_phase
+    run_one(ctx, refs, out, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 510, in run_one
+    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 406, in member_metrics
+    out[f"{pre}mia_{part}"] = auc(-ls, -lhl)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 370, in auc
+    from scipy.stats import rankdata
+ModuleNotFoundError: No module named 'scipy'
+== logs/cifar_unlearn_2603_4.out
+[cifar_unlearn] job 2717 task 4 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph
+=== phase pair-1-7 seed 2 L=5000 nS=100 F ybar full S=0.1
+stage 2: success after 350 steps, source losses [0.00982, 0.00071]
+== logs/cifar_unlearn_2603_4.err
+Traceback (most recent call last):
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 140, in <module>
+    main()
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 136, in main
+    run.main(run_argv + passthrough)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/run.py", line 796, in main
+    {
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 445, in stage_phase
+    run_one(ctx, refs, out, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 510, in run_one
+    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 406, in member_metrics
+    out[f"{pre}mia_{part}"] = auc(-ls, -lhl)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 370, in auc
+    from scipy.stats import rankdata
+ModuleNotFoundError: No module named 'scipy'
+== logs/cifar_unlearn_2603_5.out
+[cifar_unlearn] job 2603 task 5 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph
+=== phase pair-1-7 seed 2 L=5000 nS=100 R - full S=0.1
+stage 2: success after 500 steps, source losses [0.00973]
+== logs/cifar_unlearn_2603_5.err
+Traceback (most recent call last):
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 140, in <module>
+    main()
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/launch.py", line 136, in main
+    run.main(run_argv + passthrough)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/run.py", line 796, in main
+    {
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 445, in stage_phase
+    run_one(ctx, refs, out, exp, seed, l_full, n_s, method, target, arm, S, rho, k, pair,
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 510, in run_one
+    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 406, in member_metrics
+    out[f"{pre}mia_{part}"] = auc(-ls, -lhl)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 370, in auc
+    from scipy.stats import rankdata
+ModuleNotFoundError: No module named 'scipy'
+== logs/cifar_unlearn_2605_0.out
+[cifar_unlearn] job 2729 task 0 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph_plain
+=== phase pair-1-7 seed 0 L=5000 nS=100 F ybar full S=0.1
+stage 2: diverged after 0 steps, source losses [nan, nan]
+== logs/cifar_unlearn_2605_0.err
+    metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 356, in measure
+    refit = refit_forget_bias(lo_cal, pd_.labels_train, lo_f, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 320, in refit_forget_bias
+    opt.step(closure)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/optimizer.py", line 549, in wrapper
+    out = func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 456, in step
+    loss, flat_grad, t, ls_func_evals = _strong_wolfe(
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 91, in _strong_wolfe
+    f_new, g_new = obj_func(x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 454, in obj_func
+    return self._directional_evaluate(closure, x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 294, in _directional_evaluate
+    self._add_grad(t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 281, in _add_grad
+    p.add_(update[offset : offset + numel].view_as(p), alpha=step_size)
+RuntimeError: value cannot be converted to type float without overflow
+== logs/cifar_unlearn_2605_1.out
+[cifar_unlearn] job 2730 task 1 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph_plain
+=== phase pair-1-7 seed 0 L=5000 nS=100 R - full S=0.1
+stage 2: diverged after 0 steps, source losses [nan]
+== logs/cifar_unlearn_2605_1.err
+    metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 356, in measure
+    refit = refit_forget_bias(lo_cal, pd_.labels_train, lo_f, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 320, in refit_forget_bias
+    opt.step(closure)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/optimizer.py", line 549, in wrapper
+    out = func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 456, in step
+    loss, flat_grad, t, ls_func_evals = _strong_wolfe(
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 91, in _strong_wolfe
+    f_new, g_new = obj_func(x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 454, in obj_func
+    return self._directional_evaluate(closure, x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 294, in _directional_evaluate
+    self._add_grad(t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 281, in _add_grad
+    p.add_(update[offset : offset + numel].view_as(p), alpha=step_size)
+RuntimeError: value cannot be converted to type float without overflow
+== logs/cifar_unlearn_2605_2.out
+[cifar_unlearn] job 2731 task 2 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph_plain
+=== phase pair-1-7 seed 1 L=5000 nS=100 F ybar full S=0.1
+stage 2: diverged after 0 steps, source losses [nan, nan]
+== logs/cifar_unlearn_2605_2.err
+    metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 356, in measure
+    refit = refit_forget_bias(lo_cal, pd_.labels_train, lo_f, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 320, in refit_forget_bias
+    opt.step(closure)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/optimizer.py", line 549, in wrapper
+    out = func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 456, in step
+    loss, flat_grad, t, ls_func_evals = _strong_wolfe(
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 91, in _strong_wolfe
+    f_new, g_new = obj_func(x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 454, in obj_func
+    return self._directional_evaluate(closure, x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 294, in _directional_evaluate
+    self._add_grad(t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 281, in _add_grad
+    p.add_(update[offset : offset + numel].view_as(p), alpha=step_size)
+RuntimeError: value cannot be converted to type float without overflow
+== logs/cifar_unlearn_2605_3.out
+[cifar_unlearn] job 2732 task 3 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph_plain
+=== phase pair-1-7 seed 1 L=5000 nS=100 R - full S=0.1
+stage 2: diverged after 0 steps, source losses [nan]
+== logs/cifar_unlearn_2605_3.err
+    metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 356, in measure
+    refit = refit_forget_bias(lo_cal, pd_.labels_train, lo_f, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 320, in refit_forget_bias
+    opt.step(closure)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/optimizer.py", line 549, in wrapper
+    out = func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 456, in step
+    loss, flat_grad, t, ls_func_evals = _strong_wolfe(
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 91, in _strong_wolfe
+    f_new, g_new = obj_func(x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 454, in obj_func
+    return self._directional_evaluate(closure, x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 294, in _directional_evaluate
+    self._add_grad(t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 281, in _add_grad
+    p.add_(update[offset : offset + numel].view_as(p), alpha=step_size)
+RuntimeError: value cannot be converted to type float without overflow
+== logs/cifar_unlearn_2605_4.out
+[cifar_unlearn] job 2733 task 4 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph_plain
+=== phase pair-1-7 seed 2 L=5000 nS=100 F ybar full S=0.1
+stage 2: diverged after 0 steps, source losses [nan, nan]
+== logs/cifar_unlearn_2605_4.err
+    metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 356, in measure
+    refit = refit_forget_bias(lo_cal, pd_.labels_train, lo_f, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 320, in refit_forget_bias
+    opt.step(closure)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/optimizer.py", line 549, in wrapper
+    out = func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 456, in step
+    loss, flat_grad, t, ls_func_evals = _strong_wolfe(
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 91, in _strong_wolfe
+    f_new, g_new = obj_func(x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 454, in obj_func
+    return self._directional_evaluate(closure, x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 294, in _directional_evaluate
+    self._add_grad(t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 281, in _add_grad
+    p.add_(update[offset : offset + numel].view_as(p), alpha=step_size)
+RuntimeError: value cannot be converted to type float without overflow
+== logs/cifar_unlearn_2605_5.out
+[cifar_unlearn] job 2605 task 5 host blackwell stage phase python /var/tmp/na658/unlearn-env/bin/python
+stage phase on cuda, out_root data/cifar_unlearning/mseaug_ph_plain
+=== phase pair-1-7 seed 2 L=5000 nS=100 R - full S=0.1
+stage 2: diverged after 0 steps, source losses [nan]
+== logs/cifar_unlearn_2605_5.err
+    metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 356, in measure
+    refit = refit_forget_bias(lo_cal, pd_.labels_train, lo_f, pair)
+  File "/var/tmp/na658/toy-unlearning/experiments/cifar_unlearning/phase.py", line 320, in refit_forget_bias
+    opt.step(closure)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/optimizer.py", line 549, in wrapper
+    out = func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 456, in step
+    loss, flat_grad, t, ls_func_evals = _strong_wolfe(
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 91, in _strong_wolfe
+    f_new, g_new = obj_func(x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 454, in obj_func
+    return self._directional_evaluate(closure, x, t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 294, in _directional_evaluate
+    self._add_grad(t, d)
+  File "/var/tmp/na658/unlearn-env/lib/python3.10/site-packages/torch/optim/lbfgs.py", line 281, in _add_grad
+    p.add_(update[offset : offset + numel].view_as(p), alpha=step_size)
+RuntimeError: value cannot be converted to type float without overflow

@@ -1,0 +1,10 @@
+{
+ "pair-1-7": {
+  "n_learn": 1,
+  "n_onset": null,
+  "has_thr": 0.0,
+  "eta2": 0.15,
+  "eta2_by_L": {},
+  "noise_by_L": {}
+ }
+}

@@ -1,0 +1,13 @@
+exp,seed,L,loss,final_train_loss,warning,A_r,probe_acc,probe_ce,A_f10,A_f2,probe_acc2,A_r8,ce_f,mia_auc,probe_block1,pr_block1,probe_block2,pr_block2,probe_block3,pr_block3,probe_block4,pr_block4,probe_block5,pr_block5,probe_block6,pr_block6
+pair-1-7,0,0,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,0,4000,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,0,4900,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,0,5000,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,1,0,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,1,4000,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,1,4900,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,1,5000,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,2,0,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,2,4000,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,2,4900,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
+pair-1-7,2,5000,mse,,final train loss above threshold,0.125,0.0,,0.0,0.5,0.5,0.125,,0.0,0.5,,0.5,,0.5,,0.5,,0.5,,0.5,
