@@ -9,7 +9,8 @@
     rho_vs_relearn.png     relearning cost against penultimate rho and against output forget accuracy (Spearman)
     thresholds.json        n_learn, eta^2 and the has-B accuracy threshold per experiment
 
-Definitions. Has B: forget accuracy (10-way, held-out) above chance + eps * (A(D)'s accuracy - chance), eps = 0.1;
+Crosses on the distance panel: cells where A(D) itself is already within eta of A(D minus S) (d_noop_ut2), so
+"untrains" there is met by doing nothing. Definitions. Has B: forget accuracy (10-way, held-out) above chance + eps * (A(D)'s accuracy - chance), eps = 0.1;
 learns B: above chance + 0.9 * (that margin). n_learn: the smallest L whose seed-mean accuracy learns B.
 eta^2 = max(0.15, 2 * the largest seed-noise floor in noise.csv). rho_l = (probe(U) - probe(A(0))) /
 (probe(A(L_full)) - probe(A(0))), with the references of the same seed.
@@ -78,7 +79,9 @@ def phase_maps(phase: pd.DataFrame, th, dest: Path) -> None:
         t = th[exp]
         m = g.groupby(["L_full", "n_S"]).agg(d_ut2=("d_ut2", "mean"), d_ul2=("d_ul2", "mean"),
                                               A_f10=("A_f10", "mean"), ad=("ref_A_f10_ad", "mean"),
-                                              ut=("ref_A_f10_ut", "mean")).reset_index()
+                                              ut=("ref_A_f10_ut", "mean"),
+                                              **({"d_noop_ut2": ("d_noop_ut2", "mean")} if "d_noop_ut2" in g else {})
+                                              ).reset_index()
         ut, ul = m.d_ut2 <= t["eta2"], m.d_ul2 <= t["eta2"]
         dist = np.where(ut & ul, 0, np.where(ul, 1, np.where(ut, 2, 3)))
         has_a, has_r, has_u = m.ad > t["has_thr"], m.ut > t["has_thr"], m.A_f10 > t["has_thr"]
@@ -92,6 +95,12 @@ def phase_maps(phase: pd.DataFrame, th, dest: Path) -> None:
                 sel = cls == c
                 if sel.any():
                     ax.scatter(x[sel], y[sel], s=160, marker="s", color=colour, edgecolor="k", lw=0.4, label=label)
+            if cls is dist and "d_noop_ut2" in m.columns:
+                # cells where doing nothing already counts as untraining: A(D) is within eta of A(D minus S)
+                triv = (m.d_noop_ut2 <= t["eta2"]).to_numpy()
+                if triv.any():
+                    ax.scatter(x[triv], y[triv], s=40, marker="x", color="k", lw=1.0,
+                               label="A(D) already within eta of A(D minus S)")
             lim = max(x.max(), y.max()) * 1.1
             ax.plot([0, lim], [0, lim], "k", lw=0.8)
             ax.set_xscale("symlog", linthresh=0.01)

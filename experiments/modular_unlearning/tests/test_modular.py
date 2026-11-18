@@ -72,7 +72,7 @@ def test_tables(pipe):
     assert len(fam) == 6 and fam.overlap.between(0, 1).all()
     ph = pd.read_csv(pipe / "csv" / "phase.csv")
     assert len(ph) == 2 * 5 * 3 * 2  # n_S x (F, FR x 2 targets + R) x arms x S
-    for col in ("d_ut2", "d_ul2", "amp", "phase", "a0_amp", "acc_forget", "probe_mlp0", "fourier_r2_mlp0",
+    for col in ("d_ut2", "d_ul2", "d_noop_ut2", "amp", "phase", "a0_amp", "acc_forget", "probe_mlp0", "fourier_r2_mlp0",
                 "frozen_r2_mlp0"):
         assert ph[col].notna().all(), col
     full = ph[ph.n_S == 72]

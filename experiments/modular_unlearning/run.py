@@ -352,6 +352,7 @@ def stage_phase(ctx: Ctx) -> None:
                             zu = z(logits_of(xf_test))
                         metrics = {"norm": norm, "d_ut2": msd(zu, z_ut) / norm, "d_ul2": msd(zu, z_a0) / norm,
                                    "d_ref2": msd(z_ut, z_a0) / norm, "d_ad2": msd(zu, z_ad) / norm,
+                                   "d_noop_ut2": msd(z_ad, z_ut) / norm,  # do-nothing baseline
                                    **test_accuracies(ctx, logits_of),
                                    **amplitude_and_phase(embed, m_ad.embed.weight.detach(), s.forget.p, freqs),
                                    **{f"a0_{k}": v for k, v in amplitude_and_phase(  # the floor: A(0)'s embedding

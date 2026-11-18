@@ -340,6 +340,9 @@ def measure(ctx, fwd: Forward, refs: References, l_full: int, n_s: int, pair) ->
         "d_ul2": _msd(uf, zf["ul"]) / norm_f,
         "d_ref2": _msd(zf["ut"], zf["ul"]) / norm_f,
         "d_ad2": _msd(uf, zf["ad"]) / norm_f,
+        # the do-nothing baseline: how far A(D) itself already is from A(D minus S) (its distance to A(0) is 1 by the
+        # normalisation). U untrains non-trivially only if d_ut2 is well below this.
+        "d_noop_ut2": _msd(zf["ad"], zf["ut"]) / norm_f,
         "retain_d_ad2": _msd(ur, zr["ad"]) / max(zr["ad"].float().pow(2).sum(1).mean().item(), 1e-12),
         "A_f10": accuracy(lo_f, ev.y_test_forget),
         "A_r": accuracy(lo_r, ev.y_test_retain),

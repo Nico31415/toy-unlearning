@@ -78,6 +78,12 @@ def maps(ph, th, dest):
                 sel = cls == c
                 if sel.any():
                     ax.scatter(x[sel], y[sel], s=150, marker="s", color=col, edgecolor="k", lw=0.4, label=lab)
+            if cls is dist and "d_noop_ut2" in m.columns:
+                # cells where doing nothing already counts as untraining: A(D) is within eta of A(D minus S)
+                triv = (m.d_noop_ut2 <= t["eta2"]).to_numpy()
+                if triv.any():
+                    ax.scatter(x[triv], y[triv], s=40, marker="x", color="k", lw=1.0,
+                               label="A(D) already within eta of A(D minus S)")
             lim = float(max(x.max(), y.max()) * 1.1)
             ax.plot([0, lim], [0, lim], "k", lw=0.8)
             ax.set_xlabel("|S| / n_learn")

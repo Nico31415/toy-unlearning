@@ -111,12 +111,13 @@ def test_phase_tables(phase_run):
     assert len(ph) == 109
     assert set(ph.method) == {"F", "FR", "R"} and set(ph.arm) == {"full", "readout", "linear"}
     assert set(ph[ph.method == "R"].target) == {"-"}
-    for col in ("d_ut2", "d_ul2", "d_ref2", "A_f10", "A_f10_refit", "probe_block2", "frozen_block2", "cka_ad_block2",
+    for col in ("d_ut2", "d_ul2", "d_ref2", "d_noop_ut2", "A_f10", "A_f10_refit", "probe_block2", "frozen_block2", "cka_ad_block2",
                 "ensd_ad_block2", "amp_block2"):
         assert ph[col].notna().all(), col
     # n_S = L_full: S = S_full, so A(D minus S) is A(0) and the two references coincide
     full = ph[ph.n_S == 10]
     assert (full.d_ref2.abs() < 1e-6).all() and np.allclose(full.d_ut2, full.d_ul2)
+    assert np.allclose(full.d_noop_ut2, 1.0)  # A(D minus S) = A(0): the do-nothing distance is the normaliser
     noise = pd.read_csv(phase_run["csv"] / "noise.csv")
     assert set(noise.L) == {0, 6, 10}
     assert noise[noise.L == 0].d2.isna().all() and noise[noise.L > 0].d2.notna().all()  # A(0) - A(0) normalises to 0/0
