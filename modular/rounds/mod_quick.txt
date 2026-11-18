@@ -1,0 +1,8 @@
+round mod_quick, published 2026-11-18T05:02:13+00:00, code 6c9e58f
+              2507_0      modular_unlearn  COMPLETED   00:23:49      0:0 
+              2507_1      modular_unlearn  COMPLETED   00:25:55      0:0 
+              2507_2      modular_unlearn  COMPLETED   00:27:22      0:0 
+              2508_0      modular_unlearn  COMPLETED   00:18:35      0:0 
+              2508_1      modular_unlearn  COMPLETED   00:18:42      0:0 
+              2508_2      modular_unlearn  COMPLETED   00:06:01      0:0 
+              2509_0      modular_unlearn  COMPLETED   01:05:22      0:0 
