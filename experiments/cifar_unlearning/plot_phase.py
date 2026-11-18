@@ -8,6 +8,8 @@
     rho_layers.png         residual decodability rho per layer, mean over cells, one line per configuration
     rho_vs_relearn.png     relearning cost against penultimate rho and against output forget accuracy (Spearman)
     thresholds.json        n_learn, eta^2 and the has-B accuracy threshold per experiment
+    mix_untraining.png     E9 (mix-C-ALPHA): untraining on S's own images, membership AUC and kept-class accuracy
+                           against ALPHA
 
 Crosses on the distance panel: cells where A(D) itself is already within eta of A(D minus S) (d_noop_ut2), so
 "untrains" there is met by doing nothing. Definitions. Has B: forget accuracy (10-way, held-out) above chance + eps * (A(D)'s accuracy - chance), eps = 0.1;
@@ -160,6 +162,42 @@ def rho_plots(phase: pd.DataFrame, layers, relearn: pd.DataFrame, family: pd.Dat
     plt.close(fig)
 
 
+def mix_plot(phase: pd.DataFrame, dest: Path) -> None:
+    """E9 (mix-C-ALPHA experiments): untraining read-outs on S's own images against ALPHA, one column per |S|, one line
+    per stage-2 configuration. r_S_ut: 0 = A(D minus S) on S's images, 1 = A(D); mia: membership AUC (dotted: the
+    retrained model's AUC, the target); A_r: kept-class test accuracy."""
+    mix = phase[phase.exp.str.startswith("mix-")].copy()
+    if not len(mix):
+        return
+    mix["alpha"] = mix.exp.str.split("-").str[2].astype(float)
+    rows = [c for c in ("r_S_ut_iid", "r_S_ut_cls", "mia_iid", "mia_cls", "A_r") if c in mix.columns]
+    ns = sorted(mix.n_S.unique())
+    fig, axs = plt.subplots(len(rows), len(ns), figsize=(3.6 * len(ns), 2.6 * len(rows)), squeeze=False, sharex=True)
+    keys = ["method", "target", "arm", "S"]
+    for j, n in enumerate(ns):
+        g = mix[mix.n_S == n]
+        for cfg, h in g.groupby(keys):
+            m = h.groupby("alpha").mean(numeric_only=True)
+            for i, col in enumerate(rows):
+                axs[i, j].plot(m.index, m[col], marker="o", label=config_name(dict(zip(keys, cfg))))
+        for i, col in enumerate(rows):
+            ax = axs[i, j]
+            ref = f"ref_ut_{col}" if col.startswith("mia") else None
+            if ref and ref in g:
+                r = g.groupby("alpha")[ref].mean()
+                ax.plot(r.index, r.values, "k:", label="A(D minus S)")
+            if col.startswith("r_S_ut"):
+                ax.axhline(1, color="#888", ls=":")
+                ax.axhline(0, color="#888", lw=0.6)
+            ax.set_title(f"{col}, |S| = {n}", loc="left", fontsize=9)
+            if i == len(rows) - 1:
+                ax.set_xlabel("alpha (fraction of S from the removed class)")
+    axs[0, 0].legend(fontsize=6)
+    fig.tight_layout()
+    fig.savefig(dest / "mix_untraining.png", dpi=130)
+    plt.close(fig)
+
+
 def family_plot(family: pd.DataFrame, th, dest: Path) -> None:
     fig, ax = plt.subplots(figsize=(6, 4))
     probe = sorted(c for c in family.columns if c.startswith("probe_"))
@@ -198,6 +236,7 @@ def main(argv=None) -> None:
         phase = phase[phase.exp.isin(th)]
         phase_maps(phase, th, dest)
         rho_plots(phase, layers, relearn, family, dest)
+        mix_plot(phase, dest)
         phase.to_csv(src / "phase_rho.csv", index=False)
 
 

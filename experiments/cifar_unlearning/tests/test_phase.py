@@ -143,3 +143,58 @@ def test_phase_rejects_bad_settings(phase_run):
         run.main(["phase", "--exp", "pair-0-1", "--seed", "0", "--ph_Lfull", "10", "--ph_nS", "3"] + common)
     with pytest.raises(SystemExit):  # unknown method
         run.main(["phase", "--exp", "pair-0-1", "--seed", "0", "--ph_Lfull", "10", "--ph_methods", "X"] + common)
+
+
+def test_mix_split():
+    assert parse_experiment("mix-3-0.25") == ("mix", (3,))
+    ds = make_synthetic(60, 10)
+    y = ds.y_train.numpy()
+    for alpha in (0.0, 0.25, 1.0):
+        split = make_split(ds, f"mix-3-{alpha:g}", 0, n_forget=100, n_probe=10, n_attack=8)
+        pool = split.forget_pool_order
+        assert (y[pool[-8:]] == 3).all() and (y[split.probe] == 3).all()  # attack pool and P_f: class 3 only
+        assert not np.isin(y[split.retain_order], 3).any()  # class 3 appears only in the pool
+        assert not set(pool) & set(split.retain_order) and not set(pool) & set(split.probe)
+        head = pool[:40]
+        assert (y[head] == 3).sum() == round(alpha * 40)  # any prefix is an alpha fraction class 3
+        assert len(pool) == (60 - 10 if alpha > 0 else 8) + (100 if alpha < 1 else 0)
+
+
+def test_mix_phase(tmp_path):
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--n_forget", "60", "--n_probe", "20", "--ph_n_attack", "10"]
+    run.main(["family", "--exp", "mix-1-0.5", "--seed", "0", "--fam_L", "0", "6", "12"] + common)
+    run.main(["phase", "--exp", "mix-1-0.5", "--seed", "0", "--ph_Lfull", "12", "--ph_nS", "6",
+              "--ph_methods", "F", "R", "--ph_targets", "ybar", "--ph_arms", "full"] + common)
+    run.main(["family", "--exp", "mix-1-0", "--seed", "0", "--fam_L", "0", "6", "12"] + common)
+    run.main(["phase", "--exp", "mix-1-0", "--seed", "0", "--ph_Lfull", "12", "--ph_nS", "6",
+              "--ph_methods", "R", "--ph_arms", "full"] + common)
+    aggregate_phase.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    ph = pd.read_csv(tmp_path / "csv" / "phase.csv")
+    half = ph[ph.exp == "mix-1-0.5"]
+    assert (half.n_S_cls == 3).all() and (half.n_S_iid == 3).all()
+    for col in ("mia_cls", "mia_iid", "ref_ut_mia_iid", "ref_ad_mia_iid", "r_S_ut_iid", "r_S_ut_cls", "gap_S_iid",
+                "acc_S_iid"):
+        assert half[col].notna().all(), col
+    iid = ph[ph.exp == "mix-1-0"]
+    assert (iid.n_S_iid == 6).all() and "n_S_cls" not in iid.columns or iid.n_S_cls.isna().all()
+    # F's clean retain set keeps the pool's iid images left in D: 6 pool images left, 3 of them iid
+    res = json.loads(next((out / "phase").glob("exp=mix-1-0.5/**/m=F/**/result.json")).read_text())
+    assert res["n_retain_rows"] == res_retain(out) + 3
+
+
+def res_retain(out):
+    split = np.load(next((out / "splits" / "exp=mix-1-0.5").glob("*.npz")))
+    return len(split["retain_order"])
+
+
+def test_mix_plot(tmp_path):
+    out = tmp_path / "out"
+    common = SYN + ["--out_root", str(out), "--n_forget", "60", "--n_probe", "20", "--ph_n_attack", "10"]
+    for exp in ("mix-1-0", "mix-1-0.5"):
+        run.main(["family", "--exp", exp, "--seed", "0", "--fam_L", "0", "6", "12"] + common)
+        run.main(["phase", "--exp", exp, "--seed", "0", "--ph_Lfull", "12", "--ph_nS", "6",
+                  "--ph_methods", "R", "--ph_arms", "full"] + common)
+    aggregate_phase.main(["--out_root", str(out), "--dest", str(tmp_path / "csv")])
+    plot_phase.main(["--src", str(tmp_path / "csv"), "--dest", str(tmp_path / "fig")])
+    assert (tmp_path / "fig" / "mix_untraining.png").exists()

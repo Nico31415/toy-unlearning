@@ -196,13 +196,14 @@ class Context:
         if path.exists():
             split = load_split(str(path))
             kind, pair = parse_experiment(experiment)
-            expected_forget = None if kind == "class" else d.n_forget
+            expected_forget = d.n_forget if kind == "random" else None
             if (split.kind != kind or split.pair != pair or len(split.probe) != d.n_probe
                     or (expected_forget is not None and len(split.forget_all) != expected_forget)):
                 raise SystemExit(f"{path} does not match the current --n_probe/--n_forget; "
                                  "use a new --out_root or delete the saved split")
             return split
-        split = make_split(self.dataset, experiment, seed, n_forget=d.n_forget, n_probe=d.n_probe)
+        split = make_split(self.dataset, experiment, seed, n_forget=d.n_forget, n_probe=d.n_probe,
+                           n_attack=self.cfg["ph"].n_attack)
         save_split(split, str(path))
         return split
 

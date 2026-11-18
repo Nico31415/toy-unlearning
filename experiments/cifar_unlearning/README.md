@@ -164,6 +164,7 @@ augmentation, BatchNorm unfrozen in stages 2 and 3). Run them in this order:
     bash experiments/cifar_unlearning/round.sh ph_e5      # three single classes, targets ybar / oracle / approx (E5)
     bash experiments/cifar_unlearning/round.sh ph_e6      # full, readout-only and linearised removal (E6)
     bash experiments/cifar_unlearning/round.sh ph_e7      # after the stage-2 rounds: relearning attacks (E7)
+    bash experiments/cifar_unlearning/round.sh ph_e9      # iid deletion to class removal: mix-7-ALPHA (E9), own family
 
 The probes (E8) run inside every `phase` job. Results land on the `results` branch under `<root>/phase/`: family.csv,
 phase.csv, phase_relearn.csv, noise.csv and figures (phase maps on axes in units of n_learn, residual decodability per

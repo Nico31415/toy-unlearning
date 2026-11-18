@@ -98,8 +98,8 @@ def probe_data(ctx, split: Split) -> ProbeData:
         index = torch.as_tensor(np.asarray(idx), dtype=torch.int64)
         return normalize(ds.x_test[index], ctx.device), ds.y_test[index].to(ctx.device)
 
-    if split.kind != "class":
-        raise SystemExit("phase experiments need a class split (pair-A-B or class-K)")
+    if split.kind not in ("class", "mix"):
+        raise SystemExit("phase experiments need a class or mix split (pair-A-B, class-K or mix-C-ALPHA)")
     probe = stratified_order(split.probe, ds.y_train.numpy(), np.random.default_rng(0))
     n_pf = min(ph.probe_train_forget, len(probe))
     x_pf, l_pf = ctx.train_subset(probe[:n_pf])
@@ -359,6 +359,57 @@ def measure(ctx, fwd: Forward, refs: References, l_full: int, n_s: int, pair) ->
     return out
 
 
+def per_sample_loss(logits: torch.Tensor, y: torch.Tensor, loss: str) -> torch.Tensor:
+    if loss == "mse":
+        return 0.5 * (logits.float() - F.one_hot(y, logits.shape[1]).float()).pow(2).sum(1)
+    return F.cross_entropy(logits.float(), y, reduction="none")
+
+
+def auc(members: torch.Tensor, others: torch.Tensor) -> float:
+    """P(score of a member > score of a non-member), ties counted half (the Mann-Whitney statistic)."""
+    from scipy.stats import rankdata
+    m, o = members.double().cpu().numpy(), others.double().cpu().numpy()
+    if not len(m) or not len(o):
+        return float("nan")
+    ranks = rankdata(np.concatenate([m, o]))
+    return float((ranks[:len(m)].sum() - len(m) * (len(m) + 1) / 2) / (len(m) * len(o)))
+
+
+def member_metrics(ctx, fwd: Forward, refs: References, l_full: int, n_s: int, x_s: torch.Tensor,
+                   y_s: torch.Tensor, pair) -> Dict:
+    """Untraining measured on S's own training images, split into its class part (labels in `pair`) and its iid
+    part (the other labels; mix experiments only). For U and for the references A(D) and A(D minus S):
+      acc_S_<part>      accuracy on those images (no augmentation)
+      gap_S_<part>      mean loss on them minus mean loss on held-out test images of the same classes
+      mia_<part>        AUC of minus the loss as a membership score, those images against the held-out ones
+                        (A(D minus S) never trained on them: its AUC is the untrained level, about 0.5)
+      r_S_ut_<part>     ||U - A(D minus S)||^2 / ||A(D) - A(D minus S)||^2 on their outputs: 0 = untrained,
+                        1 = no change from A(D), above 1 = moved past the target."""
+    loss, ev = ctx.loss, refs.ev
+    in_pair = torch.isin(y_s, torch.as_tensor(list(pair), device=y_s.device))
+    held = {"cls": (ev.x_test_forget, ev.y_test_forget), "iid": (ev.x_test_retain, ev.y_test_retain)}
+    models = {"U": fwd, "ad": ModelForward(refs.model(l_full)), "ut": ModelForward(refs.model(l_full - n_s))}
+    out = {}
+    for part, sel in (("cls", in_pair), ("iid", ~in_pair)):
+        if not sel.any():
+            continue
+        xs, ys = x_s[sel], y_s[sel]
+        xh, yh = held[part]
+        z = {}
+        for name, f in models.items():
+            lo, _ = f(xs)
+            lh, _ = f(xh)
+            ls, lhl = per_sample_loss(lo, ys, loss), per_sample_loss(lh, yh, loss)
+            pre = "" if name == "U" else f"ref_{name}_"
+            out[f"{pre}acc_S_{part}"] = accuracy(lo, ys)
+            out[f"{pre}gap_S_{part}"] = ls.mean().item() - lhl.mean().item()
+            out[f"{pre}mia_{part}"] = auc(-ls, -lhl)
+            z[name] = _z(lo, loss)
+        out[f"r_S_ut_{part}"] = _msd(z["U"], z["ut"]) / max(_msd(z["ad"], z["ut"]), 1e-12)
+        out[f"n_S_{part}"] = int(sel.sum().item())
+    return out
+
+
 # --------------------------------------------------------------------------- stage: phase
 
 def stage_phase(ctx) -> None:
@@ -406,6 +457,13 @@ def run_one(ctx, refs: References, out: Path, exp, seed, l_full, n_s, method, ta
     neg = target == "neg"
     keep_scale = (1.0 + rho) if neg else 1.0
     retain_rows = [(x_ret, onehot_targets(y_ret, k, keep_scale))]
+    if method == "F" and len(x_left):
+        # F's clean retain set: every image not in the forget pool, plus the pool images left in D that are not of the
+        # forget classes (the iid part of a mix experiment: ordinary data, not unflagged forget-class images)
+        keep = ~torch.isin(y_left, torch.as_tensor(list(pair), device=y_left.device))
+        if keep.any():
+            retain_rows = [(torch.cat([x_ret, x_left[keep]]),
+                            onehot_targets(torch.cat([y_ret, y_left[keep]]), k, keep_scale))]
     if method in ("FR", "R") and len(x_left):
         retain_rows = [(torch.cat([x_ret, x_left]), onehot_targets(torch.cat([y_ret, y_left]), k, keep_scale))]
     sources = list(retain_rows)
@@ -449,6 +507,7 @@ def run_one(ctx, refs: References, out: Path, exp, seed, l_full, n_s, method, ta
                       set_mode=set_mode, log=R.log, loss_eval_max=ph.loss_eval_max, track=track,
                       track_every=ph.track_every)
     metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
+    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
     out.mkdir(parents=True, exist_ok=True)
     if arm == "linear":
         torch.save({n: d.detach().half().cpu() for n, d in delta.items()}, out / "delta_fp16.pt")

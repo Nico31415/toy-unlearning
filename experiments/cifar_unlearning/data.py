@@ -152,9 +152,19 @@ def experiment_name(kind: str, pair: Optional[Tuple[int, ...]] = None) -> str:
     raise ValueError(f"unknown split kind {kind!r}")
 
 
+def mix_alpha(name: str) -> float:
+    """alpha of a 'mix-C-ALPHA' experiment."""
+    return float(name.split("-", 2)[2])
+
+
 def parse_experiment(name: str) -> Tuple[str, Optional[Tuple[int, int]]]:
     if name == "random":
         return "random", None
+    if name.startswith("mix-"):  # mix-C-ALPHA: a forget pool mixing class C (absent elsewhere) and iid images
+        parts = name.split("-")
+        if len(parts) != 3 or not 0.0 <= float(parts[2]) <= 1.0:
+            raise ValueError(f"expected 'mix-C-ALPHA' with 0 <= ALPHA <= 1, got {name!r}")
+        return "mix", (int(parts[1]),)
     if name.startswith("class-"):  # a single forgotten class: pair is then the 1-tuple (K,)
         return "class", (int(name[len("class-"):]),)
     if name.startswith("pair-"):
@@ -162,11 +172,50 @@ def parse_experiment(name: str) -> Tuple[str, Optional[Tuple[int, int]]]:
         if a == b:
             raise ValueError(f"a pair needs two different classes, got {name!r}")
         return "class", (min(a, b), max(a, b))
-    raise ValueError(f"unknown experiment {name!r}; expected 'random', 'pair-A-B' or 'class-K'")
+    raise ValueError(f"unknown experiment {name!r}; expected 'random', 'pair-A-B', 'class-K' or 'mix-C-ALPHA'")
+
+
+def interleave(a: np.ndarray, b: np.ndarray, alpha: float) -> np.ndarray:
+    """Merge two orders so that every prefix holds round(alpha * length) items of `a` (while both last), then the
+    rest of whichever is left."""
+    out, i, j, n = [], 0, 0, 0
+    while i < len(a) and j < len(b):
+        n += 1
+        if int(np.floor(n * alpha + 1e-9)) > i:
+            out.append(a[i]); i += 1
+        else:
+            out.append(b[j]); j += 1
+    return np.concatenate([np.asarray(out, dtype=np.int64), a[i:], b[j:]]).astype(np.int64)
+
+
+def _mix_split(ds: Dataset, experiment: str, c: int, rng: np.random.Generator, n_iid: int, n_probe: int,
+               n_attack: int) -> Split:
+    """mix-C-ALPHA. The concept class C appears only in the forget pool; the iid part is n_iid images of the other
+    classes, stratified. Pool order: the two interleaved at ratio ALPHA (so any block of it, and so S, is an ALPHA
+    fraction class C), then the last n_attack class-C images (the relearning attack pool, never trained on).
+    P_f: n_probe class-C images, never trained on. ALPHA = 1 is the class experiment class-C; ALPHA = 0 removes
+    iid images only (class C then never appears)."""
+    alpha = mix_alpha(experiment)
+    y_train, y_test = ds.y_train.numpy(), ds.y_test.numpy()
+    all_train, all_test = np.arange(len(y_train)), np.arange(len(y_test))
+    if not 0 <= c < ds.num_classes:
+        raise ValueError(f"class {c} out of range for {ds.num_classes} classes")
+    cls = all_train[y_train == c]
+    others = all_train[y_train != c]
+    if not 0 < n_probe < len(cls) - n_attack:
+        raise ValueError(f"n_probe={n_probe} and n_attack={n_attack} leave no class-{c} images for the pool")
+    order_c = rng.permutation(cls)
+    probe, attack, usable_c = np.sort(order_c[:n_probe]), order_c[n_probe:n_probe + n_attack], order_c[n_probe + n_attack:]
+    iid = stratified_order(others, y_train, rng)[:n_iid] if alpha < 1 else np.empty(0, dtype=np.int64)
+    pool = np.concatenate([interleave(usable_c, iid, alpha) if alpha > 0 else iid, attack]).astype(np.int64)
+    retain = np.setdiff1d(others, iid)
+    return Split(kind="mix", pair=(c,), forget_all=np.sort(np.concatenate([cls, iid])), probe=probe,
+                 forget_pool_order=pool, retain_order=stratified_order(retain, y_train, rng),
+                 test_retain=all_test[y_test != c], test_forget=all_test[y_test == c])
 
 
 def make_split(ds: Dataset, experiment: str, seed: int, n_forget: int = 10000,
-               n_probe: int = 2000) -> Split:
+               n_probe: int = 2000, n_attack: int = 1000) -> Split:
     """Build the split for one experiment and seed.
 
     The forgotten pair is fixed by `experiment`; the seed changes the probe set and
@@ -177,7 +226,10 @@ def make_split(ds: Dataset, experiment: str, seed: int, n_forget: int = 10000,
     y_test = ds.y_test.numpy()
     all_train = np.arange(len(y_train))
     all_test = np.arange(len(y_test))
-    rng = np.random.default_rng([seed, 0 if kind == "class" else 1])
+    rng = np.random.default_rng([seed, {"class": 0, "random": 1, "mix": 2}[kind]])
+
+    if kind == "mix":
+        return _mix_split(ds, experiment, pair[0], rng, n_iid=n_forget, n_probe=n_probe, n_attack=n_attack)
 
     if kind == "class":
         for c in pair:

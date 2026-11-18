@@ -20,7 +20,8 @@ DEFAULT_MU_F = (0.25, 0.5, 0.75)
 @dataclass
 class DataConfig:
     data_root: str = "data/cifar10"
-    # Random split only. The class split removes every training image of the pair.
+    # Random split: the number of removed images. mix-C-ALPHA: the size of the iid part of the forget pool.
+    # The class split removes every training image of the pair.
     n_forget: int = 10000
     # Removed images held out of unlearning and relearning; used for evaluation only.
     n_probe: int = 2000
