@@ -30,6 +30,7 @@ is below --ul_retain_loss_threshold; with "none" it runs --ul_max_steps steps.
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 import time
 from pathlib import Path
@@ -276,7 +277,9 @@ def fit_sources(logits_of, params: List[torch.Tensor], sources: List[Tuple[torch
         if step % cfg.eval_every == 0 or step == cfg.max_steps:
             losses = check()
             history.append({"step": step, "loss": loss.item(), "losses": losses})
-            if not all(math.isfinite(v) for v in losses):
+            # a finite but exploding loss (the linearised arm at lr 1e-3 can blow up without overflowing) is also divergence
+            cap = 1e3 * max(1.0, max(history[0]["losses"]))
+            if not all(math.isfinite(v) and v < cap for v in losses):
                 status = "diverged"
                 break
             if cfg.stop_rule == "loss" and max(losses) < cfg.retain_loss_threshold:
@@ -436,6 +439,9 @@ def run_one(ctx, refs: References, out: Path, exp, seed, l_full, n_s, method, ta
         fwd_now = lambda: ModelForward(model)  # noqa: E731
 
     track = (lambda: measure(ctx, fwd_now(), refs, l_full, n_s, pair)) if ph.track_every else None
+    if arm == "linear" and ph.linear_lr_scale != 1.0:
+        # the linearised network has no ReLU saturation to damp large steps: R at S = 1 blew up at ul_lr 1e-3
+        ul = dataclasses.replace(ul, lr=ul.lr * ph.linear_lr_scale)
     fit = fit_sources(logits_of, params, sources, ul, loss_kind=ctx.loss, seed=seed2, eval_logits=eval_logits,
                       set_mode=set_mode, log=R.log, loss_eval_max=ph.loss_eval_max, track=track,
                       track_every=ph.track_every)

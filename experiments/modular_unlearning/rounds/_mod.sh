@@ -1,7 +1,7 @@
 # Shared settings of the modular rounds (the transformer plan). Sourced by the mod_*.sh rounds; submits nothing.
 # Forget addition mod 60; retain mod 59, mod 61 and one partner q. Conditions (max shared frequencies gcd(60, q) - 1):
 #   p60-q49 none (0), p60-q36 low (11), p60-q40 medium (19), p60-q30 high (29).
-ROOT=${ROOT:-data/modular_unlearning/main}
+ROOT=${ROOT:-data/modular_unlearning/main_wd}
 SEEDS=${SEEDS:-"0 1 2"}
 NONE=p60-q49
 ALL="p60-q49 p60-q36 p60-q40 p60-q30"

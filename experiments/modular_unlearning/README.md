@@ -17,7 +17,7 @@ and probes at the "=" position (answer probe, Fourier R^2, frozen A(D) map).
 
 Order on blackwell (from the repo root):
 
-    bash experiments/modular_unlearning/round.sh mod_quick   # first: pretraining time, generalisation without weight decay
+    bash experiments/modular_unlearning/round.sh mod_quick   # first: pretraining time, generalisation
     bash experiments/modular_unlearning/round.sh mod_x0      # families (None grid, other conditions, kappa variants)
     bash experiments/modular_unlearning/round.sh mod_x1      # after x0: hidden, not deleted (headline) + relearning
     bash experiments/modular_unlearning/round.sh mod_x2      # phase diagram
@@ -25,9 +25,11 @@ Order on blackwell (from the repo root):
     bash experiments/modular_unlearning/round.sh mod_x4      # geometry (kappa, linearised removal)
     bash experiments/modular_unlearning/round.sh mod_x5      # rescaling + relearning
 
-Defaults follow Anguita et al.'s transformer runs where they apply: Adam (lr 4e-3, beta2 0.98), no weight decay, full
-batch, up to 1M pretraining steps (stopping once every trained task reaches 99% held-out accuracy and train loss 1e-3);
-no LayerNorm (`--ln pre` adds it, as in their codebase). If mod_quick shows that a task does not generalise without
-weight decay, use `--pt_wd 1.0` in a new root.
+Pretraining: full-batch AdamW, lr 1e-3, beta2 0.98, weight decay 1.0, up to 1M steps. It stops when every retain
+task reaches 99% held-out accuracy, every training row is classified correctly, and the forget task has either reached
+99% or stopped improving for 20 evaluations (`--pt_patience`). The first quick round used Anguita et al.'s setting
+(lr 4e-3, no weight decay): after 1M steps no task generalised (held-out accuracy 0.67-0.81 on the retain tasks), so
+the models memorised and had no Fourier circuit. Weight decay is used in pretraining only; stage 2 and relearning use
+none, so the implicit bias under study is untouched. No LayerNorm (`--ln pre` adds it, as in their codebase).
 
 Tests: `python -m pytest experiments/modular_unlearning/tests -q` (CPU, about a minute).

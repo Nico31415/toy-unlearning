@@ -129,6 +129,8 @@ class PhaseConfig:
     loss_eval_max: int = 2000
     # Read-outs (probes, distances) every this many stage-2 steps (0 = only at the end).
     track_every: int = 0
+    # The linearised arm runs stage 2 at ul_lr times this.
+    linear_lr_scale: float = 0.1
 
 
 # group name -> (dataclass, flag prefix)

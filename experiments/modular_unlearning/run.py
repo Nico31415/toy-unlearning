@@ -49,7 +49,7 @@ log = lambda *a: print(*a, flush=True)  # noqa: E731
 
 # settings that make a result; a stored result is reused only when these match
 MODEL_KEYS = ("d", "heads", "d_mlp", "layers", "ln", "act", "kappa", "retain_extra", "loss")
-PT_KEYS = ("pt_lr", "pt_wd", "pt_beta2", "pt_max_steps", "pt_eval_every", "pt_acc", "pt_loss_thr")
+PT_KEYS = ("pt_lr", "pt_wd", "pt_beta2", "pt_max_steps", "pt_eval_every", "pt_acc", "pt_loss_thr", "pt_patience")
 UL_KEYS = ("ul_opt", "ul_lr", "ul_max_steps", "ul_eval_every", "ul_loss_thr", "ul_stop", "rs_mode", "n_key")
 RL_KEYS = ("rl_lr", "rl_max_steps", "rl_eval_every", "rl_acc")
 
@@ -177,13 +177,26 @@ def stage_family(ctx: Ctx) -> None:
             model.train()
             return row_loss(model(rows.x), rows.targets, rows.mask, a.loss)
 
+        best = {"acc": -1.0, "at": 0, "n": 0}
+
         def check():
+            # Stop when (i) every retain task generalises, (ii) the training rows are fitted (train loss below
+            # pt_loss_thr; with weight decay the loss has a positive floor, so every training row classified correctly
+            # instead), and (iii) the forget task has generalised or its test accuracy has not risen by 0.005 for
+            # pt_patience evaluations (an A(L) below n_learn never generalises; it memorises its L rows).
             model.eval()
             with torch.no_grad():
-                tl = row_loss(model(rows.x), rows.targets, rows.mask, a.loss).item()
+                out = model(rows.x)
+                tl = row_loss(out, rows.targets, rows.mask, a.loss).item()
+                train_acc = (out.masked_fill(~rows.mask, -1e9).argmax(1) == rows.targets.argmax(1)).float().mean().item()
                 accs = test_accuracies(ctx, model)
-            learned = [accs[f"acc_p{t.p}"] for t in s.retain] + ([accs["acc_forget"]] if L else [])
-            return tl < a.pt_loss_thr and min(learned) >= a.pt_acc, {"train_loss": tl, **accs}
+            best["n"] += 1
+            if accs["acc_forget"] > best["acc"] + 0.005:
+                best["acc"], best["at"] = accs["acc_forget"], best["n"]
+            fitted = train_acc == 1.0 if a.pt_wd > 0 else tl < a.pt_loss_thr
+            retain_ok = min(accs[f"acc_p{t.p}"] for t in s.retain) >= a.pt_acc
+            forget_ok = (not L or accs["acc_forget"] >= a.pt_acc or best["n"] - best["at"] >= a.pt_patience)
+            return fitted and retain_ok and forget_ok, {"train_loss": tl, "train_acc": train_acc, **accs}
 
         fit = train_full_batch(list(model.parameters()), loss_fn, lr=a.pt_lr, wd=a.pt_wd, beta2=a.pt_beta2,
                                max_steps=a.pt_max_steps, eval_every=a.pt_eval_every, check=check)
@@ -479,13 +492,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kappa", type=float, default=1.0, help="initial token-embedding scale (balancedness)")
     # pretraining (family)
     p.add_argument("--fam_L", type=int, nargs="+", default=None)
-    p.add_argument("--pt_lr", type=float, default=4e-3)
-    p.add_argument("--pt_wd", type=float, default=0.0)
+    p.add_argument("--pt_lr", type=float, default=1e-3)
+    p.add_argument("--pt_wd", type=float, default=1.0, help="AdamW weight decay in pretraining only (stage 2 and relearning use 0)")
     p.add_argument("--pt_beta2", type=float, default=0.98)
     p.add_argument("--pt_max_steps", type=int, default=1_000_000)
     p.add_argument("--pt_eval_every", type=int, default=1000)
     p.add_argument("--pt_acc", type=float, default=0.99, help="stop once every trained task reaches this test accuracy")
     p.add_argument("--pt_loss_thr", type=float, default=1e-3)
+    p.add_argument("--pt_patience", type=int, default=20, help="evaluations without a forget-accuracy rise before stopping")
     # stage 2
     p.add_argument("--Lfull", type=int, default=None)
     p.add_argument("--nS", type=int, nargs="+", default=[400])
