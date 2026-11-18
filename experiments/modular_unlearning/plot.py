@@ -37,9 +37,12 @@ def thresholds(fam, noise):
         acc = g.groupby("L")["acc_forget"].mean().sort_index()
         chance, top = 1.0 / p_f, acc.iloc[-1]
         learned = acc[acc >= chance + (1 - EPS) * (top - chance)]
-        floor = noise[noise.exp == exp].groupby("L")["d2"].mean().max() if len(noise) and (noise.exp == exp).any() else 0.0
+        # seed-noise floor per family member: a cell's distances are normalised at L_full, so its floor is the one there
+        nz = noise[noise.exp == exp].groupby("L")["d2"].mean().dropna() if len(noise) and (noise.exp == exp).any() \
+            else pd.Series(dtype=float)
         out[exp] = {"n_learn": int(max(learned.index.min() if len(learned) else acc.index.max(), 1)),
-                    "has_thr": float(chance + EPS * (top - chance)), "eta2": float(max(0.15, 2 * (floor or 0))),
+                    "has_thr": float(chance + EPS * (top - chance)), "eta2": 0.15,
+                    "eta2_by_L": {str(int(L)): float(max(0.15, 2 * v)) for L, v in nz.items()},
                     "overlap": float(g[g.L == g.L.max()]["overlap"].mean())}
     return out
 
@@ -66,13 +69,14 @@ def maps(ph, th, dest):
     for cfg, g in ph.groupby(keys):
         t = th[cfg[0]]
         m = g.groupby(["L_full", "n_S"]).mean(numeric_only=True).reset_index()
-        ut, ul = m.d_ut2 <= t["eta2"], m.d_ul2 <= t["eta2"]
+        e2 = np.array([t["eta2_by_L"].get(str(int(L)), t["eta2"]) for L in m.L_full], dtype=float)
+        ut, ul = m.d_ut2.to_numpy() <= e2, m.d_ul2.to_numpy() <= e2
         dist = np.where(ut & ul, 0, np.where(ul, 1, np.where(ut, 2, 3)))
         ha, hr, hu = m.acc_ad > t["has_thr"], m.acc_ut > t["has_thr"], m.acc_forget > t["has_thr"]
         caps = np.where(~ha, 0, np.where(~hr & hu, 1, np.where(~hr & ~hu, 2, np.where(hu, 3, 4))))
         x, y = m.n_S / t["n_learn"], m.L_full / t["n_learn"]
         fig, axs = plt.subplots(1, 2, figsize=(10.5, 4.4))
-        for ax, cls, names, title in ((axs[0], dist, DIST, f"within eta (eta^2={t['eta2']:.2f})"),
+        for ax, cls, names, title in ((axs[0], dist, DIST, "within eta (eta^2 = 2 x seed noise at L_full, >= 0.15)"),
                                       (axs[1], caps, CAPS, "has B")):
             for c, (lab, col) in names.items():
                 sel = cls == c
@@ -80,7 +84,7 @@ def maps(ph, th, dest):
                     ax.scatter(x[sel], y[sel], s=150, marker="s", color=col, edgecolor="k", lw=0.4, label=lab)
             if cls is dist and "d_noop_ut2" in m.columns:
                 # cells where doing nothing already counts as untraining: A(D) is within eta of A(D minus S)
-                triv = (m.d_noop_ut2 <= t["eta2"]).to_numpy()
+                triv = m.d_noop_ut2.to_numpy() <= e2
                 if triv.any():
                     ax.scatter(x[triv], y[triv], s=40, marker="x", color="k", lw=1.0,
                                label="A(D) already within eta of A(D minus S)")

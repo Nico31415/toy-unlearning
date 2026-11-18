@@ -14,7 +14,8 @@
 Crosses on the distance panel: cells where A(D) itself is already within eta of A(D minus S) (d_noop_ut2), so
 "untrains" there is met by doing nothing. Definitions. Has B: forget accuracy (10-way, held-out) above chance + eps * (A(D)'s accuracy - chance), eps = 0.1;
 learns B: above chance + 0.9 * (that margin). n_learn: the smallest L whose seed-mean accuracy learns B.
-eta^2 = max(0.15, 2 * the largest seed-noise floor in noise.csv). rho_l = (probe(U) - probe(A(0))) /
+eta^2 per cell = max(0.15, 2 * the seed-noise floor of A(L_full) in noise.csv) (thresholds.json: eta2_by_L);
+n_onset: the smallest L whose seed-mean accuracy has B. rho_l = (probe(U) - probe(A(0))) /
 (probe(A(L_full)) - probe(A(0))), with the references of the same seed.
 """
 from __future__ import annotations
@@ -35,6 +36,7 @@ DIST = {0: ("meets both", "#8DB8E3"), 1: ("unlearns only", "#F2B07E"), 2: ("untr
 CAPS = {0: ("U1 A(D) never had B", "#DADADA"), 1: ("U2 under-removed", "#F3E08A"), 2: ("U3 both goals met", "#A9C4EC"),
         3: ("U4 untrains, not unlearns", "#A8D8A0"), 4: ("U5 unlearns, over-removes", "#F5BE8E")}
 EPS = 0.1
+ETA2_MIN = 0.15
 
 
 def thresholds(family: pd.DataFrame, noise: pd.DataFrame, num_classes: int = 10):
@@ -47,11 +49,23 @@ def thresholds(family: pd.DataFrame, noise: pd.DataFrame, num_classes: int = 10)
         has_thr = chance + EPS * (top - chance)
         learned = acc[acc >= learn_thr]
         n_learn = int(learned.index.min()) if len(learned) else int(acc.index.max())
-        floor = noise[noise.exp == exp]["d2"].groupby(noise[noise.exp == exp]["L"]).mean().max() \
-            if len(noise) and (noise.exp == exp).any() else 0.0
-        out[exp] = {"n_learn": max(n_learn, 1), "has_thr": float(has_thr), "eta2": float(max(0.15, 2 * floor)),
-                    "noise_floor": float(floor)}
+        onset = acc[acc > has_thr]
+        # Seed-noise floor per family member. Distances of a stage-2 cell are normalised by ||A(L_full) - A(0)||^2,
+        # so the floor that applies to a cell is the one at L = L_full. (One maximum over all L is wrong: at small L
+        # the normaliser is tiny and the ratio is about 1 whatever happens, which made eta^2 = 2 in ph_e0.)
+        nz = noise[noise.exp == exp].groupby("L")["d2"].mean().dropna() if len(noise) and (noise.exp == exp).any() \
+            else pd.Series(dtype=float)
+        out[exp] = {"n_learn": max(n_learn, 1), "n_onset": int(onset.index.min()) if len(onset) else None,
+                    "has_thr": float(has_thr), "eta2": ETA2_MIN,
+                    "eta2_by_L": {str(int(L)): float(max(ETA2_MIN, 2 * v)) for L, v in nz.items()},
+                    "noise_by_L": {str(int(L)): float(v) for L, v in nz.items()}}
     return out
+
+
+def eta2_for(t: dict, L_full) -> np.ndarray:
+    """eta^2 of each cell: 2 x the seed-noise floor of A(L_full) (at least ETA2_MIN); ETA2_MIN where unmeasured."""
+    by = t.get("eta2_by_L", {})
+    return np.array([by.get(str(int(L)), t["eta2"]) for L in np.atleast_1d(L_full)], dtype=float)
 
 
 def add_rho(phase: pd.DataFrame, family: pd.DataFrame) -> pd.DataFrame:
@@ -84,14 +98,15 @@ def phase_maps(phase: pd.DataFrame, th, dest: Path) -> None:
                                               ut=("ref_A_f10_ut", "mean"),
                                               **({"d_noop_ut2": ("d_noop_ut2", "mean")} if "d_noop_ut2" in g else {})
                                               ).reset_index()
-        ut, ul = m.d_ut2 <= t["eta2"], m.d_ul2 <= t["eta2"]
+        e2 = eta2_for(t, m.L_full)
+        ut, ul = m.d_ut2.to_numpy() <= e2, m.d_ul2.to_numpy() <= e2
         dist = np.where(ut & ul, 0, np.where(ul, 1, np.where(ut, 2, 3)))
         has_a, has_r, has_u = m.ad > t["has_thr"], m.ut > t["has_thr"], m.A_f10 > t["has_thr"]
         caps = np.where(~has_a, 0, np.where(~has_r & has_u, 1, np.where(~has_r & ~has_u, 2,
                                                                         np.where(has_u, 3, 4))))
         x, y = m.n_S / t["n_learn"], m.L_full / t["n_learn"]
         fig, axs = plt.subplots(1, 2, figsize=(11, 4.6))
-        for ax, cls, names, title in ((axs[0], dist, DIST, f"within eta (eta^2 = {t['eta2']:.2f})"),
+        for ax, cls, names, title in ((axs[0], dist, DIST, "within eta (eta^2 = 2 x seed noise at L_full, >= 0.15)"),
                                       (axs[1], caps, CAPS, "has B (forget accuracy)")):
             for c, (label, colour) in names.items():
                 sel = cls == c
@@ -99,7 +114,7 @@ def phase_maps(phase: pd.DataFrame, th, dest: Path) -> None:
                     ax.scatter(x[sel], y[sel], s=160, marker="s", color=colour, edgecolor="k", lw=0.4, label=label)
             if cls is dist and "d_noop_ut2" in m.columns:
                 # cells where doing nothing already counts as untraining: A(D) is within eta of A(D minus S)
-                triv = (m.d_noop_ut2 <= t["eta2"]).to_numpy()
+                triv = m.d_noop_ut2.to_numpy() <= e2
                 if triv.any():
                     ax.scatter(x[triv], y[triv], s=40, marker="x", color="k", lw=1.0,
                                label="A(D) already within eta of A(D minus S)")
