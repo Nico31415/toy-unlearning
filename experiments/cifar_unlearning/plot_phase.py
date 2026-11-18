@@ -222,7 +222,8 @@ def mix_plot(phase: pd.DataFrame, dest: Path) -> None:
 
 def family_plot(family: pd.DataFrame, th, dest: Path) -> None:
     fig, ax = plt.subplots(figsize=(6, 4))
-    probe = sorted(c for c in family.columns if c.startswith("probe_"))
+    # per-layer probes in network order (the CSV keeps the order of the taps); the last is the deepest layer
+    probe = [c for c in family.columns if c.startswith("probe_") and c not in ("probe_acc", "probe_ce", "probe_acc2")]
     for exp, g in family.groupby("exp"):
         m = g.groupby("L").mean(numeric_only=True)
         x = np.maximum(m.index.to_numpy(), 1)
