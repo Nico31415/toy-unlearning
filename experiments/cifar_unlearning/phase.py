@@ -188,6 +188,16 @@ class References:
             self._feats[("logits", L)] = {"f": fwd(self.ev.x_test_forget)[0], "r": fwd(self.ev.x_test_retain)[0]}
         return self._feats[("logits", L)]
 
+    def amps(self, l_full: int) -> Dict[str, Dict[str, float]]:
+        """amp_<layer> of A(L_full) and of A(0), both read by A(L_full)'s frozen probes: the two ends of the scale
+        that rho_amp is measured on."""
+        key = ("amps", l_full)
+        if key not in self._feats:
+            ad, a0 = self.features(l_full, True), self.features(0, False)
+            self._feats[key] = {name: {k: v for k, v in readout(ModelForward(self.model(L)), self.pd, ad, a0).items()
+                                       if k.startswith("amp_")} for name, L in (("ad", l_full), ("a0", 0))}
+        return self._feats[key]
+
     def features(self, L: int, with_probes: bool):
         key = (L, with_probes)
         if key not in self._feats:
@@ -356,6 +366,14 @@ def measure(ctx, fwd: Forward, refs: References, l_full: int, n_s: int, pair) ->
     refit = refit_forget_bias(lo_cal, pd_.labels_train, lo_f, pair)
     out["A_f10_refit"] = accuracy(refit, ev.y_test_forget)
     out.update(readout(fwd, pd_, refs.features(l_full, True), refs.features(0, False)))
+    # Magnitude of the forget representation along A(D)'s probe direction, on the A(0) -> A(D) scale: 1 = as in A(D),
+    # 0 = as in A(0) (which never trained on the forget images). In the diagonal network this is the hidden energy
+    # ||w_F||^2 that sets relearning speed; a scale-blind probe cannot see it.
+    amps = refs.amps(l_full)
+    for k, v in amps["ad"].items():
+        lo, hi = amps["a0"][k], v
+        out[f"ref_{k}_ad"], out[f"ref_{k}_a0"] = hi, lo
+        out[f"rho_{k}"] = (out[k] - lo) / (hi - lo) if abs(hi - lo) > 1e-12 else float("nan")
     return out
 
 

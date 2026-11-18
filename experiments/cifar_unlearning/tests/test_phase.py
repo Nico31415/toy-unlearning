@@ -112,7 +112,7 @@ def test_phase_tables(phase_run):
     assert set(ph.method) == {"F", "FR", "R"} and set(ph.arm) == {"full", "readout", "linear"}
     assert set(ph[ph.method == "R"].target) == {"-"}
     for col in ("d_ut2", "d_ul2", "d_ref2", "d_noop_ut2", "A_f10", "A_f10_refit", "probe_block2", "frozen_block2", "cka_ad_block2",
-                "ensd_ad_block2", "amp_block2"):
+                "ensd_ad_block2", "amp_block2", "rho_amp_block2", "ref_amp_block2_ad"):
         assert ph[col].notna().all(), col
     # n_S = L_full: S = S_full, so A(D minus S) is A(0) and the two references coincide
     full = ph[ph.n_S == 10]

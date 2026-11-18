@@ -5,7 +5,8 @@
     family.png             forget accuracy and penultimate probe accuracy of A(L) against L; n_learn marked
     phase_<cfg>.png        per stage-2 configuration (method, target, arm, S): the distance classes (within eta of
                            A(D minus S) and/or A(D minus S_full)) and the has-B regions U1-U5, on axes in units of n_learn
-    rho_layers.png         residual decodability rho per layer, mean over cells, one line per configuration
+    rho_layers.png         per layer, mean over cells, one line per configuration: residual decodability rho (fresh,
+                           scale-blind probe) and residual magnitude rho_amp (along A(D)'s probe direction)
     rho_vs_relearn.png     relearning cost against penultimate rho and against output forget accuracy (Spearman)
     thresholds.json        n_learn, eta^2 and the has-B accuracy threshold per experiment
     mix_untraining.png     E9 (mix-C-ALPHA): untraining on S's own images, membership AUC and kept-class accuracy
@@ -136,16 +137,20 @@ def rho_plots(phase: pd.DataFrame, layers, relearn: pd.DataFrame, family: pd.Dat
     rho_cols = [f"rho_{k}" for k in layers if f"rho_{k}" in phase.columns]
     if not rho_cols:
         return
-    fig, ax = plt.subplots(figsize=(7, 4))
-    for cfg, g in phase.groupby(["exp", "method", "target", "arm", "S"]):
-        ax.plot(range(len(rho_cols)), g[rho_cols].mean().to_numpy(), marker="o",
-                label=f"{cfg[0]} {config_name(dict(zip(['exp', 'method', 'target', 'arm', 'S'], cfg)))}")
-    ax.axhline(1, color="#888", ls=":")
-    ax.axhline(0, color="#888", ls=":")
-    ax.set_xticks(range(len(rho_cols)))
-    ax.set_xticklabels([c[4:] for c in rho_cols])
-    ax.set_ylabel("residual decodability rho")
-    ax.legend(fontsize=6)
+    amp_cols = [f"rho_amp_{k}" for k in layers if f"rho_amp_{k}" in phase.columns]
+    panels = [(rho_cols, "residual decodability rho (fresh probe)")] + \
+        ([(amp_cols, "residual magnitude rho_amp (A(D)'s probe direction)")] if amp_cols else [])
+    fig, axs = plt.subplots(1, len(panels), figsize=(7 * len(panels), 4), squeeze=False)
+    for ax, (cols, lab) in zip(axs[0], panels):
+        for cfg, g in phase.groupby(["exp", "method", "target", "arm", "S"]):
+            ax.plot(range(len(cols)), g[cols].mean().to_numpy(), marker="o",
+                    label=f"{cfg[0]} {config_name(dict(zip(['exp', 'method', 'target', 'arm', 'S'], cfg)))}")
+        ax.axhline(1, color="#888", ls=":")
+        ax.axhline(0, color="#888", ls=":")
+        ax.set_xticks(range(len(cols)))
+        ax.set_xticklabels([c.split("_")[-1] for c in cols])
+        ax.set_ylabel(lab)
+    axs[0, 0].legend(fontsize=6)
     fig.tight_layout()
     fig.savefig(dest / "rho_layers.png", dpi=130)
     plt.close(fig)
@@ -160,12 +165,14 @@ def rho_plots(phase: pd.DataFrame, layers, relearn: pd.DataFrame, family: pd.Dat
         target = p.ref_A_f10_ad.iloc[0] - 0.05
         ok = g[g.A_f10_after >= target].n_RL
         rows.append({"n_cost": ok.min() if len(ok) else 2 * g.n_RL.max(), "rho": p[rho_cols[-1]].iloc[0],
-                     "A_f10": p.A_f10.iloc[0]})
+                     "rho_amp": p[amp_cols[-1]].iloc[0] if amp_cols else np.nan, "A_f10": p.A_f10.iloc[0]})
     if not rows:
         return
     df = pd.DataFrame(rows)
-    fig, axs = plt.subplots(1, 2, figsize=(9, 3.8), sharey=True)
-    for ax, col, lab in ((axs[0], "rho", f"penultimate rho ({rho_cols[-1][4:]})"), (axs[1], "A_f10", "output forget accuracy")):
+    cols = [("rho", f"penultimate rho ({rho_cols[-1][4:]})")] + \
+        ([("rho_amp", "penultimate rho_amp")] if amp_cols else []) + [("A_f10", "output forget accuracy")]
+    fig, axs = plt.subplots(1, len(cols), figsize=(4.5 * len(cols), 3.8), sharey=True)
+    for ax, (col, lab) in zip(axs, cols):
         ax.scatter(df[col], df.n_cost, s=18)
         r = df[[col, "n_cost"]].corr(method="spearman").iloc[0, 1]
         ax.set_title(f"Spearman {r:.2f}", loc="left", fontsize=10)
