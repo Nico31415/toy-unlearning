@@ -785,7 +785,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main(argv: Optional[Sequence[str]] = None, check_only: bool = False) -> None:
+    """check_only: parse and validate the flags and build the configs, run nothing (used by the preflight)."""
     args = build_parser().parse_args(argv)
     train_module.set_augment(args.augment)
     if args.theory and (not args.forget_sizes or args.match_retain):
@@ -799,6 +800,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         if args.exp is None:
             raise SystemExit(f"--exp is required for {args.stage}")
         parse_experiment(args.exp)  # validate early
+    if check_only:
+        build_configs(args)
+        return
     ctx = Context(args)
     log(f"stage {args.stage} on {ctx.device}, out_root {ctx.out}")
     {

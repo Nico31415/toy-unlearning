@@ -48,6 +48,8 @@ class ScratchConfig:
     # Linear warm-up of the learning rate over this many steps (0 = none). Networks without normalisation
     # (vgg11_plain) diverge in the first few SGD steps at any useful lr without it.
     warmup_steps: int = 0
+    # Stop after this many steps (0 = run all epochs). The lr schedule is unchanged; used by the preflight check.
+    max_steps: int = 0
     # The run is marked failed (non-zero exit) if the final train loss is above this.
     max_final_train_loss: float = 1e-2
 

@@ -104,6 +104,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("stage", choices=ARRAY_STAGES)
     parser.add_argument("array_id", type=int, nargs="?")
     parser.add_argument("--count", action="store_true")
+    parser.add_argument("--check", action="store_true", help="parse every task's flags, run nothing")
     parser.add_argument("--loss", default="ce")
     parser.add_argument("--out_root", default=None)
     parser.add_argument("--exps", nargs="+", default=None)
@@ -126,6 +127,13 @@ def main(argv: Optional[List[str]] = None) -> None:
     array = build_array(args.stage, exps, args.mu_fs, args.seeds, args.fam_Ls, args.Lfulls, args.methods)
     if args.count:
         print(task_count(array))
+        return
+    if args.check:
+        n = task_count(array)
+        for i in range(n):
+            run.main(to_argv(array.get_args(i)) + ["--loss", args.loss, "--out_root", str(out_root)] + passthrough,
+                     check_only=True)
+        print(f"{args.stage}: {n} tasks, flags ok")
         return
     if args.array_id is None:
         raise SystemExit("give an array_id or --count")

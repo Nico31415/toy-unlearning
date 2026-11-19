@@ -122,10 +122,14 @@ def train_from_scratch(model: nn.Module, x: torch.Tensor, y: torch.Tensor, cfg: 
             opt.step()
             running += loss.item() * len(idx)
             step += 1
+            if cfg.max_steps and step >= cfg.max_steps:
+                break
         history.append({"epoch": epoch + 1, "train_loss_running": running / n,
                         "seconds": time.time() - start})
         log(f"epoch {epoch + 1}/{cfg.epochs} running loss {running / n:.4f} "
             f"({time.time() - start:.0f}s)")
+        if cfg.max_steps and step >= cfg.max_steps:
+            break
     final = full_loss(model, x, y, loss_kind)
     return {"steps": step, "final_train_loss": final,
             "converged": final <= cfg.max_final_train_loss,

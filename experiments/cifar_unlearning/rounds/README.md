@@ -8,3 +8,14 @@
 
 Both write to the same output root with the same settings, so the full round skips what the quick one
 already did. Always `git pull` before `round.sh`, in case round.sh itself changed.
+
+
+## Preflight
+
+`round.sh` now checks a round before submitting anything (`PREFLIGHT=0` skips it, `SKIP_TESTS=1` skips the tests):
+1. every third-party module the pipeline imports, including inside functions, imports in `$PY` (`preflight.py imports`);
+2. the test suite passes in `$PY` (pytest is installed into the env if missing);
+3. every task of every `submit` parses (`launch.py <stage> 0 --check`), and each `--array` matches the task count;
+4. each distinct from-scratch configuration (family, pretrain, retrain) trains for warm-up + 300 steps on real CIFAR
+   without a non-finite loss and with the loss falling (`preflight.py train`).
+Not covered: stage-2 stability on a family the same round has not trained yet.
