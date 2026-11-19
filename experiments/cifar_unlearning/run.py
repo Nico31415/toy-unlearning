@@ -45,7 +45,7 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from experiments.cifar_unlearning.config import (  # noqa: E402
-    DEFAULT_FRACTIONS, DEFAULT_SEEDS, add_config_args, build_configs, configs_to_dict)
+    DEFAULT_FRACTIONS, DEFAULT_SEEDS, GROUPS, add_config_args, build_configs, configs_to_dict)
 from experiments.cifar_unlearning.data import (  # noqa: E402
     Dataset, Split, load_cifar10, load_split, make_split, make_synthetic, n_for_fraction, normalize,
     parse_experiment, save_split, stratified_order)
@@ -304,7 +304,11 @@ def _done(path: Path, ctx: "Context", stage: str) -> bool:
     if saved.get("augment", False) != train_module.AUGMENT:
         raise SystemExit(f"{path} exists with a different --augment setting. Use a new --out_root.")
     for group in STAGE_GROUPS[stage]:
-        if saved.get("configs", {}).get(group) != current[group] or saved.get("loss") != ctx.loss:
+        # A field added to a config after a result was written counts as its default value, so adding an
+        # option (e.g. pt_warmup_steps) does not invalidate earlier results that ran without it.
+        defaults = dataclasses.asdict(GROUPS[group][0]())
+        saved_g = {**{k: v for k, v in defaults.items() if k in current[group]}, **(saved.get("configs", {}).get(group) or {})}
+        if saved_g != current[group] or saved.get("loss") != ctx.loss:
             raise SystemExit(f"{path} exists with different '{group}' settings (or loss). Use a new --out_root "
                              "for different hyperparameters, or --overwrite to replace it.")
     log(f"skip: {path} exists")

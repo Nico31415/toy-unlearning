@@ -227,3 +227,44 @@ def test_keep_forget_omega(tmp_path):
     assert set(f.index) == {"ybar", "ybar@w0.5"} and f.loc["ybar@w0.5", "omega"] == 0.5
     assert (ph[ph.method == "R"].omega == 1.0).all() and len(ph[ph.method == "R"]) == 1  # R has no forget term
     assert len(list((out / "phase").glob("**/t=ybar@w0.5/**/result.json"))) == 1
+
+
+def test_auc_matches_brute_force_with_ties():
+    import torch
+    from experiments.cifar_unlearning.phase import auc
+    g = torch.Generator().manual_seed(0)
+    m = torch.randint(0, 5, (37,), generator=g).float(); o = torch.randint(0, 5, (53,), generator=g).float()
+    brute = ((m[:, None] > o[None]).double() + 0.5 * (m[:, None] == o[None]).double()).mean().item()
+    assert abs(auc(m, o) - brute) < 1e-12
+    assert auc(torch.tensor([]), o) != auc(torch.tensor([]), o)  # nan
+
+
+def test_pretraining_stops_on_divergence():
+    import torch
+    from experiments.cifar_unlearning.config import ScratchConfig
+    from experiments.cifar_unlearning.models import build_model
+    from experiments.cifar_unlearning.train import train_from_scratch
+    torch.manual_seed(0)
+    m = build_model("tiny_plain", 10); x = torch.randn(64, 3, 32, 32) * 50; y = torch.randint(0, 10, (64,))
+    out = train_from_scratch(m, x, y, ScratchConfig(epochs=2, lr=10.0, batch_size=32), seed=0, loss_kind="mse", log=lambda s: None)
+    assert out.get("diverged") and not out["converged"]
+    m = build_model("tiny_plain", 10)
+    out = train_from_scratch(m, x / 50, y, ScratchConfig(epochs=2, lr=0.01, batch_size=32, warmup_steps=3), seed=0, loss_kind="mse", log=lambda s: None)
+    assert not out.get("diverged")
+
+
+def test_done_tolerates_options_added_later(tmp_path):
+    import json, types
+    from experiments.cifar_unlearning import run
+    from experiments.cifar_unlearning.config import configs_to_dict, build_configs, add_config_args
+    import argparse
+    p = argparse.ArgumentParser(); add_config_args(p); args = p.parse_args([])
+    cfg = build_configs(args); saved = configs_to_dict(cfg); saved["pt"].pop("warmup_steps")
+    path = tmp_path / "result.json"; path.write_text(json.dumps({"configs": saved, "loss": "mse", "augment": run.train_module.AUGMENT}))
+    ctx = types.SimpleNamespace(args=types.SimpleNamespace(overwrite=False), cfg=cfg, loss="mse")
+    assert run._done(path, ctx, "family")
+    cfg["pt"].warmup_steps = 100
+    try:
+        run._done(path, ctx, "family"); assert False
+    except SystemExit:
+        pass

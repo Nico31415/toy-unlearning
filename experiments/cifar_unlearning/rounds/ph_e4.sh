@@ -7,7 +7,10 @@ S="0.1 0.3 0.5 1 1.5 2 5"
 ns=$(echo $SEEDS | wc -w)
 submit --array=0-$((2 * ns - 1)) $L phase $A --exps $EXP --seeds $SEEDS --Lfulls 5000 --methods F R \
   --ph_nS 100 1000 --ph_targets ybar --ph_arms full --ph_S $S $UL
-P="--loss mse --augment --arch vgg11_plain --pt_lr 0.01 --pt_epochs 100 --pt_weight_decay 0 --out_root ${ROOT}_plain"
+# Without normalisation the plain net diverges in its first SGD steps at any useful lr (measured: lr 1e-3 to 1e-2 all
+# reach inf within 10 steps); a 1000-step linear warm-up fixes it. New root: the first attempt (no warm-up) left a
+# family of diverged models in ${ROOT}_plain.
+P="--loss mse --augment --arch vgg11_plain --pt_lr 0.01 --pt_warmup_steps 1000 --pt_epochs 100 --pt_weight_decay 0 --out_root ${ROOT}_plainw"
 submit --array=0-$((4 * ns - 1)) $L family $P --exps $EXP --seeds $SEEDS --fam_Ls 0 4000 4900 5000
 submit --array=0-$((2 * ns - 1)) --dependency=afterok:$LAST $L phase $P --exps $EXP --seeds $SEEDS --Lfulls 5000 \
   --methods F R --ph_nS 100 1000 --ph_targets ybar --ph_arms full --ph_S $S $UL

@@ -109,9 +109,14 @@ def train_from_scratch(model: nn.Module, x: torch.Tensor, y: torch.Tensor, cfg: 
         running = 0.0
         for b in range(steps_per_epoch):
             idx = perm[b * cfg.batch_size:(b + 1) * cfg.batch_size]
+            warm = min(1.0, (step + 1) / cfg.warmup_steps) if cfg.warmup_steps > 0 else 1.0
             for group in opt.param_groups:
-                group["lr"] = 0.5 * cfg.lr * (1 + math.cos(math.pi * step / total_steps))
+                group["lr"] = warm * 0.5 * cfg.lr * (1 + math.cos(math.pi * step / total_steps))
             loss = classification_loss(model(augment_batch(x[idx])), y[idx], loss_kind)
+            if not torch.isfinite(loss):
+                log(f"non-finite training loss at step {step} (epoch {epoch + 1}); stopping")
+                return {"steps": step, "final_train_loss": float("nan"), "converged": False,
+                        "history": history, "seconds": time.time() - start, "diverged": True}
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()

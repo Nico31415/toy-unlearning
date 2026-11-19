@@ -320,6 +320,8 @@ def refit_forget_bias(logits_cal: torch.Tensor, y_cal: torch.Tensor, logits_test
         add[:, fc] = bias
         return out + add
 
+    if not (torch.isfinite(logits_cal).all() and torch.isfinite(logits_test).all()):
+        return torch.full_like(logits_test, float("nan"))
     opt = torch.optim.LBFGS([log_t, bias], max_iter=100, line_search_fn="strong_wolfe")
 
     def closure():
@@ -329,7 +331,10 @@ def refit_forget_bias(logits_cal: torch.Tensor, y_cal: torch.Tensor, logits_test
         return loss
 
     with torch.enable_grad():
-        opt.step(closure)
+        try:
+            opt.step(closure)
+        except RuntimeError:  # overflow in the line search on extreme logits
+            return torch.full_like(logits_test, float("nan"))
     with torch.no_grad():
         return apply(logits_test)
 
@@ -387,12 +392,13 @@ def per_sample_loss(logits: torch.Tensor, y: torch.Tensor, loss: str) -> torch.T
 
 def auc(members: torch.Tensor, others: torch.Tensor) -> float:
     """P(score of a member > score of a non-member), ties counted half (the Mann-Whitney statistic)."""
-    from scipy.stats import rankdata
-    m, o = members.double().cpu().numpy(), others.double().cpu().numpy()
-    if not len(m) or not len(o):
+    m, o = members.double().flatten().cpu(), others.double().flatten().cpu()
+    if not len(m) or not len(o) or not (torch.isfinite(m).all() and torch.isfinite(o).all()):
         return float("nan")
-    ranks = rankdata(np.concatenate([m, o]))
-    return float((ranks[:len(m)].sum() - len(m) * (len(m) + 1) / 2) / (len(m) * len(o)))
+    o = o.sort().values
+    below = torch.searchsorted(o, m, right=False).double()       # others strictly below each member
+    at_or_below = torch.searchsorted(o, m, right=True).double()  # others below or tied
+    return float((below + 0.5 * (at_or_below - below)).sum() / (len(m) * len(o)))
 
 
 def member_metrics(ctx, fwd: Forward, refs: References, l_full: int, n_s: int, x_s: torch.Tensor,
@@ -536,7 +542,10 @@ def run_one(ctx, refs: References, out: Path, exp, seed, l_full, n_s, method, ta
                       set_mode=set_mode, log=R.log, loss_eval_max=ph.loss_eval_max, track=track,
                       track_every=ph.track_every)
     metrics = measure(ctx, fwd_now(), refs, l_full, n_s, pair)
-    metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+    try:
+        metrics.update(member_metrics(ctx, fwd_now(), refs, l_full, n_s, x_s, y_s, pair))
+    except Exception as e:  # a membership metric must never cost the run
+        metrics["member_metrics_error"] = repr(e)[:200]
     out.mkdir(parents=True, exist_ok=True)
     if arm == "linear":
         torch.save({n: d.detach().half().cpu() for n, d in delta.items()}, out / "delta_fp16.pt")
