@@ -1,0 +1,135 @@
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=2.1cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx,enumitem}
+\usepackage[T1]{fontenc}\usepackage{lmodern}
+\usepackage[font=small]{caption}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\newcommand{\bs}{\beta^\star}\newcommand{\E}{\mathbb E}\newcommand{\asinh}{\operatorname{arcsinh}}\newcommand{\prox}{\operatorname{prox}}
+\title{One template and its variants:\\ cross-entropy, early stopping, SGD and regularisers in the diagonal-network model}
+\author{}\date{23 November 2026}
+\begin{document}\maketitle
+
+\section{The template}
+The model is $f(x)=x^\top\beta$ with $\beta=u^2-v^2$. Data: $n$ inputs $x_i\sim\mathcal N(0,I_d/d)$, the columns of $X$, with targets $y$; $\alpha=n/d$. Teacher $\bs$: entries $\pm\rho^{-1/2}$ with probability $\rho$, else $0$.
+
+\textbf{(T1) Mirror flow.} For any loss $L(X^\top\beta)$, gradient flow on $(u,v)$ is
+\begin{equation}\label{T1}
+\beta=c\,\sinh\theta,\qquad \dot\theta=-4\,\nabla_\beta L ,\qquad c=2uv\ \text{(constant in time)}.
+\end{equation}
+So $\theta(t)-\theta(0)$ always lies in the span of the inputs. Small $c$ is the rich regime, large $c$ the lazy one ($c=\sqrt k/2$).
+
+\textbf{(T2) End point.} If training from $\beta_0$ ends with $X^\top\beta=y$, then
+\begin{equation}\label{T2}
+\beta_\infty=\arg\min_\beta D_c(\beta,\beta_0)\quad\text{s.t.}\quad X^\top\beta=y ,
+\end{equation}
+where $D_c$ is the Bregman divergence of $\psi_c$, $\psi_c'(\beta)=\asinh(\beta/c)$. (These are the KKT conditions of \eqref{T2}: $\theta_\infty-\theta_0\in\operatorname{span}X$ and the constraints.)
+
+\textbf{(T3) Large $d$.} For a problem ``minimise $\sum_jR(\beta_j)$ subject to $X^\top\beta=X^\top\bs$'', each weight is distributed as
+\begin{equation}\label{T3}
+\beta=\prox_{\tau R}(\bs+\sigma h),\quad h\sim\mathcal N(0,1),\qquad \sigma^2=\frac{\E(\beta-\bs)^2}{\alpha},\qquad \E[\prox{}']=\alpha .
+\end{equation}
+Two unknown numbers, $\tau$ and $\sigma$. Pretraining from zero is $R=\psi_c$.
+
+Every variant below changes one of three things: the \emph{scale} $c$, the \emph{start} $\beta_0$, or the \emph{constraints}. Table~\ref{tab} is the summary.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}lll@{}}\toprule
+variant & what changes in the template & status\\\midrule
+cross-entropy, soft labels & targets $y\to$ label logits & exact\\
+rescaling the weights by $\sqrt\kappa$ & $c\to\kappa c$, $\beta_0\to\kappa\beta_0$ & exact\\
+weight decay, then switched off & the same, with $\kappa=e^{-2\Lambda}$ & exact\\
+mini-batch SGD & the same, with $\kappa=\prod_k(1-4\gamma^2g_k^2)$ & exact; $\kappa$ random\\
+one-sided decay, then switched off & $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$ & exact\\
+regulariser kept on & \eqref{T2} becomes a penalised fit; start forgotten & exact (convex $R$)\\
+early stopping & targets $\to$ current predictions; needs dynamics & exact, solved numerically\\
+ascent on hard labels & no end point & approximate only\\
+non-convex regulariser & end point depends on the path & no formula\\\bottomrule
+\end{tabular}\caption{The variants.}\label{tab}\end{table}
+
+\section{Cross-entropy}
+\textbf{Soft labels.} If the labels are probabilities $p_i\in(0,1)$, the loss is minimised at the finite logits $\log\frac{p_i}{1-p_i}$. By \eqref{T1} the flow converges to \eqref{T2} with those logits as targets. With a logistic teacher, $p_i=\sigma(x_i^\top\bs)$, the targets are $x_i^\top\bs$: \emph{cross-entropy pretraining is the squared-loss model}, and everything known for it carries over. (Flow vs \eqref{T2}: $2\times10^{-6}$.)
+
+\textbf{Hard labels.} The weights diverge and only a limiting direction is known (Moroshko et al.; Pesme et al.). At realistic losses neither the hard-margin projection ($27$--$54\%$ off) nor the regularisation path ($19$--$38\%$) describes the flow. We do not use hard labels for pretraining.
+
+\textbf{Ascent on hard labels} (gradient ascent, NPO). With $z_i=y_ix_i$ and per-sample weight $w(\cdot)>0$ on the margin $m_i=z_i^\top\beta$,
+\begin{equation}
+\theta(t)=\theta_0-\sum_i\Lambda_i(t)\,z_i,\qquad \dot\Lambda_i=4\,w(m_i).
+\end{equation}
+The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point. Freezing the $\Lambda_i$ at a common value is accurate to $3$--$8\%$ early and $14$--$35\%$ near chance. In simulation, for every $k$ from $10^{-8}$ to $10^{4}$, ascent gains at most $6\%$ over doing nothing, while soft targets at the uniform label (zero logit, exact by \eqref{T2}) do far better.
+
+\section{Rescaling, weight decay, SGD: one parameter $\kappa$}
+\textbf{Rescaling.} Multiplying all weights by $\sqrt\kappa$ gives $c\to\kappa c$, $\beta_0\to\kappa\beta_0$, $\theta_0$ unchanged. Then \eqref{T2} applies with the new scale and start.
+
+\textbf{Weight decay that is switched off.} With penalty $\frac{\lambda_t}2(\|u\|^2+\|v\|^2)$,
+$\dot u=-2u\,\nabla L-\lambda_tu$, $\dot v=2v\,\nabla L-\lambda_tv$, hence
+\begin{equation}
+\beta_t=c\,e^{-2\Lambda_t}\sinh\theta_t,\qquad\dot\theta=-4\nabla_\beta L,\qquad\Lambda_t=\int_0^t\lambda_s\,ds .
+\end{equation}
+The decay never touches $\theta$; it only shrinks the scale. After switch-off and convergence the end point is \eqref{T2} with $\kappa=e^{-2\Lambda}$: \emph{temporary weight decay is a rescaling}, and only its total $\Lambda$ matters, not its timing. This is Theorem 3.11 of Jacobs, Zhou \& Burkholz (2025) in our model; their ``type of bias'' is $c\to\kappa c$ and their ``positional bias'' is $\beta_0\to\kappa\beta_0$.
+
+\textbf{One-sided decay} $\frac{\lambda_t}2\|u\|^2$ (their Example 3.13): $u$ shrinks by $e^{-\Lambda}$ and $v$ does not, so $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$. For pretraining this is \eqref{T3} with $R(\beta)=\psi_{e^{-\Lambda}c}(\beta)+\Lambda\beta$.
+
+\textbf{Mini-batch SGD.} One step with step size $\gamma$ and mini-batch gradient $g_k$ (in $\beta$) multiplies $u$ by $1-2\gamma g_k$ and $v$ by $1+2\gamma g_k$. So $uv$ shrinks by $1-4\gamma^2g_k^2$ per step, and to $O(\gamma^3)$ the mirror variable moves as in \eqref{T1}:
+\begin{equation}
+\kappa_j=\prod_k\big(1-4\gamma^2g_{k,j}^2\big)\qquad\text{(Even et al.\ 2023).}
+\end{equation}
+\emph{SGD is gradient flow with a smaller scale}; in stage 2 it is a rescaling of the pretrained model. $\kappa$ depends on the trajectory. For batches of size $b$ out of $n$, per step $\E\,g_j^2=\bar g_j^2+c_bV_j$, with $\bar g$ the full gradient, $V_j$ the per-sample variance and $c_b=\frac{n-b}{b(n-1)}$. In expectation, to first order in $\gamma$,
+\begin{equation}
+\E\log\frac1{\kappa_j}=4\gamma\int_0^\infty\!\big(c_bV_j+\bar g_j^2\big)\,dt ,
+\end{equation}
+the integrals taken along gradient flow. The relative error is of order $\gamma c_b$ ($11\%$ at $\gamma c_b=0.02$, $2\%$ at $0.005$); it comes from the path changing with the noise and has no closed form. As $\gamma\to0$, $\kappa\to1$ for every batch size: SGD with infinitesimal steps is gradient flow.
+
+\section{A regulariser that stays on}
+With a penalty $\lambda\sum_jR(\beta_j)$ kept on, training converges to the minimiser of loss plus penalty. For convex $R$ it is unique: \emph{the start and the scale are forgotten}. Weight decay on $(u,v)$ is $R=|\beta|$ (the cheapest factorisation of $\beta$ costs $|\beta|$), so the end point is a lasso. Large $d$: \eqref{T3} with one change,
+\begin{equation}\label{reg}
+\beta=\prox_{\tau R}(\bs+\sigma h),\qquad \sigma^2=\frac{\E(\beta-\bs)^2}{\alpha},\qquad \E[\prox{}']=\alpha-\frac\lambda\tau .
+\end{equation}
+($\lambda\to0$ recovers \eqref{T3}.) With several groups of samples with different targets, $\bs$ and $\alpha$ are replaced by group-weighted sums; the formulas are in \texttt{se\_wd.py}.
+
+For non-convex $R$ (weight decay on a three-layer diagonal network gives $|\beta|^{2/3}$) this fails: different algorithms and different initialisations end at different points (norm between $0.14$ and $0.30$ in one setting), and the solution of \eqref{reg} ($0.42$) is none of them. The end point is path-dependent.
+
+\section{Early stopping}
+\textbf{Identity.} By \eqref{T1}, at every time $\beta(t)$ is \eqref{T2} with targets $X^\top\beta(t)$: early stopping is the same bias applied to partly fitted targets. What is missing is how the predictions move.
+
+\textbf{Decoupled inputs.} If each coordinate has its own target $b$ and input scale $s$, then $\dot\beta=-4s\sqrt{\beta^2+c^2}\,(\beta-b)$, solved by
+\begin{equation}
+\frac{e^{\theta}-e^{\theta_b}}{e^{\theta}+e^{-\theta_b}}=\text{const}\cdot e^{-4s\sqrt{b^2+c^2}\,t},\qquad \sinh\theta_b=b/c .
+\end{equation}
+Forgetting to $b=0$ at small $c$ is a power law, $\beta(t)\approx\beta_0/(1+4s\beta_0t)$, and what is left relearns faster than from scratch ($0.37$ against $1.12$ from a leftover of $0.1$): stopped early, a weight is hidden, not deleted. At large $c$ both are exponential and equal.
+
+\textbf{Gaussian inputs, large $d$.} Let the targets be $a(t)\,y$ (so pretraining, then a switch of $a$, is one flow). Each coordinate obeys
+\begin{equation}
+\dot\theta=-4\Big(\eta+\alpha\,K(\beta-a\bs)\Big),\qquad \beta=c\sinh\theta,
+\end{equation}
+where $\eta$ is a Gaussian process and $K=(1-R)^{-1}$ a causal operator in time, with $R(t,s)=\E\,\partial\beta(t)/\partial\eta(s)$. The residual of a training sample is $K\zeta$, $\zeta$ Gaussian with the covariance of $\beta-a\bs$, and $\eta=\sqrt\alpha\,K\zeta$. Groups of samples with different targets or weights add their terms. This extends Nishiyama \& Imaizumi (2025) from a zero start to a switch. It is solved by one forward pass in time over sampled paths. A second copy trained on the kept samples only, driven by the same randomness, gives the distance to the retrained model at every stopping time.
+
+Its sampling noise is as large as a simulation's of the same size: at $k=10^{-6}$ single runs with 1000--2000 paths scatter by $\pm0.02$ to $\pm0.05$ on an untraining distance of $0.19$, which is what looked like a $10\%$ gap earlier. Averaged over runs it agrees with simulation ($0.177\pm0.013$ against $0.188$).
+
+\section{Checks}
+\begin{center}\small\begin{tabular}{@{}p{6.1cm}p{9.2cm}@{}}\toprule
+claim & check\\\midrule
+soft-label cross-entropy $=$ \eqref{T2} & flow vs projection, $2\times10^{-6}$, three scales\\
+its large-$d$ curves against $k$ & 14 settings, within one s.e.\ ($d=400$, 4 seeds)\\
+switched-off weight decay $=$ rescaling & gradient descent vs \eqref{T2}: $0.1$--$1.2\%$ (step-size error); same end point for decay early or late\\
+its large-$d$ curves & 42 numbers, $d=1600$, 16 seeds: all within 2 s.e.\\
+one-sided decay, large $d$ & 36 numbers, $d=1600$, 24 seeds: all within 1 s.e.\\
+regulariser kept on, three choices of $R$ & 54 numbers, $d=1500$ and $6000$: all within 2.2 s.e.\\
+SGD $=$ flow from the shrunk scale & $10^{-4}$ to $4\times10^{-3}$; stage 2: $0.2\%$ against $4.7\%$ without $\kappa$\\
+SGD batch-size formula & mean of 8--16 runs: ratio $1.11,1.05,1.02$ at $\gamma=0.02,0.01,0.005$ ($b=1$)\\
+early-stopping dynamics & norm and overlap through both stages at $k=1,10^{-2},10^{-6}$; reproduces the optimal stopping time at small $k$\\\bottomrule
+\end{tabular}\end{center}
+Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest $2.2$ (Figure~\ref{fig}).
+
+\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_regularisers_tight.png}
+\caption{Regulariser checks. Lines: theory. Markers: exact finite-size end points, $\pm1$ s.e.}\label{fig}\end{figure}
+
+\section*{Open}
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item Ascent losses (gradient ascent, NPO): no formula; the dynamical theory with a nonlinear sample side would give one.
+\item SGD beyond first order in $\gamma$, and multi-pass mini-batches at large $d$.
+\item Non-convex regularisers; deeper networks.
+\item Stage 2 with one-sided decay, and distances between two regularised solutions on overlapping data.
+\end{itemize}
+
+\small\textbf{References.} Woodworth et al., COLT 2020. Moroshko et al., NeurIPS 2020. Pesme, Pillaud-Vivien, Flammarion, NeurIPS 2021. Even, Pesme, Gunasekar, Flammarion, NeurIPS 2023. Pesme, Dragomir, Flammarion, NeurIPS 2024. Jacobs, Zhou, Burkholz, ICML 2025 (arXiv:2504.12883). Nishiyama, Imaizumi, arXiv:2510.01930.
+\end{document}
