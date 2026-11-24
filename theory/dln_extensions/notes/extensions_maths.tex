@@ -137,7 +137,20 @@ $R_\beta=\E\,\partial\beta(t)/\partial\eta(s)$, $R_\ell=\alpha\,\E\,\partial\ell
 \begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_labels.png}
 \caption{Hard labels. Top: penalty kept on, against $\lambda$. Middle: no penalty, pretraining. Bottom: pretraining then stage 2 on half the samples. Lines: theory. Markers: simulation, $\pm1$ s.e.}\label{fighard}\end{figure}
 
-What is still missing: for hard labels without a penalty there is no closed-form end point at finite time, only the trajectory \eqref{nl}; and no reference-distance curves (to $A(D\setminus F)$) have been computed from it yet.
+\textbf{Distance to the retrained model.} Without an end point, the retrained model is defined by its budget: $A(D\setminus F)$ is cross-entropy on the kept samples from zero for the pretraining time $T_1$. It is a second copy of \eqref{nl} driven by the same randomness (the two copies do not respond to each other), which gives $\|\beta(t)-A(D\setminus F)\|^2$ and the cosine at every stage-2 time (Figure~\ref{figdist}; $\alpha=0.6$, half the samples forgotten, $T_1=3$ at $k=1$ and $4$ at $k=10^{-2}$).
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item The distance is mostly norm: the pretrained model is larger than the retrained one. The cosine is the cleaner measure. Doing nothing: $0.70$ ($k=1$), $0.62$ ($k=10^{-2}$).
+\item Flipped labels move fastest and overshoot: cosine peaks at $0.84$ / $0.76$ after a short time, then falls below doing nothing while forget accuracy drops under chance. It must be stopped early.
+\item NPO with a retain term rises more slowly to a plateau, $0.83$ / $0.77$, and stays there while the norm (hence the distance) keeps growing.
+\item Ascent, with or without a retain term, follows NPO until it blows up (cosine $0.78$--$0.80$ / $0.70$--$0.73$ at forget accuracy $\approx0.9$).
+\item The retain term alone moves the cosine slowly ($0.76$ / $0.68$ at the end) and never lowers forget accuracy.
+\end{itemize}
+In this setting every forgetting loss beats doing nothing on the cosine. The earlier simulation (Section 2: forget coordinates only, a different deletion fraction, retrained model defined at matched accuracy) found ascent and NPO no better than doing nothing; the two have not been reconciled.
+
+\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_distance.png}
+\caption{Stage 2 on hard labels against the retrained model. Lines: theory ($\pm1$ s.e.). Markers: simulation.}\label{figdist}\end{figure}
+
+Still missing: a closed-form end point (there is none at finite time), and a scan over sample ratios and deletion fractions.
 
 \section{Checks}
 \begin{center}\small\begin{tabular}{@{}p{6.1cm}p{9.2cm}@{}}\toprule
@@ -156,6 +169,7 @@ SGD batch-size formula & mean of 8--16 runs: ratio $1.11,1.05,1.02$ at $\gamma=0
 hard labels, penalty kept on ($R=|\beta|$, $\beta^2$; sign and sampled labels) & 48 numbers, $d=1000$, 16 seeds: all within 1.9 s.e.\\
 hard labels, no penalty, pretraining dynamics & $k=1,10^{-2}$, 64 runs each: overlap, loss, accuracy within $1\%$ (1 s.e.); norm $1.5$--$3\%$ high (1.7 s.e.), gap shrinking with $d$ ($1.6,1.5,1.0\%$ at $d=1000,3000,8000$)\\
 hard labels, stage 2 (ascent, NPO, flipped labels) & 16 runs each: within 2 s.e.\ while the norm is bounded; once ascent blows up the means are dominated by a few runs and agreement is not established\\
+distance and cosine to the retrained model, five stage-2 losses, $k=1,10^{-2}$ & 16 runs each: all within 1.5 s.e.\ before blow-up; distance $3\%$ high at the start of stage 2 (the norm offset above)\\
 early-stopping dynamics & norm, overlap, unlearning distance at three scales; untraining distance at $k=10^{-6}$ to $4\%$ after averaging 7 runs\\\bottomrule
 \end{tabular}\end{center}
 Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest $2.2$ (Figure~\ref{fig}).
@@ -166,7 +180,7 @@ Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest 
 \section*{Limits}
 \begin{itemize}[nosep,leftmargin=1.2em]
 \item \textbf{Hard labels without a penalty have no closed form.} The trajectory is exact but numerical, noisy (average many runs), and tested at one pair of sample ratios. It is a cavity argument, not a proof.
-\item \textbf{Ascent losses:} the trajectory is verified only before the weights blow up. Distances to the retrained model have not been computed from it; those statements are still simulation.
+\item \textbf{Ascent losses:} the trajectory is verified only before the weights blow up. Its conclusions on the cosine differ from the earlier forget-coordinates simulation and the two settings have not been reconciled.
 \item \textbf{The large-$d$ curves for stage 2 from a pretrained model exist only for forget coordinates.} With retain and shared blocks, the identities are checked by gradient descent and the regulariser-kept-on curves by simulation, but there are no stage-2 curves.
 \item \textbf{SGD:} one common $\kappa$ is approximate; the batch-size formula is first order in the step size; no large-$d$ curves.
 \item \textbf{Early stopping:} a cavity derivation, numerically noisy at small scale; tested for zero targets only.
