@@ -37,8 +37,8 @@ def simulate(al, gam, phi, T, k, rho, d=3000, seed=0, n1=None, f=2/3):
 def job(a): return (run if a[0] == "th" else simulate)(*a[1:-1], n1=a[-1])
 
 if __name__ == "__main__":
-    k, gam, phi, T, nrun = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]); al, rho = 0.3, 0.2; n1 = int(sys.argv[6]) if len(sys.argv) > 6 else None
-    with Pool(2) as p: R = p.map(job, [(w, al, gam, phi, T, k, rho, 2000 if w == "th" else 3000, s, n1) for w in ("th", "si") for s in range(nrun)])
+    k, gam, phi, T, nrun = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]); al, rho = 0.3, 0.2; n1 = (int(sys.argv[6]) or None) if len(sys.argv) > 6 else None; NTH = int(sys.argv[7]) if len(sys.argv) > 7 else 2000
+    with Pool(2) as p: R = p.map(job, [(w, al, gam, phi, T, k, rho, NTH if w == "th" else 3000, s, n1) for w in ("th", "si") for s in range(nrun)])
     TH, SI = R[:nrun], R[nrun:]; pickle.dump(dict(TH=TH, SI=SI, gam=gam, phi=phi), open(f"sgd_{k:g}_{gam:g}_{phi:g}" + ("_2stage" if n1 else "") + ".pkl", "wb"))
     st = lambda L, key: (np.mean([o[key] for o in L], 0), np.std([o[key] for o in L], 0, ddof=1) / np.sqrt(len(L)))
     print(f"k={k:g}, step {gam:g}, batch fraction {phi:g}, {nrun} runs" + (f", stage 2 (zero targets on 2/3 of the samples) from step {n1}" if n1 else "") + ": theory / sim (z)")

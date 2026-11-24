@@ -169,6 +169,16 @@ ascent, NPO, flipped labels; distance and cosine & within 2 s.e.\ until the weig
 task vector, WHP & within 1.7 s.e.\\
 SGD, both stages & within 2 s.e.\\\bottomrule
 \end{tabular}\end{center}
+\textbf{Scales.} The rows above are at $k=10^{-2}$ and $1$ unless stated. Repeated at the extremes:
+\begin{center}\small\begin{tabular}{@{}p{5.6cm}p{4.6cm}p{4.9cm}@{}}\toprule
+result & $k=10^{-6}$ (and $10^{-4}$ for the first row) & $k=100$\\\midrule
+several trainings, blocks, anchor, $\kappa$ & 12 distances within 1.4 s.e. & 6 distances within 1.5 s.e.\\
+SGD trajectory & within 1.3 s.e. & within 2 s.e.\\
+hard labels, NPO + retain term & within 1.7 s.e. & within 1.9 s.e.\\
+early stopping, five losses & curves $12\%$ high (2--3 s.e.), all inherited from the starting value; ratio to the starting value within $2\%$ & within 2.7 s.e.; largest gap $0.003$ in the first, steepest steps\\\bottomrule
+\end{tabular}\end{center}
+The $12\%$ at $k=10^{-6}$ was a fluctuation of the starting distance in a small batch (4 theory runs, 6 simulations): with 38 more simulations and 14 more theory runs it is $0.442$--$0.455$ in simulation ($d=800$ to $8000$, rising with $d$) against $0.460$--$0.467$ in theory, a gap of $1$--$4\%$.
+
 The trajectory solver is as noisy as a simulation of its size and is averaged over runs. Its norms sit above simulation: $1.6,1.5,1.0\%$ at $d=1000,3000,8000$ for $\alpha=0.3$, $k=1$, and $6\%$ in one run at $\alpha=0.3$ with a second stage. The gap shrinks with $d$; that it vanishes is not shown.
 
 \begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_regularisers_tight.png}

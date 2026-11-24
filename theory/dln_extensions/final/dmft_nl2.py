@@ -71,9 +71,9 @@ def simulate(al, f, kind, wr, n1, T, dt, k, rho, d=3000, seed=0, ref=None, retra
 def job(a): return (run if a[0] == "th" else simulate)(*a[1:])
 
 if __name__ == "__main__":
-    kind, k, wr, nrun = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), int(sys.argv[4]); al, f, rho, dt = (float(sys.argv[7]) if len(sys.argv) > 7 else 0.6), (float(sys.argv[8]) if len(sys.argv) > 8 else 0.5), 0.2, 0.05
+    kind, k, wr, nrun = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), int(sys.argv[4]); al, f, rho, dt = (float(sys.argv[7]) if len(sys.argv) > 7 else 0.6), (float(sys.argv[8]) if len(sys.argv) > 8 else 0.5), 0.2, (float(sys.argv[9]) if len(sys.argv) > 9 else 0.05); NN = int(sys.argv[10]) if len(sys.argv) > 10 else 3000
     T1, T2 = float(sys.argv[5]), float(sys.argv[6]); n1 = int(round(T1 / dt)); T = n1 + int(round(T2 / dt))
-    with Pool(2) as p: R = p.map(job, [(w, al, f, kind, wr, n1, T, dt, k, rho, 3000, s) for w in ("th", "si") for s in range(nrun)])
+    with Pool(2) as p: R = p.map(job, [(w, al, f, kind, wr, n1, T, dt, k, rho, NN if w == 'th' else 3000, s) for w in ("th", "si") for s in range(nrun)])
     TH, SI = R[:nrun], R[nrun:]; pickle.dump(dict(dt=dt, n1=n1, TH=TH, SI=SI), open(f"nl2_{kind}_{k:g}_{wr:g}_{al:g}_{f:g}.pkl", "wb"))
     st = lambda L, key: (np.mean([o[key] for o in L], 0), np.std([o[key] for o in L], 0, ddof=1) / np.sqrt(len(L)))
     print(f"{kind}, k={k:g}, retain weight {wr:g}, {nrun} runs: theory / sim (z)")
