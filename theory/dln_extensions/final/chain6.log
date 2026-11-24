@@ -1,0 +1,71 @@
+flow, k=1: cos0/d0 = to the model retrained without the forget samples, cos1 = to the model trained on the retain class only. theory / sim (z)
+labels: NPO + retain term on all kept
+   step    0 of stage 2 | cos0 0.892/0.894 (-0.7) | cos1 0.740/0.740 (+0.1) | d0 4.318/4.179 (+0.9) | accF 0.999/1.000 (-1.1) |
+   step   10 of stage 2 | cos0 0.925/0.928 (-1.0) | cos1 0.770/0.770 (-0.1) | d0 3.926/3.744 (+1.2) | accF 0.950/0.945 (+0.7) |
+   step   20 of stage 2 | cos0 0.943/0.944 (-0.4) | cos1 0.782/0.781 (+0.1) | d0 4.407/4.305 (+0.6) | accF 0.850/0.844 (+0.7) |
+   step   39 of stage 2 | cos0 0.945/0.945 (-0.0) | cos1 0.773/0.772 (+0.1) | d0 7.588/7.542 (+0.1) | accF 0.714/0.722 (-1.0) |
+labels: NPO + retain term on retain class
+   step    0 of stage 2 | cos0 0.892/0.894 (-0.7) | cos1 0.740/0.740 (+0.1) | d0 4.318/4.179 (+0.9) | accF 0.999/1.000 (-1.1) |
+   step   10 of stage 2 | cos0 0.925/0.928 (-0.9) | cos1 0.793/0.793 (-0.1) | d0 3.583/3.419 (+1.1) | accF 0.960/0.956 (+0.8) |
+   step   20 of stage 2 | cos0 0.944/0.945 (-0.4) | cos1 0.830/0.829 (+0.2) | d0 3.699/3.642 (+0.4) | accF 0.847/0.840 (+0.8) |
+   step   39 of stage 2 | cos0 0.926/0.934 (-1.6) | cos1 0.834/0.848 (-1.5) | d0 7.249/6.920 (+0.7) | accF 0.684/0.694 (-1.3) |
+labels: flipped labels, no retain term
+   step    0 of stage 2 | cos0 0.892/0.894 (-0.7) | cos1 0.740/0.740 (+0.1) | d0 4.318/4.179 (+0.9) | accF 0.999/1.000 (-1.1) |
+   step   10 of stage 2 | cos0 0.891/0.888 (+0.8) | cos1 0.851/0.847 (+0.7) | d0 2.926/3.005 (-0.6) | accF 0.677/0.680 (-0.3) |
+   step   20 of stage 2 | cos0 0.829/0.828 (+0.3) | cos1 0.826/0.823 (+0.4) | d0 4.368/4.409 (-0.3) | accF 0.332/0.342 (-0.9) |
+   step   39 of stage 2 | cos0 0.742/0.744 (-0.2) | cos1 0.757/0.758 (-0.1) | d0 6.432/6.407 (+0.1) | accF 0.082/0.078 (+0.7) |
+labels: ascent + retain term on all kept
+   step    0 of stage 2 | cos0 0.892/0.894 (-0.7) | cos1 0.740/0.740 (+0.1) | d0 4.318/4.179 (+0.9) | accF 0.999/1.000 (-1.1) |
+   step   10 of stage 2 | cos0 0.926/0.929 (-1.0) | cos1 0.770/0.770 (-0.1) | d0 3.947/3.760 (+1.2) | accF 0.939/0.933 (+0.8) |
+   step   20 of stage 2 | cos0 0.903/0.898 (+0.5) | cos1 0.726/0.717 (+0.9) | d0 9.263/10.088 (-0.7) | accF 0.784/0.780 (+0.3) |
+   step   39 of stage 2 | cos0 0.321/0.353 (-0.4) | cos1 0.142/0.162 (-0.4) | d0 28451.719/3845.275 (+1.0) | accF 0.549/0.557 (-0.5) |
+sgd, k=1, step 0.06, batch fraction 0.2: cos0/d0 = to the model retrained without the forget samples, cos1 = to the model trained on the retain class only. theory / sim (z)
+squared loss: zero targets, anchor on all kept
+   step    0 of stage 2 | cos0 0.943/0.948 (-2.1) | cos1 0.767/0.766 (+0.4) | d0 0.099/0.091 (+2.2) | accF 0.986/0.991 (-3.3) |
+   step   15 of stage 2 | cos0 0.931/0.933 (-0.8) | cos1 0.837/0.832 (+1.3) | d0 0.098/0.096 (+0.8) | accF 0.793/0.784 (+1.5) |
+   step   30 of stage 2 | cos0 0.918/0.920 (-0.6) | cos1 0.822/0.814 (+1.6) | d0 0.117/0.115 (+0.4) | accF 0.761/0.745 (+2.2) |
+   step   59 of stage 2 | cos0 0.897/0.896 (+0.2) | cos1 0.793/0.788 (+1.1) | d0 0.151/0.153 (-0.3) | accF 0.725/0.711 (+1.6) |
+squared loss: zero targets, retain anchor
+   step    0 of stage 2 | cos0 0.943/0.948 (-2.1) | cos1 0.767/0.766 (+0.4) | d0 0.099/0.091 (+2.2) | accF 0.986/0.991 (-3.3) |
+   step   15 of stage 2 | cos0 0.900/0.900 (-0.2) | cos1 0.886/0.883 (+1.0) | d0 0.141/0.142 (-0.2) | accF 0.748/0.737 (+1.6) |
+   step   30 of stage 2 | cos0 0.874/0.876 (-1.0) | cos1 0.893/0.890 (+1.1) | d0 0.175/0.172 (+0.6) | accF 0.694/0.697 (-0.5) |
+   step   59 of stage 2 | cos0 0.845/0.847 (-0.8) | cos1 0.886/0.883 (+1.4) | d0 0.214/0.211 (+0.6) | accF 0.649/0.651 (-0.3) |
+sgd, k=1, step 0.06, batch fraction 0.2: cos0/d0 = to the model retrained without the forget samples, cos1 = to the model trained on the retain class only. theory / sim (z)
+labels: NPO + retain term on all kept
+   step    0 of stage 2 | cos0 0.888/0.890 (-0.7) | cos1 0.737/0.737 (-0.0) | d0 5.228/5.334 (-0.6) | accF 0.996/0.996 (-0.2) |
+   step   15 of stage 2 | cos0 0.918/0.922 (-1.2) | cos1 0.756/0.762 (-0.9) | d0 5.602/5.640 (-0.2) | accF 0.884/0.887 (-0.4) |
+   step   30 of stage 2 | cos0 0.921/0.925 (-1.4) | cos1 0.748/0.756 (-0.9) | d0 8.375/8.283 (+0.2) | accF 0.767/0.772 (-0.6) |
+   step   59 of stage 2 | cos0 0.920/0.914 (+1.5) | cos1 0.747/0.734 (+0.9) | d0 13.515/16.441 (-4.4) | accF 0.651/0.651 (-0.1) |
+flow, k=0.01: cos0/d0 = to the model retrained without the forget samples, cos1 = to the model trained on the retain class only. theory / sim (z)
+labels: NPO + retain term on all kept
+   step    0 of stage 2 | cos0 0.868/0.874 (-1.4) | cos1 0.725/0.729 (-1.1) | d0 5.934/5.641 (+1.2) | accF 0.995/0.995 (-0.1) |
+   step   10 of stage 2 | cos0 0.902/0.908 (-1.3) | cos1 0.751/0.756 (-1.2) | d0 5.550/5.217 (+1.3) | accF 0.922/0.918 (+0.5) |
+   step   20 of stage 2 | cos0 0.919/0.922 (-0.7) | cos1 0.756/0.760 (-1.0) | d0 6.388/6.155 (+0.8) | accF 0.839/0.836 (+0.5) |
+   step   39 of stage 2 | cos0 0.921/0.924 (-0.4) | cos1 0.741/0.750 (-1.2) | d0 10.659/10.151 (+0.9) | accF 0.734/0.735 (-0.1) |
+labels: NPO + retain term on retain class
+   step    0 of stage 2 | cos0 0.868/0.874 (-1.4) | cos1 0.725/0.729 (-1.1) | d0 5.934/5.641 (+1.2) | accF 0.995/0.995 (-0.1) |
+   step   10 of stage 2 | cos0 0.903/0.909 (-1.3) | cos1 0.776/0.780 (-1.3) | d0 5.107/4.798 (+1.3) | accF 0.932/0.926 (+0.9) |
+   step   20 of stage 2 | cos0 0.922/0.925 (-0.6) | cos1 0.807/0.810 (-0.8) | d0 5.400/5.266 (+0.5) | accF 0.829/0.825 (+0.4) |
+   step   39 of stage 2 | cos0 0.898/0.914 (-1.9) | cos1 0.791/0.815 (-1.9) | d0 10.896/9.520 (+1.5) | accF 0.693/0.707 (-1.2) |
+labels: flipped labels, no retain term
+   step    0 of stage 2 | cos0 0.868/0.874 (-1.4) | cos1 0.725/0.729 (-1.1) | d0 5.934/5.641 (+1.2) | accF 0.995/0.995 (-0.1) |
+   step   10 of stage 2 | cos0 0.873/0.871 (+0.6) | cos1 0.848/0.847 (+0.3) | d0 3.758/3.933 (-0.9) | accF 0.758/0.760 (-0.2) |
+   step   20 of stage 2 | cos0 0.817/0.815 (+0.3) | cos1 0.834/0.832 (+0.3) | d0 5.240/5.423 (-0.7) | accF 0.538/0.538 (-0.1) |
+   step   39 of stage 2 | cos0 0.768/0.770 (-0.2) | cos1 0.808/0.808 (-0.0) | d0 6.417/6.548 (-0.5) | accF 0.319/0.320 (-0.0) |
+labels: ascent + retain term on all kept
+   step    0 of stage 2 | cos0 0.868/0.874 (-1.4) | cos1 0.725/0.729 (-1.1) | d0 5.934/5.641 (+1.2) | accF 0.995/0.995 (-0.1) |
+   step   10 of stage 2 | cos0 0.904/0.910 (-1.2) | cos1 0.750/0.754 (-1.0) | d0 5.659/5.336 (+1.2) | accF 0.910/0.901 (+1.1) |
+   step   20 of stage 2 | cos0 0.856/0.851 (+0.2) | cos1 0.664/0.661 (+0.1) | d0 16.301/17.938 (-0.5) | accF 0.761/0.753 (+0.5) |
+   step   39 of stage 2 | cos0 0.269/0.365 (-1.4) | cos1 0.086/0.158 (-1.5) | d0 44693.806/7221.356 (+1.3) | accF 0.547/0.577 (-1.4) |
+sgd, k=0.01, step 0.06, batch fraction 0.2: cos0/d0 = to the model retrained without the forget samples, cos1 = to the model trained on the retain class only. theory / sim (z)
+squared loss: zero targets, anchor on all kept
+   step    0 of stage 2 | cos0 0.963/0.963 (+0.2) | cos1 0.775/0.775 (-0.5) | d0 0.068/0.069 (-0.1) | accF 0.989/0.992 (-1.6) |
+   step   15 of stage 2 | cos0 0.949/0.950 (-1.0) | cos1 0.873/0.870 (+0.9) | d0 0.079/0.077 (+0.8) | accF 0.857/0.870 (-2.4) |
+   step   30 of stage 2 | cos0 0.946/0.944 (+1.0) | cos1 0.871/0.867 (+1.0) | d0 0.083/0.085 (-0.9) | accF 0.832/0.825 (+1.4) |
+   step   59 of stage 2 | cos0 0.929/0.931 (-1.0) | cos1 0.851/0.849 (+0.8) | d0 0.104/0.102 (+0.6) | accF 0.780/0.775 (+0.9) |
+squared loss: zero targets, retain anchor
+   step    0 of stage 2 | cos0 0.963/0.963 (+0.2) | cos1 0.775/0.775 (-0.5) | d0 0.068/0.069 (-0.1) | accF 0.989/0.992 (-1.6) |
+   step   15 of stage 2 | cos0 0.913/0.913 (-0.4) | cos1 0.919/0.916 (+1.3) | d0 0.134/0.133 (+0.1) | accF 0.829/0.842 (-2.2) |
+   step   30 of stage 2 | cos0 0.889/0.889 (-0.3) | cos1 0.939/0.939 (+0.1) | d0 0.166/0.166 (-0.1) | accF 0.786/0.792 (-0.9) |
+   step   59 of stage 2 | cos0 0.865/0.866 (-0.3) | cos1 0.941/0.940 (+0.5) | d0 0.194/0.194 (-0.0) | accF 0.739/0.737 (+0.3) |
+CHAIN6_DONE

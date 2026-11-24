@@ -1,0 +1,251 @@
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=1.6cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,array}
+\usepackage[T1]{fontenc}\usepackage{lmodern}
+\usepackage{titlesec}\usepackage{pdflscape,tabularx,graphicx,longtable}
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{9pt}{3pt}
+\pagestyle{empty}\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\newcommand{\Rf}{R_{\mathrm{full}}}
+\newcommand{\Ff}{F_{\mathrm{full}}}
+\newcommand{\dSh}{d_{\mathrm{Sh}}}
+\usepackage[font=small]{caption}
+\begin{document}
+\setlength{\abovedisplayskip}{4pt}\setlength{\belowdisplayskip}{4pt}
+\setlength{\abovedisplayshortskip}{2pt}\setlength{\belowdisplayshortskip}{2pt}
+
+{\Large\bfseries Unlearning in diagonal linear networks: setup and questions}
+
+\medskip
+We use a model in which the end point of every training run is known exactly, and ask two questions about gradient-based unlearning.
+\textbf{(1)} Does it remove only the given samples (\emph{untraining}) or the whole distribution they came from (\emph{unlearning})?
+\textbf{(2)} Is the forgotten behaviour deleted, or only hidden so that an attacker can recover it cheaply (\emph{tamper resistance})?
+
+\section{Model}
+The network computes $f(x)=x^\top\beta$ with $\beta_j=u_j^+v_j^+-u_j^-v_j^-$; all weights start at the same value, which sets the initialisation scale $k$. We assume gradient flow (full batch, small step) run until the training loss is zero. With true labels this is always possible, since $\beta^\star$ fits every sample.
+
+\textbf{Implicit bias.} Training from a start $\beta_0$ on inputs $X$ (one column per sample) with targets $t$ ends at
+\[
+\operatorname*{argmin}_\beta\ D_{Q_k}(\beta,\beta_0)\quad\text{subject to}\quad X^\top\beta=t,
+\qquad Q_k'(\beta)=\tfrac12\operatorname{arcsinh}\tfrac{2\beta}{\sqrt k},
+\]
+where $D_{Q_k}$ is the Bregman divergence of $Q_k$ (Woodworth et al.\ 2020; Azulay et al.\ 2021). Small $k$ favours sparse solutions (rich regime); large $k$ favours the smallest Euclidean change (lazy regime).
+
+\textbf{Rescaling.} Multiplying all weights by $\sqrt\kappa$ maps $\beta\to\kappa\beta$ and $k\to\kappa^2k$.
+
+\section{Data}
+The $d$ input coordinates are split into three blocks: retain-only $d_R$, shared $\dSh$ and forget-only $d_F$. One sparse teacher labels all data: each entry of $\beta^\star$ is $\pm\rho^{-1/2}$ with probability $\rho/2$ each and $0$ otherwise, and $y=x^\top\beta^\star$ (no noise). The two classes differ only in which coordinates their inputs use:
+\[
+P_R:\ x\sim\mathcal N(0,\tfrac1d I)\ \text{on } d_R\cup\dSh,\ \ 0 \text{ on } d_F;
+\qquad
+P_F:\ x\sim\mathcal N(0,\tfrac1d I)\ \text{on } \dSh\cup d_F,\ \ 0 \text{ on } d_R .
+\]
+We draw a retain set $\Rf$ of $n_R$ samples from $P_R$ and a forget set $\Ff$ of $n_F$ samples from $P_F$; the training data is $D=\Rf\cup\Ff$. The unlearner is given a retain set $R\subseteq\Rf$ (usually all of it) and a deletion request $F\subseteq\Ff$ (a random subset). All set sizes grow in proportion to $d$, and $d\to\infty$. The free parameters are the block proportions $|d_R|:|\dSh|:|d_F|$, the sample proportions $n_R/d$, $n_F/d$, $|R|/n_R$, $|F|/n_F$, the sparsity $\rho$, and the geometry $k$.
+
+\textbf{What pretraining learns.} If $n_R\ge|d_R|+|\dSh|$, the retain data determine $\beta$ on $d_R\cup\dSh$, so $A(D)=\beta^\star$ there. On $d_F$, $A(D)=\beta^\star$ only above a learning threshold (about $0.51\,|d_F|$ forget samples in the rich regime at $\rho=0.2$, $|d_F|$ in the lazy regime); below it $A(D)$ is a wrong estimate.
+
+Write $A(T)$ for the model trained from $0$ on a dataset $T$. The pretrained model is $A(D)$. The two reference models are
+\begin{align*}
+&A(D\setminus F) && \text{untraining reference: as if $F$ had never been seen;}\\
+&A(D\setminus\Ff) && \text{unlearning reference: as if the forget class had never been seen.}
+\end{align*}
+
+\section{Unlearning losses}
+Unlearning starts from the rescaled pretrained model $\kappa A(D)$ and fits $R$ and $F$ with a squared loss per sample. On a forget sample the loss pulls the prediction $f_i=x_i^\top\beta$ towards a surrogate target $g_i=x_i^\top\beta_g$, either the label mean ($\beta_g=0$, so $g_i=\bar y=0$) or the oracle ($\beta_g=A(D\setminus\Ff)$). The weights are $\mu_r$ on the retain term, $\mu_d$ on terms that pull towards a target, and $\mu_a$ on terms that push away from the true label.
+
+\textbf{Key fact.} Two squared terms on the same prediction merge into one by completing the square, so every loss below is, per sample, $\frac{c_i}{2}(f_i-t_i)^2$ with a weight $c_i>0$ and a target $t_i$. The end point is then
+\[
+U=\operatorname*{argmin}_\beta\ D_{Q_{\kappa^2k}}\big(\beta,\kappa A(D)\big)\quad\text{subject to}\quad f_i=t_i\ \text{ for every } i\in R\cup F .
+\]
+The weights $c_i$ do not appear, so the loss weights can change $U$ only through the targets. In every case the targets come from \emph{effective teachers}: $t_i=x_i^\top\beta^{\mathrm{eff}}_R$ on $R$ and $t_i=x_i^\top\beta^{\mathrm{eff}}_F$ on $F$. Because the retain and forget samples are fitted to different teachers, zero loss is no longer automatic. It is guaranteed when no group has more samples than the coordinates it can use: at most $|d_R|+|\dSh|$ retain samples, at most $|\dSh|+|d_F|$ forget samples, and at most $d$ samples in total ($|\cdot|$ counts samples or coordinates).
+
+\begin{center}\small\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.6}
+\begin{tabular}{@{}lllllc@{}}
+\toprule
+Loss & on retain sample & on forget sample & $\beta^{\mathrm{eff}}_R$ & $\beta^{\mathrm{eff}}_F$ & weights move $U$?\\
+\midrule
+Relabel & $\frac{\mu_r}{2}(f_i-y_i)^2$ & $\frac{\mu_d}{2}(f_i-g_i)^2$ & $\beta^\star$ & $\beta_g$ & no\\
+Anchored ascent & $\frac{\mu_r}{2}(f_i-y_i)^2$ & $\frac{\mu_d}{2}(f_i-g_i)^2-\frac{\mu_a}{2}(f_i-y_i)^2$ & $\beta^\star$ & $\frac{\mu_d\beta_g-\mu_a\beta^\star}{\mu_d-\mu_a}$ & yes\\
+Workshop paper & \multicolumn{2}{l}{$\frac{\mu_r}{2}(f_i-x_i^\top\beta_r)^2-\frac{\mu_a}{2}(f_i-x_i^\top\beta_f)^2$ \ on every sample} & \multicolumn{2}{l}{$\frac{\mu_r\beta_r-\mu_a\beta_f}{\mu_r-\mu_a}$ \ on both} & yes\\
+Gradient difference & $\frac{\mu_r}{2}(f_i-y_i)^2$ & $-\frac{\mu_a}{2}(f_i-y_i)^2$ & \multicolumn{2}{l}{unbounded, no end point} & --\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{-2pt}
+Anchored ascent and the workshop loss are bounded only if $\mu_d>\mu_a$ (resp.\ $\mu_r>\mu_a$). The workshop loss splits each label as $y_i=x_i^\top\beta_r+x_i^\top\beta_f$, with $\beta_r=\beta^\star$ on $d_R\cup\dSh$ and $\beta_f=\beta^\star$ on $d_F$; summed over $X=[X_R\ X_F]$ it is the paper's $\frac{\mu_r}{2}\|X^\top\beta-X^\top\beta_r\|^2-\frac{\mu_a}{2}\|X^\top\beta-X^\top\beta_f\|^2$. Note that it also moves the retain targets away from $y_i$.
+
+\textbf{Our choice: anchored ascent.} It is gradient difference made bounded by the anchor term, and it reduces to relabelling as $\mu_a\to0$. Only the ratio $\mu_a/\mu_d$ affects $U$, by moving the forget teacher from $\beta_g$ to the far side of it.
+
+\textbf{Weight decay.} Adding $\lambda\|\theta\|^2$ on the weights (equal to $2\lambda\|\beta\|_1$ at the best factorisation) changes the end point to
+$U_\lambda=\operatorname*{argmin}_\beta \sum_i\frac{c_i}{2}(f_i-t_i)^2+2\lambda\|\beta\|_1$, which no longer depends on the start $\kappa A(D)$: the pretrained model is erased.
+
+\textbf{Cost.} Every unlearned model is also judged by its retain error: the mean squared error on fresh $P_R$ inputs, divided by that of $\beta=0$. Losses whose forget teacher differs from $\beta^\star$ on $\dSh$ (relabelling to $0$, anchored ascent) can raise it.
+
+\newgeometry{margin=1.3cm}\begin{landscape}
+\section{Industry losses in this model}
+\label{sec:industry}
+{\footnotesize Pretraining is cross-entropy on the teacher's probabilities $\sigma(x^\top\beta^\star)$, which is the squared-loss model exactly (the end point fits the logits $x_i^\top\beta^\star$). Hard labels $y_i=\mathrm{sign}(x_i^\top\beta^\star)$ appear only in the forget losses. $f_i=x_i^\top\beta$; $a_i=x_i^\top A(D)$ the pretrained logit; $p_i$ a retain-only teacher's logit; $m_i=y_if_i$ the margin; $\pi_i=\sigma(m_i)$ the probability of the true label. ``Target $t$'' means a loss whose minimum is at logit $t$; its end point is the Bregman projection onto $f_i=t_i$, and the existing theory applies.}
+
+\vspace{-2pt}
+{\fontsize{8.6}{10.4}\selectfont\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{7.2cm}>{\raggedright\arraybackslash}p{5.2cm}>{\raggedright\arraybackslash}p{7.6cm}@{}}
+\toprule
+Industry loss & On a forget sample, in this model & Joint loss / end point & How well it maps\\
+\midrule\endhead
+\multicolumn{4}{@{}l}{\emph{Targets: exact end point}}\\
+Retrain from scratch & -- & $A(D\setminus F)$ or $A(D\setminus\Ff)$ & The references.\\
+Retain anchor: NLL on retain (GDR) or KL to the original model (KLR) & on a retain sample: target $y_i$-logit, or target $a_i$ & added to any forget loss & Exact. The two coincide when $A(D)$ fits the retain data.\\
+Distillation to a fixed teacher; max-entropy / uniform; ``bad teacher'' & target $p_i$; uniform is target $0$ & projection onto $f_F=p$ (or $0$), $f_R=y_R$ & Exact. KL near the teacher is quadratic in the logit; weights drop out at the end point.\\
+IdkNLL (``I don't know'') & target $0$ & as above & Fair. A linear model's only input-independent answer is $0$. Real hard-label training never converges; the toy does.\\
+UNDIAL & target $a_i-\gamma\,y_i$ (true logit lowered by $\gamma$) & projection onto $f_F=a-\gamma y$ & Fair. Right kind of loss (fixed soft target); the real shift is a constant, not proportional to the logit.\\
+Ours: learning-curve targets; anchored ascent & target $p_i+b\,(a_i-p_i)$; target $\frac{\mu_dg_i-\mu_aa_i}{\mu_d-\mu_a}$ & projection onto those targets & Exact.\\
+Weight decay kept on; $\ell_1$-sparse & any loss above & lasso; the start is forgotten & Exact. Switched off instead, it is a rescaling $\kappa=e^{-2\Lambda}$.\\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Lowering the likelihood of the true label: no end point, read at a stopping time}}\\
+Gradient ascent; gradient difference & ascend $-\log\pi_i$: push on the margin with weight $\sigma(-m_i)$ & with a retain anchor for gradient difference & Good with the logistic likelihood (a squared loss has no direction here). Simulation only. In the toy it gains $\le6\%$ over doing nothing.\\
+NPO; SimNPO & the same push times $2\pi_i^\beta/(\pi_i^\beta+\pi_{\mathrm{ref},i}^\beta)$; SimNPO has no reference & with a retain anchor & Good; simulation only. Slows itself down as a sample is forgotten.\\
+IdkDPO & $-\log\sigma\big(\beta\,y_i(a_i-f_i)\big)$ & with a retain anchor & Fair. A saturating push of $f_i$ away from $a_i$, against the label.\\
+SCRUB (max step) & ascend the KL to the original model & alternates with a retain step & Good with the logistic likelihood; simulation only.\\
+WHP; task vector & need ``train further on $F$'', then subtract & $\theta-\lambda(\theta_F-\theta)$ & Only with hard labels in that extra training (soft-label training of a fitted model does nothing). Not yet run.\\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Not representable}}\\
+RMU, RepNoise, ELM & push hidden activations to a random vector & -- & Each hidden unit sees one input coordinate; there is no mixed representation to misdirect. No claims.\\
+\bottomrule
+\end{longtable}}
+\end{landscape}\restoregeometry
+
+\section{Finite budget: early stopping}
+So far unlearning runs until the loss is zero. In practice it is stopped after some time $\tau$, giving $U(\tau)$. Two things change. The loss weights now matter even though they do not move the end point, because they set how fast each sample is fitted. And since the labels have no noise, stopping early never fits the targets better; it only leaves $U(\tau)$ closer to the starting model $\kappa A(D)$.
+
+\textbf{Lazy regime} (large $k$). The network behaves as a linear model, so unlearning is ordinary least squares started from $\kappa A(D)$. Measuring $\beta$ from $\kappa A(D)$ turns this into the setting of Ali, Kolter and Tibshirani (2019), so early stopping is close to ridge regression centred at the pretrained model:
+\[
+U(\tau)\approx\operatorname*{argmin}_\beta\ \sum_i\frac{c_i}{2}(f_i-t_i)^2+\frac{1}{2\kappa\sqrt k\,\tau}\,\big\|\beta-\kappa A(D)\big\|^2 .
+\]
+Directions of $\beta$ that the unlearning inputs never touch keep their pretrained values at every $\tau$; the others approach $U$, slowest where the data constrain them least.
+
+\textbf{Rich regime} (small $k$). Here each coordinate acts like a switch. Its state is not $\beta_j$ but its \emph{readiness} $q_j$: minus the gradient it has accumulated over all training so far, divided by $\frac12\log\frac{2}{\kappa\sqrt k}$, a constant that grows like $\log(1/k)$. As $k\to0$, readiness lies in $[-1,1]$, and $\beta_j$ can be nonzero only when $q_j=\pm1$, with that sign. After pretraining, the coordinates $A(D)$ uses sit at $\pm1$ and all others lie strictly inside. Unlearning then has two timescales:
+\begin{itemize}\itemsep1pt
+\item \emph{Short budgets} ($\tau\ll\log(1/k)$). Readiness has barely moved, so unlearning can only rescale the coordinates pretraining used, keeping their signs; it cannot switch any coordinate on or off. If the targets can be reached this way, this is also where unlearning ends: $U$ uses exactly the coordinates of $A(D)$, however long it runs.
+\item \emph{Long budgets} ($\tau\sim\log(1/k)$). A coordinate switches on when its readiness reaches $\pm1$; one starting at $q_j$ must travel $1-|q_j|$ to come on with the sign it already leans to, and an inherited coordinate must travel $2$ to flip sign. Declèves, Boursier and Flammarion (2026) give this path for readiness starting at $0$ off the support. In the limit, $U$ minimises $\sum_j\big(|\beta_j|-q_j\beta_j\big)$ subject to the targets, with $q_j$ the readiness at the start of unlearning: reusing a pretrained coordinate with its sign is free, and any other coordinate costs in proportion to how far its readiness is from the sign it needs.
+\end{itemize}
+
+\textbf{What this means for our questions.}
+\begin{itemize}\itemsep1pt
+\item \emph{Question 1, rich regime.} Both references use different coordinates on $d_F$ than $A(D)$ does: the unlearning reference uses none, and the untraining reference uses the few the leftover forget samples need. Reaching either requires switching coordinates off, which takes a budget of order $\log(1/k)$; a shorter budget can only reweight what pretraining learned.
+\item \emph{Question 2, rich regime.} An attacker's cost depends on readiness, not on $\beta$. A coordinate that unlearning shrank while its readiness stayed at $\pm1$ is dormant: a small push brings it back. It is deleted only once its readiness moves inside $(-1,1)$, and the further inside, the more the attack costs. So in the rich regime the forgetting is hidden unless unlearning runs for a time of order $\log(1/k)$; weight decay deletes whatever the budget.
+\item \emph{Question 2, lazy regime.} Readiness is just $\beta$ rescaled, so the weights are the whole state, and two models with the same $\beta$ (and the same $\kappa$) are equally easy to attack. Hiding without deleting is then impossible: whatever forget knowledge remains is visible on forget inputs, and Question 2 reduces to Question 1.
+\end{itemize}
+Declèves et al.\ prove the rich-regime path only for readiness starting at $0$ off the support. Our start, the short-budget claim and the consequences above are our extension and still need a numerical check. All rich-regime statements are limits: at $k=10^{-3}$ the constant above is about $2$, so the two timescales are not well separated.
+
+\section{Self- and cross-influence of the deletion request}
+Triantafillou et al.\ explain the gap between untraining and unlearning through the influence of $F$ on predictions: on the samples of $F$ themselves (\emph{self-influence}, i.e.\ memorisation) and on other inputs (\emph{cross-influence}). For a squared loss we measure both as the mean squared change in predictions when all of $F$ is removed from training:
+\[
+\mathrm{mem}(F)=\frac{1}{|F|}\sum_{i\in F}\big(x_i^\top A(D)-x_i^\top A(D\setminus F)\big)^2,\qquad
+\mathrm{xinf}_C(F)=\mathbb E_{x\sim P_C}\big[\big(x^\top A(D)-x^\top A(D\setminus F)\big)^2\big],\quad C\in\{F,R\}.
+\]
+Here $\mathrm{mem}(F)$ is a memorisation score for the group $F$, not an average of the scores of its samples: each prediction change is measured with all of $F$ removed. Cross-influence is measured on new inputs, because both models fit every other training sample exactly: $\mathrm{xinf}_F$ on the forget class and $\mathrm{xinf}_R$ on the retain class. If the retain data determine $\beta$ on $d_R\cup\dSh$, then $\mathrm{xinf}_R=0$.
+
+\section{Question 1: unlearning or untraining? (Triantafillou et al.\ 2026)}
+Write $x_J$ and $\beta_J$ for the entries of $x$ and $\beta$ on the coordinates $J$, and assume $n_R\ge|d_R|+|\dSh|$, so that both references equal $\beta^\star$ on $d_R\cup\dSh$. The two goals then differ only on the forget-only block:
+\begin{itemize}\itemsep1pt
+\item \textbf{Untraining} (behave as if $F$ had never been trained on): $U=A(D\setminus F)$, i.e.\ $U_{d_F}$ equals what the leftover forget samples $\Ff\setminus F$ teach. On forget inputs, $U$ is then as good as a model trained on that leftover data.
+\item \textbf{Unlearning} (behave as if the forget class had never been seen): $U=A(D\setminus\Ff)=A(\Rf)$, i.e.\ $U_{d_F}=0$. On a forget input $U$ then predicts only the shared part $x_{\dSh}^\top\beta^\star_{\dSh}$ of the label; this is chance level ($\bar y=0$) only if forget labels have no shared part.
+\end{itemize}
+Driving the samples of $F$ themselves to $0$ is neither goal: with $U=\beta^\star$ on $d_R\cup\dSh$, it requires $U_{d_F}$ to cancel each sample's shared part, which matches neither target.
+
+In the high-dimensional limit, sizes matter only as proportions. For a forget class of fixed size $|\Ff|/|d_F|$, what proportion $|F|/|d_F|$ must the deletion request reach for $U$ to come within $\eta$ of each target? With distances divided by $\|\beta^\star_{d_F}\|$ ($\eta^2=0.15$):
+\[
+\alpha_{\mathrm{UL}}=\min\big\{|F|/|d_F|:\ \|U-A(D\setminus\Ff)\|\le\eta\big\},\qquad
+\alpha_{\mathrm{UT}}=\min\big\{|F|/|d_F|:\ \|U-A(D\setminus F)\|\le\eta\big\}.
+\]
+The two targets differ by $\|A(D\setminus F)_{d_F}\|$, so by the triangle inequality both goals can be met only if the leftover forget samples teach little: $\|A(D\setminus F)_{d_F}\|\le2\eta$.
+
+Three proportions of the data control the answer:
+\begin{itemize}\itemsep1pt
+\item $|F|/|\Ff|$: how much of the forget class the deletion request covers.
+\item $|\dSh|/|d_F|$: how much of a forget label comes from shared features. A forget label splits as $y=x_{\dSh}^\top\beta^\star_{\dSh}+x_{d_F}^\top\beta^\star_{d_F}$, and the unlearning target still predicts the first term. The oracle surrogate keeps it; the surrogate $g_i=\bar y=0$ (and anchored ascent) tries to remove it too, so it is wrong by that term.
+\item $|R|/(|d_R|+|\dSh|)$: whether the unlearner's retain set determines $\beta$ on $d_R\cup\dSh$. If this ratio is at least $1$, $U$ cannot change the shared block and must forget on $d_F$ alone; if it is below $1$, $U$ can also forget by changing the shared block, at a cost in retain error.
+\end{itemize}
+
+\section{Question 2: tamper resistance (Siddiqui et al.\ 2025)}
+An attacker starts from the released model $M$ and fine-tunes on their own retain set $R_{\mathrm{RL}}$ plus a few forget samples $F_{\mathrm{re}}\subseteq F$. This is again a projection, in the geometry the start carries ($k$ for $A(D\setminus F)$, $\kappa^2k$ for $U$):
+\[
+M'=\operatorname*{argmin}_\beta\ D_Q(\beta,M)\quad\text{subject to}\quad X_{R_{\mathrm{RL}}}^\top\beta=y_{R_{\mathrm{RL}}},\quad X_{F_{\mathrm{re}}}^\top\beta=y_{F_{\mathrm{re}}} .
+\]
+Forget error is the mean squared error on the remaining forget samples $F_{\mathrm{ho}}=F\setminus F_{\mathrm{re}}$, divided by that of $\beta=0$. Let $\alpha_{\mathrm{re}}(M)$ be the smallest $|F_{\mathrm{re}}|/|d_F|$ that brings it below $\varepsilon=0.1$. The goal is $\alpha_{\mathrm{re}}(U)=\alpha_{\mathrm{re}}(A(D\setminus F))$: the attacker needs as many samples as against retraining. If $\alpha_{\mathrm{re}}(U)$ is smaller, the forgetting was hidden; if it is larger, $U$ is harder to attack than retraining but is no longer equivalent to it.
+
+\textbf{Attack with retain data only} ($F_{\mathrm{re}}=\emptyset$). Retain inputs are zero on $d_F$, so this attack never changes $\beta$ on $d_F$; if $R_{\mathrm{RL}}$ has enough samples to determine $\beta$ on $d_R\cup\dSh$, it resets $\beta$ there to $\beta^\star$. Forgetting achieved through the shared block is therefore undone, and forgetting achieved on $d_F$ is not. (Unlearning can use the shared block only if its own retain set $R$ is too small to determine it.) So after this attack $U$ matches retraining on the held-out forget samples exactly when its forget-only weights are as wrong as retraining's:
+\[
+\big\|X_{F_{\mathrm{ho}}}^\top(U-\beta^\star)\big\|\ =\ \big\|X_{F_{\mathrm{ho}}}^\top\big(A(D\setminus F)-\beta^\star\big)\big\|,\quad\text{with both restricted to } d_F ,
+\]
+and the forgetting was hidden when the left side is smaller.
+
+\section{Exact curves vs simulation}\label{sec:curves}
+Every curve below is the $d\to\infty$ theory (pretraining channel, then Gordon's comparison conditioned on stage 1; nothing fitted). Markers are finite-$d$ simulations of the same stage-2 problem. Distances are $\|U-\text{reference}\|^2/\|\beta^\star\|^2$; the untraining reference is $A(D\setminus F)$, the unlearning reference $A(D\setminus\Ff)$.
+
+\begin{figure}[h!]\centering
+\includegraphics[width=0.93\linewidth]{fig_theory_vs_sim.png}
+\caption{\small Zero targets, $\kappa=1$, forget coordinates only, $\alpha_{\mathrm{PT}}=n_F/d=0.3$, $\rho=0.05$, $d=800$, 50 seeds. Columns: rich, intermediate, lazy. Rows: distance to the untraining reference, distance to the unlearning reference, loss on the kept forget samples $\Ff\setminus F$. Blue: deleted samples reused; red: fresh samples from $P_F$; grey: do nothing. The only mismatch is the last rich untraining point: at $|F|=n_F$ the two references coincide and $A(D\setminus F)=0$, a single point the curve (computed for $|F|<n_F$) does not include.}
+\end{figure}
+
+\begin{figure}[h!]\centering
+\includegraphics[width=\linewidth]{fig_losses_inter.png}
+\caption{\small The same check for other stage-2 losses and rescalings, intermediate regime $k=10^{-2}$, $d=2000$, $\rho=0.3$, $\alpha_{\mathrm{PT}}=0.4$, 16 seeds. Columns: targets $0$; anchored ascent (targets $-0.5y$); targets $\sigma\xi$ (noise); targets $0$ with weights rescaled by $\sqrt\kappa$, $\kappa=0.3$ and $\kappa=3$. All losses with a fixed target reduce to the target $b\,x^\top\beta^\star+\sigma\xi$ and the starting point $\kappa A(D)$, so one theory covers them. The rich and lazy versions (\texttt{fig\_losses\_rich.png}, \texttt{fig\_losses\_lazy.png}) agree equally well.}
+\end{figure}
+\clearpage
+
+\section{Results and takeaways}
+Rich pretraining ($k=10^{-6}$), $\rho=0.2$, $|d_R|=|d_F|=400$, finite $d$, 6 seeds, stage 2 trained to convergence unless stated. Notation: $n_K=|\Ff\setminus F|$ kept forget samples; $\alpha_{\mathrm{DT}}(\rho)$ the recovery threshold ($0.33,\,0.51,\,0.75$ at $\rho=0.1,\,0.2,\,0.4$); $\kappa$ the rescaling of the pretrained function.
+
+\begin{figure}[h!]\centering
+\includegraphics[width=\linewidth]{fig_results.png}
+\end{figure}
+
+\textbf{Untraining} (target $A(D\setminus F)$).
+\begin{enumerate}\setlength{\itemsep}{1pt}
+\item \textbf{Do nothing unless $n_K/|d_F|<\alpha_{\mathrm{DT}}(\rho)$} (panel 1). Above the threshold the kept forget data still recover $\beta^\star$, so $A(D\setminus F)=A(D)$ and any stage 2 only does harm. This held in 41/41 settings at $\rho=0.2$ and 17/17 at $\rho=0.1,0.4$.
+\item \textbf{Below it, shrink the labels of the deleted samples; do not zero, invert or randomise them} (panel 2). The target $p+b\,(y-p)$, with $p$ a retain-only prediction and $b$ the learning-curve value at the kept size $n_K/|d_F|$ (from theory, no data), was best or within 1\% in 25/27 settings and 18/18 at other $\rho$. Zero targets overshoot into unlearning; ascent and noise end further from $A(D\setminus F)$ than doing nothing.
+\item \textbf{Zero targets are fine if stopped early} (panel 3). With the best stopping time they match converged learning-curve targets when pretraining memorised ($0.13$ vs $0.16$) and beat them when the deletion breaks recovery ($0.26$ vs $0.47$). The stopping time can be set from the learning-curve prediction of the retrained model's held-out loss.
+\item \textbf{Use the deleted samples themselves} (panel 6). After memorisation, fresh samples of the class are about twice as far from $A(D\setminus F)$ as the deleted ones, because $A(D)$ lies in the span of the samples that made it. Anchor on all remaining data; $\kappa\approx3$--$10$ helps only if every deleted sample is used. When the deletion breaks recovery, use no anchor.
+\end{enumerate}
+
+\textbf{Unlearning} (target $A(D\setminus\Ff)$).
+\begin{enumerate}\setlength{\itemsep}{1pt}\setcounter{enumi}{4}
+\item \textbf{Target what a model without the class would predict} (panel 4). With no shared features this is $0$; with shared features, zero targets miss by the shared part of the label (error grows linearly with $|\dSh|/(|\dSh|+|d_F|)$), and a retain-only teacher cuts the error by a factor of 3.
+\item \textbf{The number of forget samples decides the recipe} (panel 5). Few forget samples ($10\%$ of $\Ff$): use $\kappa<1$ (richer) plus retain samples, at least about $0.25\,(|d_R|+|\dSh|)$ of them; $\kappa=1$ alone fails. Many ($60\%$): $\kappa=1$ and no anchor already reach $A(D\setminus\Ff)$.
+\item \textbf{Reused and fresh samples are interchangeable} (panel 6), and early stopping does not help without shared features.
+\end{enumerate}
+
+\textbf{General.}
+\begin{enumerate}\setlength{\itemsep}{1pt}\setcounter{enumi}{7}
+\item \textbf{The loss weights $\mu_a/\mu_d$ do not matter at convergence} when every target can be fitted: the end point is a Bregman projection. They matter only when targets conflict (then the end point is a weighted least-squares fit, independent of $\kappa$) or with a finite budget.
+\item \textbf{$\kappa$ moves the solution between rich ($\kappa<1$) and lazy ($\kappa>1$), but $\kappa<1$ slows training by $\kappa^2$} at a fixed budget.
+\item \textbf{The theory is exact}: every curve in Section~\ref{sec:curves} matches simulation with nothing fitted, for every loss and rescaling tested.
+\end{enumerate}
+
+\textbf{Cross-entropy and the ascent losses} (added 23 Nov; forget coordinates only, $d=400$, 10 seeds, simulation unless stated).
+\begin{enumerate}\setlength{\itemsep}{1pt}\setcounter{enumi}{10}
+\item \textbf{With soft labels from the teacher, cross-entropy pretraining is exactly this model} (flow and projection agree to $2\times10^{-6}$). Takeaways 1--10 hold unchanged. Hard labels are not covered.
+\item \textbf{Gradient ascent and NPO match the retrained model's accuracy without becoming the retrained model.} Stopped at that accuracy, their cosine to $A(D\setminus F)$ is $0.23$--$0.37$ and $0.28$--$0.54$, no better than doing nothing ($0.34$--$0.55$); the uniform target reaches $0.44$--$0.75$.
+\item \textbf{Ascent inflates the logits and still carries the class.} After a relearning attack with $0.15\,d$ fresh samples its accuracy is $0.66$--$0.67$, above the retrained model's $0.61$--$0.66$.
+\item \textbf{NPO stopped at chance is as hard to relearn as a model never trained on the class} ($0.585$ against $0.59$--$0.62$), though its weights are not that model's.
+\item \textbf{Rescaling $\kappa$, weight decay that is switched off ($\kappa=e^{-2\Lambda}$) and mini-batch noise are the same operation} (exact; for SGD per coordinate). Weight decay kept on forgets the start instead.
+\end{enumerate}
+
+\section{Extensions (24 November)}
+Derivations, checks and proofs are in \texttt{extensions\_maths.pdf}; this is the list.
+\begin{enumerate}\setlength{\itemsep}{1pt}
+\item \textbf{Stage 2 with retain, shared and forget blocks is exact at large $d$.} Pretrained, unlearned and both retrained models are coupled copies of one static system; anchors and any $\kappa$ included. 26 distances within 1.8 s.e.
+\item \textbf{Cross-entropy.} Soft labels are the squared-loss model. Hard labels: exact end point with weight decay kept on; without it there is no end point and the exact object is the trajectory.
+\item \textbf{Ascent, NPO, flipped labels, task vector, WHP} on hard labels follow the same trajectory equations. Ascent improves the cosine to the retrained model after hard-label pretraining ($0.55\to0.75$) and not after soft-label pretraining ($0.52\to0.53$).
+\item \textbf{Early stopping at a fixed budget} ($k=10^{-2}$): short stage 2, overshooting targets $-0.5y$ with an anchor; long stage 2, zero targets with an anchor.
+\item \textbf{SGD} is a rescaling $\kappa_j$ per coordinate; its large-$d$ trajectory is exact at any step and batch size, in both stages.
+\item \textbf{Weight decay switched off is a rescaling}, $\kappa=e^{-2\Lambda}$; kept on, the end point is a lasso and forgets the start.
+\item \textbf{Proved:} the trajectory equations for the truncated network, with a sharp switch and hard labels. \textbf{Open:} removing the truncation; non-convex penalties.
+\end{enumerate}
+
+\section{Plan}
+Compute $\alpha_{\mathrm{UL}}$, $\alpha_{\mathrm{UT}}$ and $\alpha_{\mathrm{re}}$ over a grid of $\mu_a/\mu_d$ (loss), $k$ and $\kappa$ (geometry) and $|\Ff|/|d_F|$ (data), with weight decay as the deletion baseline. Repeat at finite stopping times $\tau$: in closed form in the lazy regime, and by gradient flow elsewhere, recording the readiness of the $d_F$ coordinates alongside $\alpha_{\mathrm{re}}$.
+
+\end{document}

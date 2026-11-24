@@ -1,0 +1,6 @@
+simulation d =   800: 0.4489 ± 0.0100  (12 runs)
+simulation d =  1500: 0.4419 ± 0.0091  (12 runs)
+simulation d =  4000: 0.4441 ± 0.0097  (8 runs)
+simulation d =  8000: 0.4547 ± 0.0048  (6 runs)
+theory N =  1000: 0.4672 ± 0.0126  (8 runs)
+theory N =  2500: 0.4595 ± 0.0127  (6 runs)
