@@ -1,5 +1,9 @@
 """Soft-label CE toy. Pretraining: CE with label smoothing q -> finite targets tau*y, tau=logit(q).
 Stage 2 ascent on hard labels. Test: flow vs one-parameter family beta(s) = c sinh(theta0 - s g), g = sum_F y_i x_i."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import sys, time, zlib, warnings
 import numpy as np
 from scipy.special import expit, log_expit

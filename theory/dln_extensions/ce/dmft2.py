@@ -2,6 +2,10 @@
 system s has per-group weights W[s][a][t] and targets A[s][a][t] * x^T beta*. Used for: main run (pretrain, then stage 2)
 and the reference run (kept samples only), so that distances between them are available.
 Returns Q[s,s'](t,t') = E beta_s(t) beta_s'(t'), M[s](t) = E beta_s(t) beta*, and per-group residuals."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np
 
 def run(delta, P, W, A, ts, k, rho, N=2000, seed=0, dtype=np.float64):

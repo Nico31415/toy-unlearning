@@ -1,6 +1,10 @@
 """State evolution for soft-label CE pretraining of a diagonal network = min Q_k(beta) s.t. x_i^T beta = tau*sign(x_i^T beta*).
 Scalar channel: beta = prox_{Q/mu}(nu*b + sig*h), nu = tau*sqrt(2/pi), h~N(0,1), b ~ teacher entry.
 Equations: E[prox'] = alpha ;  sig^2 = (tau^2 - 2 tau sqrt(2/pi) kappa + E[beta^2]) / alpha, kappa = E[beta b]."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np
 from scipy.optimize import least_squares
 

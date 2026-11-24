@@ -1,5 +1,9 @@
 """CE toy, industry ascent losses vs target losses. Pretraining: CE on teacher probabilities sigma(gamma x^T b*) -> logits gamma x^T b*
 (exactly the MSE toy scaled by gamma). Stage 2 from A(D): hard labels y = sign(x^T b*) on the deleted samples."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np, zlib, pickle, sys, time, itertools
 from scipy.special import expit, log_expit
 from multiprocessing import Pool

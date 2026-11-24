@@ -1,5 +1,9 @@
 """Non-convex penalty: weight decay on a depth-3 diagonal network, beta = u1 u2 u3 - v1 v2 v3,
 (lam_w/2) sum |w_l|^2  ->  lam |beta|^{2/3}, lam = 3 lam_w / 2.  Replica (global-prox channel) vs what algorithms find."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np, pickle
 from se_wd import solve, lasso
 rho, aPT, aUL, p = 0.2, 0.3, 0.2, 2 / 3

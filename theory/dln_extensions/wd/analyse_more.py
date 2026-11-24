@@ -1,8 +1,11 @@
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import sys, pickle, numpy as np
-sys.path.insert(0, "/home/claude/out/setup2"); sys.path.insert(0, "/home/claude/out/ce")
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 from se_wd import solve, prox_l1
-src = open("left2.py").read(); exec(src[:src.index("def sim(")])            # prox, theory for the tilted channel (definitions only)
+src = open(_os.path.join(_ROOT, "wd", "left2.py")).read(); exec(src[:src.index("def sim(")])            # prox, theory for the tilted channel (definitions only)
 from more_seeds import LAMS, L1, REG, c0, rho, aPT, aUL
 res = pickle.load(open("more_seeds.pkl", "rb"))
 def agg(tag, key):

@@ -1,6 +1,6 @@
 \documentclass[10pt]{article}
 \usepackage[a4paper,margin=2.1cm]{geometry}
-\usepackage{amsmath,amssymb,booktabs,graphicx,enumitem}
+\usepackage{amsmath,amssymb,booktabs,graphicx,enumitem,array}
 \usepackage[T1]{fontenc}\usepackage{lmodern}
 \usepackage[font=small]{caption}
 \setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
@@ -33,16 +33,16 @@ Two unknown numbers, $\tau$ and $\sigma$. Pretraining from zero is $R=\psi_c$.
 Every variant below changes one of three things: the \emph{scale} $c$, the \emph{start} $\beta_0$, or the \emph{constraints}. Table~\ref{tab} is the summary.
 
 \begin{table}[h]\centering\small
-\begin{tabular}{@{}lll@{}}\toprule
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{6.6cm}>{\raggedright\arraybackslash}p{4.9cm}@{}}\toprule
 variant & what changes in the template & status\\\midrule
-cross-entropy, soft labels & targets $y\to$ label logits & exact\\
+cross-entropy, soft labels & targets $y\to$ label logits & exact (hard labels: unsolved)\\
 rescaling the weights by $\sqrt\kappa$ & $c\to\kappa c$, $\beta_0\to\kappa\beta_0$ & exact\\
 weight decay, then switched off & the same, with $\kappa=e^{-2\Lambda}$ & exact\\
-mini-batch SGD & the same, with $\kappa=\prod_k(1-4\gamma^2g_k^2)$ & exact; $\kappa$ random\\
+mini-batch SGD & the same, with $\kappa_j=\prod_k(1-4\gamma^2g_{k,j}^2)$ per coordinate & exact; one common $\kappa$ is approximate\\
 one-sided decay, then switched off & $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$ & exact\\
 regulariser kept on & \eqref{T2} becomes a penalised fit; start forgotten & exact (convex $R$)\\
 early stopping & targets $\to$ current predictions; needs dynamics & exact, solved numerically\\
-ascent on hard labels & no end point & approximate only\\
+ascent on hard labels & no end point & simulation only\\
 non-convex regulariser & end point depends on the path & no formula\\\bottomrule
 \end{tabular}\caption{The variants.}\label{tab}\end{table}
 
@@ -55,7 +55,13 @@ non-convex regulariser & end point depends on the path & no formula\\\bottomrule
 \begin{equation}
 \theta(t)=\theta_0-\sum_i\Lambda_i(t)\,z_i,\qquad \dot\Lambda_i=4\,w(m_i).
 \end{equation}
-The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point. Freezing the $\Lambda_i$ at a common value is accurate to $3$--$8\%$ early and $14$--$35\%$ near chance. In simulation, for every $k$ from $10^{-8}$ to $10^{4}$, ascent gains at most $6\%$ over doing nothing, while soft targets at the uniform label (zero logit, exact by \eqref{T2}) do far better.
+The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point and we have no formula; what follows is simulation (forget coordinates only, $d=400$, 10 seeds, three scales).
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item Both can be stopped at the retrained model's held-out accuracy. The model reached is not the retrained one: its cosine to $A(D\setminus F)$ is $0.23$--$0.37$ (ascent) and $0.28$--$0.54$ (NPO), no better than doing nothing ($0.34$--$0.55$). Soft targets at the uniform label (zero logit; exact by \eqref{T2}) reach $0.44$--$0.75$. The cosine does not depend on scale, so this is not an artefact of measuring distance.
+\item Ascent inflates the logits: mean squared logit $2$--$8$ at matched accuracy, against $0.1$--$0.3$ for the reference. NPO does not ($0.2$--$0.45$).
+\item Relearning attack ($0.15\,d$ fresh labelled samples, then held-out accuracy): never trained on the class $0.59$--$0.62$; NPO stopped at chance $0.585$--$0.586$ (as hard to relearn as never having trained); ascent stopped at the reference accuracy $0.66$--$0.67$, above the retrained model's $0.61$--$0.66$: it still carries the class.
+\item Only about half the ascent runs reach chance accuracy before diverging; those rows are a selected subset.
+\end{itemize}
 
 \section{Rescaling, weight decay, SGD: one parameter $\kappa$}
 \textbf{Rescaling.} Multiplying all weights by $\sqrt\kappa$ gives $c\to\kappa c$, $\beta_0\to\kappa\beta_0$, $\theta_0$ unchanged. Then \eqref{T2} applies with the new scale and start.
@@ -73,7 +79,7 @@ The decay never touches $\theta$; it only shrinks the scale. After switch-off an
 \begin{equation}
 \kappa_j=\prod_k\big(1-4\gamma^2g_{k,j}^2\big)\qquad\text{(Even et al.\ 2023).}
 \end{equation}
-\emph{SGD is gradient flow with a smaller scale}; in stage 2 it is a rescaling of the pretrained model. $\kappa$ depends on the trajectory. For batches of size $b$ out of $n$, per step $\E\,g_j^2=\bar g_j^2+c_bV_j$, with $\bar g$ the full gradient, $V_j$ the per-sample variance and $c_b=\frac{n-b}{b(n-1)}$. In expectation, to first order in $\gamma$,
+\emph{SGD is gradient flow with a smaller scale}; in stage 2 it is a rescaling of the pretrained model, coordinate by coordinate. $\kappa_j$ depends on the trajectory and varies across coordinates by $5$--$7\%$ for single-sample SGD. Replacing it by one number (as the large-$d$ curves in $\kappa$ require) is an approximation: at a step size where SGD moves the end point by $24$--$31\%$, the per-coordinate $\kappa_j$ reproduces it to $0.6\%$ and a single $\kappa$ to $4$--$5\%$. For full-batch steps $\kappa_j$ concentrates on the support and a single $\kappa$ explains little of the (small) effect. For batches of size $b$ out of $n$, per step $\E\,g_j^2=\bar g_j^2+c_bV_j$, with $\bar g$ the full gradient, $V_j$ the per-sample variance and $c_b=\frac{n-b}{b(n-1)}$. In expectation, to first order in $\gamma$,
 \begin{equation}
 \E\log\frac1{\kappa_j}=4\gamma\int_0^\infty\!\big(c_bV_j+\bar g_j^2\big)\,dt ,
 \end{equation}
@@ -84,7 +90,7 @@ With a penalty $\lambda\sum_jR(\beta_j)$ kept on, training converges to the mini
 \begin{equation}\label{reg}
 \beta=\prox_{\tau R}(\bs+\sigma h),\qquad \sigma^2=\frac{\E(\beta-\bs)^2}{\alpha},\qquad \E[\prox{}']=\alpha-\frac\lambda\tau .
 \end{equation}
-($\lambda\to0$ recovers \eqref{T3}.) With several groups of samples with different targets, $\bs$ and $\alpha$ are replaced by group-weighted sums; the formulas are in \texttt{se\_wd.py}.
+($\lambda\to0$ recovers \eqref{T3}.) With several groups of samples (different targets) and several blocks of coordinates (retain, shared, forget), each block has its own $(\tau,\sigma)$ and $\bs$, $\alpha$ become sums over the groups that touch the block; the formulas are in \texttt{se\_wd.py} and \texttt{se\_blocks.py}.
 
 For non-convex $R$ (weight decay on a three-layer diagonal network gives $|\beta|^{2/3}$) this fails: different algorithms and different initialisations end at different points (norm between $0.14$ and $0.30$ in one setting), and the solution of \eqref{reg} ($0.42$) is none of them. The end point is path-dependent.
 
@@ -103,7 +109,7 @@ Forgetting to $b=0$ at small $c$ is a power law, $\beta(t)\approx\beta_0/(1+4s\b
 \end{equation}
 where $\eta$ is a Gaussian process and $K=(1-R)^{-1}$ a causal operator in time, with $R(t,s)=\E\,\partial\beta(t)/\partial\eta(s)$. The residual of a training sample is $K\zeta$, $\zeta$ Gaussian with the covariance of $\beta-a\bs$, and $\eta=\sqrt\alpha\,K\zeta$. Groups of samples with different targets or weights add their terms. This extends Nishiyama \& Imaizumi (2025) from a zero start to a switch. It is solved by one forward pass in time over sampled paths. A second copy trained on the kept samples only, driven by the same randomness, gives the distance to the retrained model at every stopping time.
 
-Its sampling noise is as large as a simulation's of the same size: at $k=10^{-6}$ single runs with 1000--2000 paths scatter by $\pm0.02$ to $\pm0.05$ on an untraining distance of $0.19$, which is what looked like a $10\%$ gap earlier. Averaged over runs it agrees with simulation ($0.177\pm0.013$ against $0.188$).
+Its sampling noise is as large as a simulation's of the same size, so it must be averaged over runs. At $k=10^{-6}$ (seven runs of 2000 paths) the untraining distance relative to its value before stage 2 is $0.411\pm0.016$ at the best stopping time and $0.441\pm0.017$ at $\tau=6$, against $0.405$ and $0.435$ in simulation; in every run the distance is lower at the best stopping time than at $\tau=6$, and the exact converged value is higher still. The derivation is a cavity argument, not a proof, and only zero targets without an anchor have been tested.
 
 \section{Checks}
 \begin{center}\small\begin{tabular}{@{}p{6.1cm}p{9.2cm}@{}}\toprule
@@ -111,24 +117,30 @@ claim & check\\\midrule
 soft-label cross-entropy $=$ \eqref{T2} & flow vs projection, $2\times10^{-6}$, three scales\\
 its large-$d$ curves against $k$ & 14 settings, within one s.e.\ ($d=400$, 4 seeds)\\
 switched-off weight decay $=$ rescaling & gradient descent vs \eqref{T2}: $0.1$--$1.2\%$ (step-size error); same end point for decay early or late\\
-its large-$d$ curves & 42 numbers, $d=1600$, 16 seeds: all within 2 s.e.\\
+its large-$d$ curves & 42 numbers at $k=10^{-2},1$ ($d=1600$, 16 seeds): all within 2 s.e.; $k=10^{-6}$ ($d=800$, 12 seeds): within 0.3 s.e.\\
 one-sided decay, large $d$ & 36 numbers, $d=1600$, 24 seeds: all within 1 s.e.\\
-regulariser kept on, three choices of $R$ & 54 numbers, $d=1500$ and $6000$: all within 2.2 s.e.\\
+regulariser kept on, three choices of $R$ & 54 numbers, $d=1500$ and $6000$: all within 2.2 s.e.; 40 further seeds: overlap within $1.1\%$\\
+the same with retain/shared/forget blocks ($R=|\beta|$) & 36 numbers, $d=1000$, 10 seeds: all within 1.4 s.e.\ (s.e.\ about $4\%$)\\
+identities with blocks and a retain anchor & gradient descent vs \eqref{T2}: $1$--$5\times10^{-4}$ (soft-label pretraining; switched-off decay)\\
+one-sided decay, gradient descent & $0.05$--$0.45\%$, falling with the step size\\
 SGD $=$ flow from the shrunk scale & $10^{-4}$ to $4\times10^{-3}$; stage 2: $0.2\%$ against $4.7\%$ without $\kappa$\\
 SGD batch-size formula & mean of 8--16 runs: ratio $1.11,1.05,1.02$ at $\gamma=0.02,0.01,0.005$ ($b=1$)\\
-early-stopping dynamics & norm and overlap through both stages at $k=1,10^{-2},10^{-6}$; reproduces the optimal stopping time at small $k$\\\bottomrule
+early-stopping dynamics & norm, overlap, unlearning distance at three scales; untraining distance at $k=10^{-6}$ to $4\%$ after averaging 7 runs\\\bottomrule
 \end{tabular}\end{center}
 Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest $2.2$ (Figure~\ref{fig}).
 
 \begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_regularisers_tight.png}
 \caption{Regulariser checks. Lines: theory. Markers: exact finite-size end points, $\pm1$ s.e.}\label{fig}\end{figure}
 
-\section*{Open}
+\section*{Limits}
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item Ascent losses (gradient ascent, NPO): no formula; the dynamical theory with a nonlinear sample side would give one.
-\item SGD beyond first order in $\gamma$, and multi-pass mini-batches at large $d$.
-\item Non-convex regularisers; deeper networks.
-\item Stage 2 with one-sided decay, and distances between two regularised solutions on overlapping data.
+\item \textbf{Cross-entropy is exact only for soft labels.} That is a modelling choice which makes it the squared-loss model. Hard sampled labels, as in real training, remain unsolved.
+\item \textbf{Ascent losses have no formula.} The statements above are simulations at one size and one pair of sample ratios.
+\item \textbf{The large-$d$ curves for stage 2 from a pretrained model exist only for forget coordinates.} With retain and shared blocks, the identities are checked by gradient descent and the regulariser-kept-on curves by simulation, but there are no stage-2 curves.
+\item \textbf{SGD:} one common $\kappa$ is approximate; the batch-size formula is first order in the step size; no large-$d$ curves.
+\item \textbf{Early stopping:} a cavity derivation, numerically noisy at small scale; tested for zero targets only.
+\item \textbf{Non-convex regularisers and deeper networks:} no static formula; the end point depends on the path.
+\item All checks use Gaussian inputs, $\rho=0.2$, and (unless stated) $\alpha=0.3$ with two thirds of the forget samples deleted.
 \end{itemize}
 
 \small\textbf{References.} Woodworth et al., COLT 2020. Moroshko et al., NeurIPS 2020. Pesme, Pillaud-Vivien, Flammarion, NeurIPS 2021. Even, Pesme, Gunasekar, Flammarion, NeurIPS 2023. Pesme, Dragomir, Flammarion, NeurIPS 2024. Jacobs, Zhou, Burkholz, ICML 2025 (arXiv:2504.12883). Nishiyama, Imaizumi, arXiv:2510.01930.

@@ -4,6 +4,10 @@ Weight decay on the weights of a diagonal network (beta = u^2 - v^2, penalty (la
 Scalar channel: beta = prox_{lam R / A}((B beta* + sqrt(C) h)/A),  with
   A = delta sum_a p_a w_a/(1+w_a V),  B = delta sum_a p_a w_a a_a/(1+w_a V),  C = delta sum_a p_a w_a^2 (Q - 2 a_a M + a_a^2)/(1+w_a V)^2,
   V = E[prox']/A,  Q = E beta^2,  M = E beta beta*.   Train residual of group a: (Q - 2 a_a M + a_a^2)/(1+w_a V)^2."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np
 H = np.linspace(-9, 9, 6001); WH = np.exp(-H**2/2); WH /= WH.sum()
 

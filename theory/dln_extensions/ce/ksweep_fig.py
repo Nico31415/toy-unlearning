@@ -1,3 +1,7 @@
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import pickle, numpy as np, matplotlib
 matplotlib.use("Agg"); import matplotlib.pyplot as plt
 S = pickle.load(open("ksweep_sim.pkl", "rb")); T = pickle.load(open("ksweep_theory.pkl", "rb"))

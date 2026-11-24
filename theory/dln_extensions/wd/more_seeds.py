@@ -1,7 +1,10 @@
 """Tighter checks: larger d, many seeds. End points are computed exactly at finite d (convex solves); the identity
 'gradient descent on the weights = this end point' is deterministic and is spot-checked separately (part E)."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import sys, pickle, zlib, time, numpy as np
-sys.path.insert(0, "/home/claude/out/setup2"); sys.path.insert(0, "/home/claude/out/ce")
 from multiprocessing import Pool
 from scipy.optimize import minimize
 from ce_tests import project

@@ -1,12 +1,15 @@
 """CE toy as a function of k. All coordinates are forget coordinates. Pretraining: CE on teacher probabilities sigma(gamma x^T b*)
 (= projection onto logits gamma x^T b*). Stage 2 from A(D) on the deleted samples (reused), hard labels for ascent losses.
 Theory (exact, large d) for the uniform-target loss from se_reuse with k_eff = k / gamma^2."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import sys, pickle, zlib, time, warnings
 import numpy as np
 from scipy.special import expit, log_expit
 from multiprocessing import Pool
 warnings.simplefilter("ignore")
-sys.path.insert(0, "/home/claude/out/setup2")
 from ce_tests import project
 RHO, GAM, D, APT = 0.2, 3.0, 400, 0.3
 KS = (1e-8, 1e-6, 1e-4, 1e-2, 1.0, 1e2, 1e4)

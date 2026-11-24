@@ -224,6 +224,15 @@ Rich pretraining ($k=10^{-6}$), $\rho=0.2$, $|d_R|=|d_F|=400$, finite $d$, 6 see
 \item \textbf{The theory is exact}: every curve in Section~\ref{sec:curves} matches simulation with nothing fitted, for every loss and rescaling tested.
 \end{enumerate}
 
+\textbf{Cross-entropy and the ascent losses} (added 23 Nov; forget coordinates only, $d=400$, 10 seeds, simulation unless stated).
+\begin{enumerate}\setlength{\itemsep}{1pt}\setcounter{enumi}{10}
+\item \textbf{With soft labels from the teacher, cross-entropy pretraining is exactly this model} (flow and projection agree to $2\times10^{-6}$). Takeaways 1--10 hold unchanged. Hard labels are not covered.
+\item \textbf{Gradient ascent and NPO match the retrained model's accuracy without becoming the retrained model.} Stopped at that accuracy, their cosine to $A(D\setminus F)$ is $0.23$--$0.37$ and $0.28$--$0.54$, no better than doing nothing ($0.34$--$0.55$); the uniform target reaches $0.44$--$0.75$.
+\item \textbf{Ascent inflates the logits and still carries the class.} After a relearning attack with $0.15\,d$ fresh samples its accuracy is $0.66$--$0.67$, above the retrained model's $0.61$--$0.66$.
+\item \textbf{NPO stopped at chance is as hard to relearn as a model never trained on the class} ($0.585$ against $0.59$--$0.62$), though its weights are not that model's.
+\item \textbf{Rescaling $\kappa$, weight decay that is switched off ($\kappa=e^{-2\Lambda}$) and mini-batch noise are the same operation} (exact; for SGD per coordinate). Weight decay kept on forgets the start instead.
+\end{enumerate}
+
 \section{Plan}
 Compute $\alpha_{\mathrm{UL}}$, $\alpha_{\mathrm{UT}}$ and $\alpha_{\mathrm{re}}$ over a grid of $\mu_a/\mu_d$ (loss), $k$ and $\kappa$ (geometry) and $|\Ff|/|d_F|$ (data), with weight decay as the deletion baseline. Repeat at finite stopping times $\tau$: in closed form in the lazy regime, and by gradient flow elsewhere, recording the readiness of the $d_F$ coordinates alongside $\alpha_{\mathrm{re}}$.
 

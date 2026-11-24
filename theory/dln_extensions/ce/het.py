@@ -1,5 +1,9 @@
 """Teacher-probability toy: A(D) = min Q s.t. X^T b = gamma X^T b*. Ascent on hard labels y=sign(x^T b*).
 Margins start at gamma|z_i|. Test frozen-weight family b(s) = c sinh(th0 - s g_w), g_w = sum w(m_i^0) y_i x_i."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np, zlib, sys
 from scipy.special import expit, log_expit
 from scipy.optimize import minimize_scalar

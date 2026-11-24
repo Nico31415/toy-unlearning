@@ -2,8 +2,11 @@
 Flow: u' = -2u g - lam(t) u, v' = +2v g - lam(t) v, g = grad_beta of 1/2|X^T beta - t|^2, beta = u^2 - v^2.
 Claim: after switch-off and convergence, the end point is the Bregman projection from kappa*beta_start with geometry kappa*c,
 kappa = exp(-2 int lam dt): the same as multiplying the weights by sqrt(kappa) before training, whenever the decay happened."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import sys, numpy as np
-sys.path.insert(0, "/home/claude/out/ce")
 from ce_tests import project
 rng = np.random.default_rng(0); d, rho = 150, 0.2
 bs = np.where(rng.random(d) < rho, rng.choice([-1, 1], d) * rho**-0.5, 0.0)

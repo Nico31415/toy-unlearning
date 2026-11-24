@@ -2,6 +2,10 @@
 R1(b) = hyperbolic entropy with scale c0 (the network's own implicit-bias potential, used as an explicit penalty), R1' = arcsinh(b/c0)
 R2(b) = (2/3)|b|^{3/2} (bridge penalty), R2' = sign(b) sqrt|b|
 Problem: deleted samples (alpha_UL=0.2) to zero targets, kept samples (0.1) anchored on their labels."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np, pickle
 from scipy.optimize import minimize
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt

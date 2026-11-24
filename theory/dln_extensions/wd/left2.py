@@ -2,6 +2,10 @@
 u -> u e^{-Lam}, v unchanged: scale c -> c e^{-Lam} and the mirror variable theta = log(u/v) shifts by -Lam on every coordinate.
 End point after switch-off (pretraining from the balanced start): argmin sum_j [psi_{c'}(b_j) + Lam b_j] s.t. X^T b = y, c' = c e^{-Lam}.
 Replica channel: b = prox_{R/mu}(b* + s h), R'(b) = arcsinh(b/c') + Lam;  E prox' = alpha, s^2 = E (b - b*)^2 / alpha."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import numpy as np, pickle, sys
 from scipy.optimize import least_squares
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt

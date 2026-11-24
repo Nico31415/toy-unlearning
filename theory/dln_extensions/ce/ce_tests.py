@@ -1,4 +1,8 @@
 """CE toy: test the margin-Bregman conjecture (Test 0 pretraining, Test 1 stage 2 targets) and NPO-as-margin-shift (Test 2)."""
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import sys, pickle, time, warnings, zlib
 import numpy as np
 from scipy.optimize import minimize

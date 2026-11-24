@@ -1,5 +1,8 @@
+import os as _os, sys as _sys
+_ROOT = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+for _p in ("core", "ce", "wd", "sgd"):
+    _sys.path.insert(0, _os.path.join(_ROOT, _p))
 import sys, pickle, zlib, numpy as np
-sys.path.insert(0, "/home/claude/out/setup2"); sys.path.insert(0, "/home/claude/out/ce")
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 from ce_tests import project
 from se_wd import solve as solve_wd, lasso
