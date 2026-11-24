@@ -212,9 +212,38 @@ Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest 
 \begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_regularisers_tight.png}
 \caption{Regulariser checks. Lines: theory. Markers: exact finite-size end points, $\pm1$ s.e.}\label{fig}\end{figure}
 
+\section{What is proved}\label{proof}
+\textbf{Propositions} (exact, elementary). (i) \eqref{T1}, \eqref{T2} and all the $\kappa$ identities. (ii) The early-stopping identity. (iii) The decoupled closed form.
+
+\textbf{What the literature proves.} Nishiyama \& Imaizumi (2025, Theorems 3--4, extending Celentano, Cheng \& Montanari 2021) prove the dynamical equations for flows
+\[
+\dot\theta=p_t(g,\theta),\qquad g=\tfrac1\alpha X\,\ell_t(f;z),\qquad f=X^\top w_t(\theta),\qquad \theta\in\mathbb R^{d\times m},
+\]
+with $w_t,p_t,\ell_t$ Lipschitz in their arguments and in $t$, $z$ per-sample randomness independent of $X$, and $\theta(0)$ independent of $X$. Their Corollary 5 applies it to the \emph{truncated} network, $\beta=\eta_M(u^2)-\eta_M(v^2)$ with $\eta_M$ smooth, the identity on $[-M,M]$ and zero beyond $M+1$, squared loss, one stage.
+
+\textbf{Proposition (two stages, with the retrained copy; truncated, ramped switch).} Fix $M$ and $\epsilon>0$. Let $(u,v)$ be the truncated network trained on all samples and then, from $T_1$, with weights $\omega_a(t)$ and targets $b_a(t)\,y$ on group $a\in\{$deleted, kept$\}$, where $\omega_a,b_a$ are Lipschitz (a ramp of width $\epsilon$ at $T_1$). Let $(u',v')$ be the truncated network trained on the kept samples from the same initialisation. Then the joint empirical law of the paths $(u_j,v_j,u'_j,v'_j,\bs_j)$ converges almost surely in $W_2$ to the solution of the two-copy equations of Section~5, on every $[0,T]$. In particular $\tfrac1d\|\beta(t)-\beta'(T_1)\|^2$ converges.
+
+\emph{Proof.} Take $m=7$ columns $\theta=(u,v,u',v',\bs,\cdot,\cdot)$, $z_i\in\{0,1\}$ the group of sample $i$, and
+\[
+w_t(\theta)=\big(\,\omega_{\rm del}(t)[\beta_M-b_{\rm del}(t)\bs],\ \ \omega_{\rm kept}(t)[\beta_M-b_{\rm kept}(t)\bs],\ \ \beta'_M-\bs,\ 0,\dots\big),
+\]
+\[
+\ell(f;z)=\big(zf_1+(1-z)f_2,\ (1-z)f_3,\ 0,\dots\big),\qquad p(g,\theta)=\big(-\eta_M'(u^2)u\,g_1,\ \eta_M'(v^2)v\,g_1,\ -\eta_M'(u'^2)u'\,g_2,\ \eta_M'(v'^2)v'\,g_2,\ 0,\dots\big).
+\]
+This is the gradient flow of both truncated losses. All time dependence sits in $w_t$, multiplied by the bounded quantities $\beta_M$ and $\bs$, so $w_t$ and $Dw_t$ are Lipschitz in $(\theta,t)$; $\ell$ is linear in $f$ with coefficients in $[0,1]$ and does not depend on $t$; $p$ has exactly the form of their Corollary 5, applied to each copy. The assumptions on $X$, $z$, $\theta(0)$ hold. Their Theorem 4 gives the claim, and their DMFT system reduces to ours after eliminating the linear sample equation. \qed
+
+\textbf{What this does not cover.} These are gaps, not formalities.
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item \textbf{The truncation.} At any fixed $M$ some coordinates exceed $M$ (the largest $|\theta_j|$ grows like $\sqrt{\log d}$), so the untruncated network is never literally covered. Removing $M$ needs a bound on $\frac1d\sum_j\beta_j^2\mathbf 1[|\theta_j|>M]$ uniform in $d$. The published single-stage result has the same gap.
+\item \textbf{The sharp switch} ($\epsilon\to0$). Their proof discretises time, so a jump at a grid point should be harmless, but that means re-running their discretisation lemmas, not citing them.
+\item \textbf{Hard labels.} $\ell$ depends on $\operatorname{sign}(f^\star)$, which is not Lipschitz. Soft labels are covered; hard labels need a separate approximation step.
+\item \textbf{SGD} is discrete with fresh randomness at every step; it is outside the flow theorem.
+\item I read their appendix through an automated summary. The exact form of the Lipschitz condition on $p$ (a product of a bounded function of $\theta$ and $g$) has to be checked against the paper before this Proposition is quoted.
+\end{itemize}
+
 \section*{Limits}
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item \textbf{Everything dynamic is numerical.} Early stopping, hard labels without a penalty, SGD at large $d$, task vector and WHP are exact equations solved by a noisy forward pass (average many runs), derived by a cavity argument, not proved. Norms come out $1$--$3\%$ above simulation at $d=3000$; the gap shrinks with $d$ but its vanishing is not shown.
+\item \textbf{Everything dynamic is numerical.} Early stopping, hard labels without a penalty, SGD at large $d$, task vector and WHP are exact equations solved by a noisy forward pass (average many runs), derived by a cavity argument; only the truncated, ramped squared-loss case reduces to a published theorem (Section~\ref{proof}). Norms come out $1$--$3\%$ above simulation at $d=3000$; the gap shrinks with $d$ but its vanishing is not shown.
 \item \textbf{Ascent after blow-up} is not verified, and probably cannot be: the means are dominated by a few runs.
 \item \textbf{SGD:} no closed form in the step size beyond first order; the large-$d$ curves are tested for pretraining only.
 \item \textbf{Hard labels:} two sample ratios; WHP at one coefficient; forget coordinates only.
