@@ -68,6 +68,8 @@ def simulate(blocks, groups, sched, n1, T, dt, k, d=3000, seed=0, refs=(), sgd=N
 
 # ----- two classes: blocks retain / shared / forget; groups: retain class, forget samples, kept samples of the forget class
 BL = [(0.4, 0.2), (0.2, 0.2), (0.4, 0.2)]; GR = [(0.6, [0, 1]), (0.3, [1, 2]), (0.3, [1, 2])]
+import os
+if os.environ.get('GRSMALL'): GR = [(0.3, [0, 1]), (0.12, [1, 2]), (0.08, [1, 2])]          # the sample ratios of the squared-loss checks
 EXP = {  # name: (pretraining loss kind, stage-2 config per group)
     "labels: NPO + retain term on all kept": ("ce", [("ce", 1, 1), ("npo", 1, 1), ("ce", 1, 1)]),
     "labels: NPO + retain term on retain class": ("ce", [("ce", 1, 1), ("npo", 1, 1), ("off", 0, 1)]),
@@ -93,4 +95,4 @@ if __name__ == "__main__":
             for key in ("cos0", "cos1", "d0", "accF"):
                 a, b = np.array([o[key][i] for o in R[:nrun]]), np.array([o[key][i] for o in R[nrun:]]); row += f" {key} {a.mean():.3f}/{b.mean():.3f} ({(a.mean()-b.mean())/max(np.hypot(a.std(ddof=1), b.std(ddof=1)), 1e-12)*np.sqrt(nrun):+.1f}) |"
             print(row, flush=True)
-    pickle.dump(dict(res=res, n1=n1, k=k, sgd=sgd), open(f"blocks2_{mode}_{k:g}.pkl", "wb"))
+    pickle.dump(dict(res=res, n1=n1, k=k, sgd=sgd), open(f"blocks2_{mode}_{k:g}" + ("_small" if os.environ.get("GRSMALL") else "") + f"_{size}.pkl", "wb"))

@@ -199,8 +199,8 @@ ascent, NPO, flipped labels; distance and cosine & within 2 s.e.\ until the weig
 task vector, WHP & within 1.7 s.e.\\
 SGD, both stages & within 2 s.e.\\
 two classes, squared loss, four stage-2 losses, two references & 80 numbers at $k=1,10^{-2}$: within 1.3 s.e.\\
-two classes, class labels (NPO with two retain terms, flipped labels, ascent) & cosines, distance, forget accuracy at $k=1,10^{-2}$: within 1.9 s.e.\ before ascent blows up\\
-two classes, SGD (squared loss at $k=1,10^{-2}$; NPO at $k=1$) & within 2.4 s.e., except: forget accuracy before stage 2 at $k=1$ ($0.986$ against $0.991$, 3.3 s.e.), and the distance at the last NPO step, where the norm is growing fast ($13.5$ against $16.4$; cosines within 1.5 s.e.)\\
+two classes, class labels (NPO with two retain terms, flipped labels, ascent) & cosines, distance, forget accuracy at $k=1,10^{-2}$: within 1.9 s.e.\ before ascent blows up. At smaller sample ratios ($0.3,0.12,0.08$; NPO, $k=1$): distance and forget accuracy within 2 s.e.; one batch of 10 simulations had the cosine $0.005$ above theory, a second batch at $d=1500$ to $12000$ agrees ($0.875,0.938$ against $0.877,0.937$) with no trend in $d$\\
+two classes, SGD (squared loss at $k=1,10^{-2}$; NPO at $k=1$; squared loss at the smaller ratios) & within 2.4 s.e.; at $k=1$ with 10--12 runs and 6000 paths, within 2.0 s.e.\\
 lazy limit; rich limit \eqref{mult} & curves in $ct$ agree to 4 digits for $k\ge10^2$; \eqref{mult} agrees with the flow to 4 digits for $k\le10^{-4}$ and to $4\%$ at $k=10^{-2}$\\\bottomrule
 \end{tabular}\end{center}
 \textbf{Scales.} The rows above are at $k=10^{-2}$ and $1$ unless stated. Repeated at the extremes:
