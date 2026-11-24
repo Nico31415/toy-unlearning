@@ -121,7 +121,7 @@ What it covers, by the choice of $\ell_t$:
 \item \emph{task vector} (Ilharco et al.) and \emph{WHP} (Eldan \& Russinovich): both first continue training on the forget samples only, giving a ``reinforced'' model. With $w=(u,v)$, the task vector sets $w=w_{\rm pre}-\lambda_{\rm tv}(w_{\rm reinf}-w_{\rm pre})$, a function of one coordinate's $\theta$ at two times. WHP returns to $w_{\rm pre}$ and trains the forget samples to soft labels whose logit is the pretrained one minus a coefficient times the confidence the reinforced model gained. Returning to earlier weights is a function of the past, so the same forward pass applies.
 \end{itemize}
 
-With groups of samples and blocks of coordinates (two classes), averages become weighted sums exactly as in Section 2.4.
+With groups of samples and blocks of coordinates (two classes), averages become weighted sums exactly as in Section 2.4, for any of the losses above and for SGD (Section 3.4).
 
 \subsection{Two limits in closed form}
 Consider stage 2 from a converged pretrained model $\beta^{\rm pre}$.
@@ -168,9 +168,11 @@ The squared distance is mostly norm (the pretrained model is larger than the ret
 
 \textbf{5. Two classes with a finite budget} (squared loss; retain, shared, forget coordinates in proportion $0.4,0.2,0.4$; $k=1$). The anchor decides which reference is approached. With the kept samples of the forget class in the anchor, the distance to the model retrained without $F$ falls to $0.028$ and the distance to the model trained on the retain class only stays at $0.084$. With only the retain class in the anchor, the latter falls to $0.063$ and the former stops at $0.035$--$0.040$. Overshooting targets help only for a short stage 2, as with one class.
 
-\textbf{6. Relearning after ascent} (soft-label pretraining, simulation only, $d=400$). After stage 2 the model is trained on $0.15\,d$ fresh labelled samples and its test accuracy is measured. NPO stopped at chance accuracy relearns to $0.585$, like a model never trained on the class ($0.59$--$0.62$). Ascent stopped at the retrained model's accuracy relearns to $0.66$--$0.67$, above the retrained model ($0.61$--$0.66$): it still carries the class. Ascent also inflates the logits (mean square $2$--$8$ against $0.1$--$0.3$).
+\textbf{6. Two classes with class labels} (cross-entropy pretraining stopped at $T_1$; $0.6\,d$ retain-class samples, $0.3\,d$ forget and $0.3\,d$ kept samples of the forget class; $k=1$). Again the retain term decides the reference. NPO with a retain term on all kept samples raises the cosine to the model retrained without $F$ from $0.89$ to $0.945$, and to the retain-class-only model from $0.74$ to $0.77$. With the retain term on the retain class only, the second rises to $0.83$. Flipped labels never improve the first and move the second to $0.85$ early, then lose it. The same holds at $k=10^{-2}$.
 
-\textbf{7. SGD} (pretraining, $\gamma=0.04$, $\alpha=0.3$; Figure~\ref{figfinal}, top). Mean of $\log\kappa_j$ over coordinates: $-0.011$ full batch; $-0.200$ with $n_b/n=0.1$ ($k=1$); $-0.455$ ($k=10^{-2}$). Small batches shrink the scale, i.e.\ make the model richer.
+\textbf{7. Relearning after ascent} (soft-label pretraining, simulation only, $d=400$). After stage 2 the model is trained on $0.15\,d$ fresh labelled samples and its test accuracy is measured. NPO stopped at chance accuracy relearns to $0.585$, like a model never trained on the class ($0.59$--$0.62$). Ascent stopped at the retrained model's accuracy relearns to $0.66$--$0.67$, above the retrained model ($0.61$--$0.66$): it still carries the class. Ascent also inflates the logits (mean square $2$--$8$ against $0.1$--$0.3$).
+
+\textbf{8. SGD} (pretraining, $\gamma=0.04$, $\alpha=0.3$; Figure~\ref{figfinal}, top). Mean of $\log\kappa_j$ over coordinates: $-0.011$ full batch; $-0.200$ with $n_b/n=0.1$ ($k=1$); $-0.455$ ($k=10^{-2}$). Small batches shrink the scale, i.e.\ make the model richer.
 
 \begin{figure}[!ht]\centering\includegraphics[width=0.78\linewidth]{fig_final.png}
 \caption{Lines: theory (band: $\pm1$ standard error over runs). Markers: simulation. Top: SGD. Bottom left: distance to the retrained model against the time spent in stage 2, for five losses. Bottom right: task vector.}\label{figfinal}\end{figure}
@@ -196,7 +198,9 @@ hard-label pretraining & $\E\beta\bs$, loss, accuracy within $1\%$; $\E\beta^2$ 
 ascent, NPO, flipped labels; distance and cosine & within 2 s.e.\ until the weights blow up; not verified after\\
 task vector, WHP & within 1.7 s.e.\\
 SGD, both stages & within 2 s.e.\\
-two classes, four stage-2 losses, two references & 80 numbers at $k=1,10^{-2}$: within 1.3 s.e.\\
+two classes, squared loss, four stage-2 losses, two references & 80 numbers at $k=1,10^{-2}$: within 1.3 s.e.\\
+two classes, class labels (NPO with two retain terms, flipped labels, ascent) & cosines, distance, forget accuracy at $k=1,10^{-2}$: within 1.9 s.e.\ before ascent blows up\\
+two classes, SGD (squared loss at $k=1,10^{-2}$; NPO at $k=1$) & within 2.4 s.e., except: forget accuracy before stage 2 at $k=1$ ($0.986$ against $0.991$, 3.3 s.e.), and the distance at the last NPO step, where the norm is growing fast ($13.5$ against $16.4$; cosines within 1.5 s.e.)\\
 lazy limit; rich limit \eqref{mult} & curves in $ct$ agree to 4 digits for $k\ge10^2$; \eqref{mult} agrees with the flow to 4 digits for $k\le10^{-4}$ and to $4\%$ at $k=10^{-2}$\\\bottomrule
 \end{tabular}\end{center}
 \textbf{Scales.} The rows above are at $k=10^{-2}$ and $1$ unless stated. Repeated at the extremes:
