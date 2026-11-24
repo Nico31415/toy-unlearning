@@ -5,286 +5,231 @@
 \usepackage[font=small]{caption}
 \setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
 \newcommand{\bs}{\beta^\star}\newcommand{\E}{\mathbb E}\newcommand{\asinh}{\operatorname{arcsinh}}\newcommand{\prox}{\operatorname{prox}}
-\title{One template and its variants:\\ cross-entropy, early stopping, SGD and regularisers in the diagonal-network model}
+\title{Unlearning in the diagonal-network model:\\ end points, trajectories, and what is proved}
 \author{}\date{24 November 2026}
 \begin{document}\maketitle
 
-\section{The template}
-The model is $f(x)=x^\top\beta$ with $\beta=u^2-v^2$. Data: $n$ inputs $x_i\sim\mathcal N(0,I_d/d)$, the columns of $X$, with targets $y$; $\alpha=n/d$. Teacher $\bs$: entries $\pm\rho^{-1/2}$ with probability $\rho$, else $0$.
+\section{Model}
+$f(x)=x^\top\beta$ with $\beta=u^2-v^2$. Inputs $x_i\sim\mathcal N(0,I_d/d)$ are the columns of $X\in\mathbb R^{d\times n}$; $\alpha=n/d$. Teacher $\bs$: entries $\pm\rho^{-1/2}$ with probability $\rho$, else $0$. Labels are $y=X^\top\bs$ unless stated.
 
-\textbf{(T1) Mirror flow.} For any loss $L(X^\top\beta)$, gradient flow on $(u,v)$ is
+\textbf{Mirror flow.} For any loss $L(X^\top\beta)$, gradient flow on $(u,v)$ is
 \begin{equation}\label{T1}
 \beta=c\,\sinh\theta,\qquad \dot\theta=-4\,\nabla_\beta L ,\qquad c=2uv\ \text{(constant in time)}.
 \end{equation}
-So $\theta(t)-\theta(0)$ always lies in the span of the inputs. Small $c$ is the rich regime, large $c$ the lazy one ($c=\sqrt k/2$).
+Small $c$ is the rich regime, large $c$ the lazy one ($c=\sqrt k/2$). Since $\nabla_\beta L\in\operatorname{span}X$, so is $\theta(t)-\theta(0)$.
 
-\textbf{(T2) End point.} If training from $\beta_0$ ends with $X^\top\beta=y$, then
+\textbf{Two kinds of result.} If training converges, the \emph{end point} is a static problem (Section 2). If it is stopped early, or never converges, we need the \emph{trajectory} (Section 3). Section 4 lists what the theory says about unlearning, Section 5 the checks, Section 6 what is proved.
+
+\section{End points}
+\subsection{One training}
+If training from $\beta_0$ ends with $X^\top\beta=y$, then
 \begin{equation}\label{T2}
 \beta_\infty=\arg\min_\beta D_c(\beta,\beta_0)\quad\text{s.t.}\quad X^\top\beta=y ,
 \end{equation}
-where $D_c$ is the Bregman divergence of $\psi_c$, $\psi_c'(\beta)=\asinh(\beta/c)$. (These are the KKT conditions of \eqref{T2}: $\theta_\infty-\theta_0\in\operatorname{span}X$ and the constraints.)
-
-\textbf{(T3) Large $d$.} For a problem ``minimise $\sum_jR(\beta_j)$ subject to $X^\top\beta=X^\top\bs$'', each weight is distributed as
+with $D_c$ the Bregman divergence of $\psi_c$, $\psi_c'(\beta)=\asinh(\beta/c)$. (KKT: $\theta_\infty-\theta_0\in\operatorname{span}X$ and the constraints.) At large $d$, from $\beta_0=0$, each weight is distributed as
 \begin{equation}\label{T3}
-\beta=\prox_{\tau R}(\bs+\sigma h),\quad h\sim\mathcal N(0,1),\qquad \sigma^2=\frac{\E(\beta-\bs)^2}{\alpha},\qquad \E[\prox{}']=\alpha .
+\beta=\prox_{\tau\psi_c}(\bs+\sigma h),\quad h\sim\mathcal N(0,1),\qquad \sigma^2=\frac{\E(\beta-\bs)^2}{\alpha},\qquad \E[\prox{}']=\alpha .
 \end{equation}
-Two unknown numbers, $\tau$ and $\sigma$. Pretraining from zero is $R=\psi_c$.
+Two unknown numbers, $\tau$ and $\sigma$.
 
-Every variant below changes one of three things: the \emph{scale} $c$, the \emph{start} $\beta_0$, or the \emph{constraints}. Table~\ref{tab} is the summary.
+\subsection{Changing the scale: rescaling, weight decay, SGD}
+Each of these changes $c$ and leaves \eqref{T2} otherwise intact.
 
-\begin{table}[h]\centering\small
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{6.6cm}>{\raggedright\arraybackslash}p{4.9cm}@{}}\toprule
-variant & what changes in the template & status\\\midrule
-cross-entropy, soft labels & targets $y\to$ label logits & exact\\
-cross-entropy, hard labels, penalty kept on & \eqref{T3} with a nonlinear sample equation & exact (Section~\ref{hard})\\
-cross-entropy, hard labels, no penalty & no end point; needs dynamics & exact, solved numerically\\
-rescaling the weights by $\sqrt\kappa$ & $c\to\kappa c$, $\beta_0\to\kappa\beta_0$ & exact\\
-weight decay, then switched off & the same, with $\kappa=e^{-2\Lambda}$ & exact\\
-mini-batch SGD & the same, with $\kappa_j=\prod_k(1-4\gamma^2g_{k,j}^2)$ per coordinate & exact; large-$d$ curves numerical (Section~\ref{sgdd})\\
-one-sided decay, then switched off & $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$ & exact\\
-regulariser kept on & \eqref{T2} becomes a penalised fit; start forgotten & exact (convex $R$)\\
-stage 2 with retain/shared/forget blocks, anchors, references & several coupled copies of \eqref{T2} & exact (Section~\ref{multi})\\
-early stopping & targets $\to$ current predictions; needs dynamics & exact, solved numerically\\
-task vector, WHP (hard labels) & same dynamics with a reset & exact, solved numerically\\
-ascent, NPO, flipped labels on hard labels & no end point; same dynamics, different $\ell$ & exact until the weights blow up\\
-non-convex regulariser & end point depends on the path & no formula\\\bottomrule
-\end{tabular}\caption{The variants.}\label{tab}\end{table}
+\textbf{Rescaling} all weights by $\sqrt\kappa$: $c\to\kappa c$, $\beta_0\to\kappa\beta_0$.
 
-\section{Cross-entropy}
-\textbf{Soft labels.} If the labels are probabilities $p_i\in(0,1)$, the loss is minimised at the finite logits $\log\frac{p_i}{1-p_i}$. By \eqref{T1} the flow converges to \eqref{T2} with those logits as targets. With a logistic teacher, $p_i=\sigma(x_i^\top\bs)$, the targets are $x_i^\top\bs$: \emph{cross-entropy pretraining is the squared-loss model}, and everything known for it carries over. (Flow vs \eqref{T2}: $2\times10^{-6}$.)
+\textbf{Weight decay that is later switched off}, penalty $\frac{\lambda_t}2(\|u\|^2+\|v\|^2)$: the decay never touches $\theta$, it only shrinks $c$. The end point is \eqref{T2} with $\kappa=e^{-2\Lambda}$, $\Lambda=\int\lambda_t\,dt$. Only the total matters, not the timing (Jacobs, Zhou \& Burkholz 2025, Thm.\ 3.11, in this model).
 
-\textbf{Hard labels.} With $y_i=\pm1$ and no penalty the weights diverge; only a limiting direction is known (Moroshko et al.; Pesme et al.), and at realistic losses neither the hard-margin projection ($27$--$54\%$ off) nor the regularisation path ($19$--$38\%$) describes the flow. Section~\ref{hard} gives what is exact: the end point when a penalty is kept on, and the whole trajectory when it is not.
+\textbf{Decay on $u$ only}: $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$.
 
-\textbf{Ascent on hard labels} (gradient ascent, NPO). With $z_i=y_ix_i$ and per-sample weight $w(\cdot)>0$ on the margin $m_i=z_i^\top\beta$,
+\textbf{Mini-batch SGD} with step $\gamma$ and mini-batch gradient $G$ (in $\beta$): the step $u\leftarrow u(1-2\gamma G)$, $v\leftarrow v(1+2\gamma G)$ is exactly
+\begin{equation}\label{sgd}
+\theta\leftarrow\theta-2\operatorname{artanh}(2\gamma G),\qquad c\leftarrow c\,(1-4\gamma^2G^2).
+\end{equation}
+So SGD is the flow \eqref{T1} with a scale that shrinks coordinate by coordinate, $\kappa_j=\prod_{\text{steps}}(1-4\gamma^2G_j^2)$ (Even et al.\ 2023). For batches of $b$ out of $n$, to first order in $\gamma$,
 \begin{equation}
-\theta(t)=\theta_0-\sum_i\Lambda_i(t)\,z_i,\qquad \dot\Lambda_i=4\,w(m_i).
+\E\log\frac1{\kappa_j}=4\gamma\int_0^\infty\!\Big(\frac{n-b}{b(n-1)}V_j+\bar g_j^2\Big)dt ,
 \end{equation}
-The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point; the trajectory is given by Section~\ref{hard}. What follows is simulation (forget coordinates only, $d=400$, 10 seeds, three scales) \emph{after soft-label pretraining to convergence}; after hard-label pretraining the first conclusion reverses (Section~\ref{hard}).
-\begin{itemize}[nosep,leftmargin=1.2em]
-\item Both can be stopped at the retrained model's held-out accuracy. The model reached is not the retrained one: its cosine to $A(D\setminus F)$ is $0.23$--$0.37$ (ascent) and $0.28$--$0.54$ (NPO), no better than doing nothing ($0.34$--$0.55$). Soft targets at the uniform label (zero logit; exact by \eqref{T2}) reach $0.44$--$0.75$. The cosine does not depend on scale, so this is not an artefact of measuring distance.
-\item Ascent inflates the logits: mean squared logit $2$--$8$ at matched accuracy, against $0.1$--$0.3$ for the reference. NPO does not ($0.2$--$0.45$).
-\item Relearning attack ($0.15\,d$ fresh labelled samples, then held-out accuracy): never trained on the class $0.59$--$0.62$; NPO stopped at chance $0.585$--$0.586$ (as hard to relearn as never having trained); ascent stopped at the reference accuracy $0.66$--$0.67$, above the retrained model's $0.61$--$0.66$: it still carries the class.
-\item Only about half the ascent runs reach chance accuracy before diverging; those rows are a selected subset.
-\end{itemize}
+with $\bar g$ the full gradient and $V_j$ the per-sample variance of coordinate $j$ of the gradient, along gradient flow. As $\gamma\to0$, $\kappa\to1$ for every batch size. For any $\gamma$, $\kappa_j$ follows from the trajectory (Section 3.3). Replacing $\kappa_j$ by one common $\kappa$ is an approximation: where SGD moves the end point by $24$--$31\%$, the per-coordinate $\kappa_j$ reproduces it to $0.6\%$ and a single $\kappa$ to $4$--$5\%$.
 
-\section{Rescaling, weight decay, SGD: one parameter $\kappa$}
-\textbf{Rescaling.} Multiplying all weights by $\sqrt\kappa$ gives $c\to\kappa c$, $\beta_0\to\kappa\beta_0$, $\theta_0$ unchanged. Then \eqref{T2} applies with the new scale and start.
-
-\textbf{Weight decay that is switched off.} With penalty $\frac{\lambda_t}2(\|u\|^2+\|v\|^2)$,
-$\dot u=-2u\,\nabla L-\lambda_tu$, $\dot v=2v\,\nabla L-\lambda_tv$, hence
-\begin{equation}
-\beta_t=c\,e^{-2\Lambda_t}\sinh\theta_t,\qquad\dot\theta=-4\nabla_\beta L,\qquad\Lambda_t=\int_0^t\lambda_s\,ds .
-\end{equation}
-The decay never touches $\theta$; it only shrinks the scale. After switch-off and convergence the end point is \eqref{T2} with $\kappa=e^{-2\Lambda}$: \emph{temporary weight decay is a rescaling}, and only its total $\Lambda$ matters, not its timing. This is Theorem 3.11 of Jacobs, Zhou \& Burkholz (2025) in our model; their ``type of bias'' is $c\to\kappa c$ and their ``positional bias'' is $\beta_0\to\kappa\beta_0$.
-
-\textbf{One-sided decay} $\frac{\lambda_t}2\|u\|^2$ (their Example 3.13): $u$ shrinks by $e^{-\Lambda}$ and $v$ does not, so $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$. For pretraining this is \eqref{T3} with $R(\beta)=\psi_{e^{-\Lambda}c}(\beta)+\Lambda\beta$.
-
-\textbf{Mini-batch SGD.} One step with step size $\gamma$ and mini-batch gradient $g_k$ (in $\beta$) multiplies $u$ by $1-2\gamma g_k$ and $v$ by $1+2\gamma g_k$. So $uv$ shrinks by $1-4\gamma^2g_k^2$ per step, and to $O(\gamma^3)$ the mirror variable moves as in \eqref{T1}:
-\begin{equation}
-\kappa_j=\prod_k\big(1-4\gamma^2g_{k,j}^2\big)\qquad\text{(Even et al.\ 2023).}
-\end{equation}
-\emph{SGD is gradient flow with a smaller scale}; in stage 2 it is a rescaling of the pretrained model, coordinate by coordinate. $\kappa_j$ depends on the trajectory and varies across coordinates by $5$--$7\%$ for single-sample SGD. Replacing it by one number (as the large-$d$ curves in $\kappa$ require) is an approximation: at a step size where SGD moves the end point by $24$--$31\%$, the per-coordinate $\kappa_j$ reproduces it to $0.6\%$ and a single $\kappa$ to $4$--$5\%$. For full-batch steps $\kappa_j$ concentrates on the support and a single $\kappa$ explains little of the (small) effect. For batches of size $b$ out of $n$, per step $\E\,g_j^2=\bar g_j^2+c_bV_j$, with $\bar g$ the full gradient, $V_j$ the per-sample variance and $c_b=\frac{n-b}{b(n-1)}$. In expectation, to first order in $\gamma$,
-\begin{equation}
-\E\log\frac1{\kappa_j}=4\gamma\int_0^\infty\!\big(c_bV_j+\bar g_j^2\big)\,dt ,
-\end{equation}
-the integrals taken along gradient flow. The relative error is of order $\gamma c_b$ ($11\%$ at $\gamma c_b=0.02$, $2\%$ at $0.005$); it comes from the path changing with the noise and has no closed form. As $\gamma\to0$, $\kappa\to1$ for every batch size: SGD with infinitesimal steps is gradient flow.
-
-\textbf{Large $d$, any step size and batch size.}\label{sgdd} The discrete steps obey the dynamics of Section~\ref{hard} with two changes: each sample's gradient is multiplied by a fresh Bernoulli mask (mean one) at every step, and each coordinate carries $(u,v)$ updated multiplicatively as above instead of $\theta$. This gives the whole SGD trajectory and $\E\log\kappa_j$ with no expansion in $\gamma$ (Figure~\ref{figfinal}; \texttt{sgd\_dmft.py}). Example ($\gamma=0.04$, $\alpha=0.3$): mean $\log\kappa=-0.011$ full batch, $-0.200$ at batch fraction $0.1$ ($k=1$), $-0.455$ ($k=10^{-2}$); simulation $-0.011,-0.204,-0.459$. Stage 2 (zero targets on the deleted samples, from the SGD-pretrained weights) is the same solver with the sample weights switched; it matches simulation within 2 s.e.\ at both batch fractions.
-
-\section{A regulariser that stays on}
-With a penalty $\lambda\sum_jR(\beta_j)$ kept on, training converges to the minimiser of loss plus penalty. For convex $R$ it is unique: \emph{the start and the scale are forgotten}. Weight decay on $(u,v)$ is $R=|\beta|$ (the cheapest factorisation of $\beta$ costs $|\beta|$), so the end point is a lasso. Large $d$: \eqref{T3} with one change,
+\subsection{A penalty that stays on}
+With $\lambda\sum_jR(\beta_j)$ kept on and $R$ convex, training converges to the unique penalised minimiser; \emph{start and scale are forgotten}. Weight decay on $(u,v)$ is $R=|\beta|$, a lasso. Large $d$: \eqref{T3} with $\psi_c\to R$ and
 \begin{equation}\label{reg}
-\beta=\prox_{\tau R}(\bs+\sigma h),\qquad \sigma^2=\frac{\E(\beta-\bs)^2}{\alpha},\qquad \E[\prox{}']=\alpha-\frac\lambda\tau .
+\E[\prox{}']=\alpha-\lambda/\tau .
 \end{equation}
-($\lambda\to0$ recovers \eqref{T3}.) With several groups of samples (different targets) and several blocks of coordinates (retain, shared, forget), each block has its own $(\tau,\sigma)$ and $\bs$, $\alpha$ become sums over the groups that touch the block; the formulas are in \texttt{se\_wd.py} and \texttt{se\_blocks.py}.
 
-For non-convex $R$ (weight decay on a three-layer diagonal network gives $|\beta|^{2/3}$) this fails: different algorithms and different initialisations end at different points (norm between $0.14$ and $0.30$ in one setting), and the solution of \eqref{reg} ($0.42$) is none of them. The end point is path-dependent.
-
-\section{Several trainings on the same data}\label{multi}
-Unlearning compares models trained on overlapping data: the pretrained model, the unlearned one that starts from it, and the retrained references. Each is a converged flow, $\theta_s=\theta_{\text{parent}(s)}-Xg_s$ with $X_s^\top\beta_s=$ targets on the samples it uses ($g_s$ is zero on the others). Index the teacher by $0$. With blocks of coordinates $B$ (fraction $q_B$ of $d$) and groups of samples $a$ ($\alpha_a=n_a/d$, inputs supported on some blocks), at large $d$:
+\subsection{Several trainings on the same data}\label{multi}
+Unlearning compares models trained on overlapping data: the pretrained model, the unlearned one that starts from it, and the retrained references. Number them $s=1,2,\dots$ and the teacher $0$. Each is a converged flow: $\theta_s=\theta_{\text{parent}(s)}-Xg_s$, with $g_s$ supported on the samples $s$ uses and $X^\top\beta_s$ equal to its targets there. Coordinates come in blocks $B$ (fraction $q_B$ of $d$: retain, shared, forget) and samples in groups $a$ ($\alpha_a=n_a/d$; inputs supported on some blocks). At large $d$:
 \begin{align}
-\text{sample in group }a:&\quad p_s=\zeta_s+\sum_{m\preceq s}V_a[s,m]\,g_m,\qquad p_s=b_{s,a}\,\zeta_0\ \text{ if $s$ uses $a$},\quad g_s=0\ \text{ otherwise};\\
-\text{coordinate in block }B:&\quad \theta_s=\theta_{\text{parent}(s)}-\Big(\eta_s+\sum_{m}A_B[s,m]\,\beta_m\Big),\qquad \beta_s=c_s\sinh\theta_s .
+\text{sample in group }a:&\quad p_s=\zeta_s+\sum_{m\preceq s}V_a[s,m]\,g_m ,\qquad p_s=b_{s,a}\,\zeta_0\ \text{if $s$ uses $a$},\quad g_s=0\ \text{otherwise};\label{ms}\\
+\text{coordinate in block }B:&\quad \theta_s=\theta_{\text{parent}(s)}-\Big(\eta_s+\sum_{m}A_B[s,m]\,\beta_m\Big),\qquad \beta_s=c_s\sinh\theta_s .\label{mc}
 \end{align}
-Here $m\preceq s$ runs over $s$ and its ancestors; $(\zeta_0,\zeta_1,\dots)$ is Gaussian with covariance $C_a[s,m]=\sum_{B\in a}q_B\,\E_B\beta_s\beta_m$; the sample equations are linear, so $g=L_a\zeta$ in closed form; and
+Here $p_s$ is the prediction of model $s$ on the sample, $\zeta_s$ the prediction it would make had it never seen the sample, and $b_{s,a}$ the target as a multiple of the label. $m\preceq s$ runs over $s$ and its ancestors. $(\zeta_0,\zeta_1,\dots)$ is Gaussian with covariance $C_a[s,m]=\sum_{B\in a}q_B\E_B\beta_s\beta_m$. Equation \eqref{ms} is linear, so $g=L_a\zeta$ in closed form, and
 \[
 A_B=\sum_{a\ni B}\alpha_aL_a,\qquad \operatorname{Cov}(\eta)=\sum_{a\ni B}\alpha_aL_aC_aL_a^\top,\qquad V_a[s,m]=\sum_{B\in a}q_B\,\E_B\frac{\partial\beta_s}{\partial\eta_m}.
 \]
-One system from zero is \eqref{T3}. Rescaling by $\sqrt\kappa$ is $c_s=\kappa c_{\text{parent}}$. Every distance between systems is read off $\E\beta_s\beta_m$. This replaces the Gordon argument for forget coordinates and covers retain and shared blocks, anchors, any $\kappa$, and both references at once (\texttt{multi.py}; converges in 40--90 iterations).
+One model from zero is \eqref{T3}. Rescaling is $c_s=\kappa c_{\text{parent}}$. Every distance between models is read off $\E\beta_s\beta_m$.
 
-\section{Early stopping}
-\textbf{Identity.} By \eqref{T1}, at every time $\beta(t)$ is \eqref{T2} with targets $X^\top\beta(t)$: early stopping is the same bias applied to partly fitted targets. What is missing is how the predictions move.
+\subsection{Cross-entropy}\label{ce}
+\textbf{Soft labels.} With labels $\sigma(x_i^\top\bs)$ the loss is minimised at the logits $x_i^\top\bs$: cross-entropy is the squared-loss model, and everything above applies.
 
-\textbf{Decoupled inputs.} If each coordinate has its own target $b$ and input scale $s$, then $\dot\beta=-4s\sqrt{\beta^2+c^2}\,(\beta-b)$, solved by
-\begin{equation}
-\frac{e^{\theta}-e^{\theta_b}}{e^{\theta}+e^{-\theta_b}}=\text{const}\cdot e^{-4s\sqrt{b^2+c^2}\,t},\qquad \sinh\theta_b=b/c .
+\textbf{Hard labels,} $y_i=\operatorname{sign}(x_i^\top\bs)$, loss $\ell(p)=\log(1+e^{-yp})$. Without a penalty the weights diverge and there is no end point (Section 3). With a penalty kept on, the end point exists; the sample side of \eqref{T3} becomes one scalar equation,
+\begin{equation}\label{hp}
+p=\zeta-V\,\ell'(p),\qquad\beta=\prox_{\lambda R/A}\!\Big(\frac{B\bs+\sqrt C\,h}{A}\Big),
 \end{equation}
-Forgetting to $b=0$ at small $c$ is a power law, $\beta(t)\approx\beta_0/(1+4s\beta_0t)$, and what is left relearns faster than from scratch ($0.37$ against $1.12$ from a leftover of $0.1$): stopped early, a weight is hidden, not deleted. At large $c$ both are exponential and equal.
+\[
+A=\alpha\,\E\frac{\ell''}{1+V\ell''},\quad B=-\alpha\,\E\,\partial_{\zeta_0}\ell'(p),\quad C=\alpha\,\E\,\ell'(p)^2,\quad V=\frac{\E[\prox{}']}{A},
+\]
+with $(\zeta_0,\zeta)$ Gaussian with variances $1$, $\E\beta^2$ and covariance $\E\beta\bs$. Three unknown numbers.
 
-\textbf{Gaussian inputs, large $d$.} Let the targets be $a(t)\,y$ (so pretraining, then a switch of $a$, is one flow). Each coordinate obeys
+\section{Trajectories}
+\subsection{Two exact statements}
+\textbf{Identity.} By \eqref{T1}, at every time $\beta(t)$ is \eqref{T2} with targets $X^\top\beta(t)$: early stopping is the same bias applied to partly fitted targets.
+
+\textbf{One coordinate alone} (target $b$, input scale $s$): $\dot\beta=-4s\sqrt{\beta^2+c^2}(\beta-b)$, solved by
 \begin{equation}
-\dot\theta=-4\Big(\eta+\alpha\,K(\beta-a\bs)\Big),\qquad \beta=c\sinh\theta,
+\frac{e^{\theta}-e^{\theta_b}}{e^{\theta}+e^{-\theta_b}}=\text{const}\cdot e^{-4s\sqrt{b^2+c^2}\,t},\qquad\sinh\theta_b=b/c .
 \end{equation}
-where $\eta$ is a Gaussian process and $K=(1-R)^{-1}$ a causal operator in time, with $R(t,s)=\E\,\partial\beta(t)/\partial\eta(s)$. The residual of a training sample is $K\zeta$, $\zeta$ Gaussian with the covariance of $\beta-a\bs$, and $\eta=\sqrt\alpha\,K\zeta$. Groups of samples with different targets or weights add their terms. This extends Nishiyama \& Imaizumi (2025) from a zero start to a switch. It is solved by one forward pass in time over sampled paths. A second copy trained on the kept samples only, driven by the same randomness, gives the distance to the retrained model at every stopping time.
+Forgetting to $b=0$ at small $c$ is a power law, $\beta(t)\approx\beta_0/(1+4s\beta_0t)$, and what is left relearns faster than from scratch (time $0.37$ against $1.12$ from a leftover of $0.1$): stopped early, a weight is hidden, not deleted.
 
-Its sampling noise is as large as a simulation's of the same size, so it must be averaged over runs. At $k=10^{-6}$ (seven runs of 2000 paths) the untraining distance relative to its value before stage 2 is $0.411\pm0.016$ at the best stopping time and $0.441\pm0.017$ at $\tau=6$, against $0.405$ and $0.435$ in simulation; in every run the distance is lower at the best stopping time than at $\tau=6$, and the exact converged value is higher still. The derivation is a cavity argument, not a proof.
-
-\textbf{Other targets, an anchor, and a fixed budget.} Targets $b\,y$ on the deleted samples, with or without the kept samples in the loss; reference $=$ retrained for the pretraining time ($k=10^{-2}$, $\alpha_{\mathrm{PT}}=0.3$, $\alpha_{\mathrm{UL}}=0.2$; Figure~\ref{figfinal}). Theory and simulation agree within 1.6 s.e.\ for all five losses. The best loss depends on the budget: for a short stage 2 ($t\le1$) overshooting targets $-0.5y$ with an anchor are best ($0.085$, $0.063$, $0.051$ at $t=0.25,0.5,1$, against $0.110$, $0.080$, $0.056$ for zero targets with an anchor); for a long one zero targets with an anchor win ($0.039$) and the overshooting targets drift away ($0.117$). Shrunk labels $+0.5y$ are the slowest at every budget. At $k=1$ the pattern is the same with an earlier crossover: $-0.5y$ with an anchor is best only at $t=0.25$ ($0.037$ against $0.057$), zero targets with an anchor from $t=0.5$ on ($0.021$ at $t=1$).
-
-\section{Hard labels}\label{hard}
-Labels $y_i=\operatorname{sign}(x_i^\top\bs)$ (or sampled from $\sigma(x_i^\top\bs)$), loss $\ell(p)=\log(1+e^{-yp})$ on the logit $p=x^\top\beta$. The squared loss made the sample side of \eqref{T3} linear; now it is one scalar equation per sample.
-
-\textbf{Penalty kept on.} $U=\arg\min\sum_i\ell(x_i^\top\beta)+\lambda\sum_jR(\beta_j)$, convex $R$ (weight decay: $R=|\beta|$). Write $Q=\E\beta^2$, $M=\E\beta\bs$. For a training sample let $(z,\zeta)$ be Gaussian with variances $1,Q$ and covariance $M$: $z$ is the teacher's logit, $\zeta$ the logit the model would give had it not seen the sample. Training on it moves the logit to
-\begin{equation}
-p=\zeta-V\,\ell'(p),
-\end{equation}
-with $V>0$ one number. Then each weight is
-\begin{equation}
-\beta=\prox_{\lambda R/A}\!\Big(\frac{B\bs+\sqrt C\,h}{A}\Big),\qquad A=\alpha\,\E\frac{\ell''}{1+V\ell''},\quad B=-\alpha\,\E\,\partial_z\ell'(p),\quad C=\alpha\,\E\,\ell'(p)^2,\quad V=\frac{\E[\prox{}']}{A}.
-\end{equation}
-Three unknowns $(Q,M,V)$. With the squared loss this is \eqref{reg}. $B$ is computed as $-\alpha(\E[z\,\ell']-MA/\alpha)$. (Code: \texttt{se\_logistic.py}.)
-
-\textbf{No penalty: dynamics.} For any loss and any schedule of losses,
+\subsection{Gaussian inputs, large $d$}\label{dyn}
+For any per-sample loss $\ell_t$, which may change in time and differ between groups of samples,
 \begin{equation}\label{nl}
-p(t)=\zeta(t)+\int_0^t R_\beta(t,s)\,\ell'(p(s))\,ds,\qquad
-\dot\theta=-4\Big(\eta+\int_0^tR_\ell(t,s)\,\beta(s)\,ds+\mu(t)\,\bs\Big),
+p(t)=\zeta(t)+\int_0^tR_\beta(t,s)\,\ell_s'(p(s))\,ds,\qquad
+\dot\theta=-4\Big(\eta+\int_0^tR_\ell(t,s)\,\beta(s)\,ds+\mu(t)\,\bs\Big).
 \end{equation}
-with $\zeta$ Gaussian with the covariance of $\beta(t)$, $\eta$ Gaussian with covariance $\alpha\,\E\,\ell'(p(t))\ell'(p(s))$, and
-$R_\beta=\E\,\partial\beta(t)/\partial\eta(s)$, $R_\ell=\alpha\,\E\,\partial\ell'(p(t))/\partial\zeta(s)$, $\mu=\alpha\,\E\,\partial_z\ell'(p(t))$. The first equation is the sample equation above with memory; the second is the early-stopping equation with $\alpha K$ replaced by $R_\ell$. Solved by the same forward pass. Stage 2 only changes $\ell$ on the forget samples at the switch time: ascent ($-\ell$), flipped labels ($\ell$ at $-y$), NPO. (Code: \texttt{dmft\_nl.py}, \texttt{dmft\_nl2.py}.)
+This is \eqref{ms}--\eqref{mc} with time in place of the model index. $\zeta$ is Gaussian with the covariance of $\beta(t)$; $\eta$ is Gaussian with covariance $\alpha\,\E\,\ell'(p(t))\ell'(p(s))$; and
+\[
+R_\beta(t,s)=\E\frac{\partial\beta(t)}{\partial\eta(s)},\qquad R_\ell(t,s)=\alpha\,\E\frac{\partial\ell_t'(p(t))}{\partial\zeta(s)},\qquad\mu(t)=\alpha\,\E\,\partial_{\zeta_0}\ell_t'(p(t)).
+\]
+The equations are solved by one forward pass in time over sampled paths. For the squared loss this extends Nishiyama \& Imaizumi (2025) from one stage to a switch of loss.
 
-\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_labels.png}
-\caption{Hard labels. Top: penalty kept on, against $\lambda$. Middle: no penalty, pretraining. Bottom: pretraining then stage 2 on half the samples. Lines: theory. Markers: simulation, $\pm1$ s.e.}\label{fighard}\end{figure}
-
-\textbf{Distance to the retrained model.} Without an end point, the retrained model is defined by its budget: $A(D\setminus F)$ is cross-entropy on the kept samples from zero for the pretraining time $T_1$. It is a second copy of \eqref{nl} driven by the same randomness (the two copies do not respond to each other), which gives $\|\beta(t)-A(D\setminus F)\|^2$ and the cosine at every stage-2 time (Figure~\ref{figdist}; $\alpha=0.6$, half the samples forgotten, $T_1=3$ at $k=1$ and $4$ at $k=10^{-2}$).
+What it covers, by the choice of $\ell_t$:
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item The distance is mostly norm: the pretrained model is larger than the retrained one. The cosine is the cleaner measure. Doing nothing: $0.70$ ($k=1$), $0.62$ ($k=10^{-2}$).
-\item Flipped labels move fastest and overshoot: cosine peaks at $0.84$ / $0.76$ after a short time, then falls below doing nothing while forget accuracy drops under chance. It must be stopped early.
-\item NPO with a retain term rises more slowly to a plateau, $0.83$ / $0.77$, and stays there while the norm (hence the distance) keeps growing.
-\item Ascent, with or without a retain term, follows NPO until it blows up (cosine $0.78$--$0.80$ / $0.70$--$0.73$ at forget accuracy $\approx0.9$).
-\item The retain term alone moves the cosine slowly ($0.76$ / $0.68$ at the end) and never lowers forget accuracy.
+\item \emph{early-stopped stage 2}: squared loss whose targets and sample weights switch at $T_1$;
+\item \emph{hard labels}: cross-entropy, then on the forget samples ascent ($-\ell$), flipped labels ($\ell$ at $-y$) or NPO;
+\item \emph{the retrained model}: a second copy trained on the kept samples and driven by the same randomness; the two copies do not respond to each other. This gives $\|\beta(t)-A(D\setminus F)\|^2$ at every time. Without an end point, $A(D\setminus F)$ means: retrained for the pretraining time $T_1$;
+\item \emph{task vector and WHP}: both first train on the forget samples only (``reinforce''). The task vector sets $w=w_{\rm pre}-\lambda(w_{\rm reinf}-w_{\rm pre})$ on $(u,v)$, a function of one coordinate's $\theta$ at two times. WHP resets to $w_{\rm pre}$ and trains the forget samples to soft targets with the reinforced model's extra confidence, times a coefficient, subtracted. A reset is a function of the past, so the same forward pass applies.
 \end{itemize}
-\textbf{Why Section 2 found the opposite.} What matters is the pretraining, not the sample ratios or the stopping rule (ascent, $d=1000$, 8 seeds; cosine for doing nothing $\to$ best point on the ascent path):
+
+\subsection{SGD}
+The steps \eqref{sgd} obey \eqref{nl} in discrete time, with each sample's gradient multiplied by a fresh Bernoulli mask (mean one) at every step. This gives the trajectory and $\kappa_j$ at any step and batch size, in both stages.
+
+\section{What the theory says}
+All numbers are theory, confirmed by simulation (Section 5). ``Cosine'' is to the retrained model $A(D\setminus F)$.
+
+\textbf{1. Which loss for which budget} (squared loss, forget coordinates, $\alpha_{\rm PT}=0.3$, $\alpha_{\rm UL}=0.2$; Figure~\ref{figfinal}). Targets $b\,y$ on the deleted samples; ``anchor'' keeps the kept samples in the loss. For a short stage 2, overshoot: $-0.5y$ with an anchor ($0.063$ at $t=0.5$, $k=10^{-2}$, against $0.080$ for zero targets with an anchor). For a long one, zero targets with an anchor ($0.039$; the overshooting targets drift to $0.117$). Shrunk labels $+0.5y$ are slowest at every budget. At $k=1$ the crossover is earlier ($t\approx0.5$).
+
+\textbf{2. Ascent works after hard-label training and not after soft-label training.} Cosine for doing nothing $\to$ best point on the ascent path:
 \begin{center}\small\begin{tabular}{@{}lcccc@{}}\toprule
 pretraining & $\alpha=0.3/0.2$, $k=1$ & $0.3/0.2$, $k=10^{-2}$ & $0.6/0.3$, $k=1$ & $0.6/0.3$, $k=10^{-2}$\\\midrule
 soft labels, converged & $0.52\to0.53$ & $0.42\to0.43$ & $0.70\to0.70$ & $0.64\to0.64$\\
 hard labels, stopped at $T_1$ & $0.55\to0.75$ & $0.43\to0.67$ & $0.71\to0.80$ & $0.63\to0.75$\\\bottomrule
 \end{tabular}\end{center}
-After hard-label training $\theta=-\sum_i\Lambda_iy_ix_i$, and ascent on the deleted samples lowers exactly their $\Lambda_i$: it undoes what they added. After soft-label interpolation the deleted samples entered through regression duals unrelated to $y_ix_i$, and ascent removes nothing useful. Stopping at the retrained model's accuracy is past the best point in both cases.
+After hard-label training $\theta=-\sum_i\Lambda_iy_ix_i$ with $\Lambda_i\ge0$, and ascent on the deleted samples lowers exactly their $\Lambda_i$. After soft-label interpolation the deleted samples entered through regression coefficients unrelated to $y_ix_i$.
 
-\textbf{Other sample ratios} ($\alpha=1.5$, one fifth forgotten, $k=10^{-2}$): theory and simulation agree within 1.6 s.e. Doing nothing is already at cosine $0.93$; NPO with a retain term reaches $0.96$; flipped labels now only lower it.
+\textbf{3. Hard labels, method by method} ($\alpha=0.6$, half the samples forgotten; $k=1$ / $k=10^{-2}$; Figure~\ref{figdist}).
+\begin{center}\small\begin{tabular}{@{}lll@{}}\toprule
+method & cosine & behaviour\\\midrule
+do nothing & $0.70$ / $0.62$ & \\
+retain term only & $0.76$ / $0.68$ & slow; forget accuracy never drops\\
+ascent ($\pm$ retain term) & $0.78$--$0.80$ / $0.70$--$0.73$ & then the weights blow up\\
+NPO + retain term & $0.83$ / $0.77$ & plateau; the norm keeps growing\\
+flipped labels & $0.84$ / $0.76$ & peak, then below doing nothing: must be stopped early\\
+task vector, $\lambda=3$ & $0.81$ / $0.72$ & rises steadily with $\lambda$; one point of test accuracy lost\\
+WHP, coefficient 1 & $0.76$ / $0.68$ & forget accuracy stays at $0.99$: no forgetting\\
+WHP, coefficient 3 & $0.83$ ($k=1$) & forget accuracy $0.93$\\\bottomrule
+\end{tabular}\end{center}
+The squared distance is mostly norm (the pretrained model is larger than the retrained one), so the cosine is the cleaner measure. With more data ($\alpha=1.5$, one fifth forgotten) doing nothing is already at $0.93$, NPO reaches $0.96$, and flipped labels only lower it.
 
-\textbf{Task vector and WHP.} Phase 2 trains on the forget samples only (``reinforce''). The task vector sets $w=w_{\text{pre}}-\lambda(w_{\text{reinforced}}-w_{\text{pre}})$ on $(u,v)$, a function of each coordinate's $\theta$ at two times. WHP resets to $w_{\text{pre}}$ and trains the forget samples to soft targets with the reinforced model's extra confidence subtracted; a reset is a causal map of the history, so the same forward pass applies (\texttt{whp\_tv.py}). The task vector raises the cosine steadily with $\lambda$ ($0.70\to0.81$ at $\lambda=3$, $k=1$; $0.61\to0.72$ at $k=10^{-2}$) for one point of test accuracy. WHP with subtraction coefficient $1$ raises it less ($0.76$ / $0.68$) and leaves forget accuracy at $0.99$: it does not forget. With coefficient $3$ ($k=1$) it reaches $0.83$ with forget accuracy $0.93$, the best cosine of any method at that accuracy.
+\textbf{4. Relearning after ascent} (soft-label pretraining, simulation only, $d=400$). Fresh labelled samples ($0.15\,d$) are given to the unlearned model. NPO stopped at chance accuracy relearns to $0.585$, like a model never trained on the class ($0.59$--$0.62$). Ascent stopped at the retrained model's accuracy relearns to $0.66$--$0.67$, above the retrained model ($0.61$--$0.66$): it still carries the class. Ascent also inflates the logits (mean square $2$--$8$ against $0.1$--$0.3$).
 
-\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_distance.png}
-\caption{Stage 2 on hard labels against the retrained model. Lines: theory ($\pm1$ s.e.). Markers: simulation.}\label{figdist}\end{figure}
-
-There is no closed-form end point: none exists at finite time.
+\textbf{5. SGD} ($\gamma=0.04$, $\alpha=0.3$). Mean $\log\kappa_j$: $-0.011$ full batch; $-0.200$ at batch fraction $0.1$ ($k=1$); $-0.455$ ($k=10^{-2}$). Small batches make the model richer.
 
 \begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_final.png}
 \caption{Lines: theory ($\pm1$ s.e.). Markers: simulation. SGD (two panels), stage-2 budget, task vector.}\label{figfinal}\end{figure}
+\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_distance.png}
+\caption{Stage 2 on hard labels against the retrained model. Lines: theory ($\pm1$ s.e.). Markers: simulation.}\label{figdist}\end{figure}
 
-\section{Checks}
-\begin{center}\small\begin{tabular}{@{}p{6.1cm}p{9.2cm}@{}}\toprule
-claim & check\\\midrule
-soft-label cross-entropy $=$ \eqref{T2} & flow vs projection, $2\times10^{-6}$, three scales\\
-its large-$d$ curves against $k$ & 14 settings, within one s.e.\ ($d=400$, 4 seeds)\\
-switched-off weight decay $=$ rescaling & gradient descent vs \eqref{T2}: $0.1$--$1.2\%$ (step-size error); same end point for decay early or late\\
-its large-$d$ curves & 42 numbers at $k=10^{-2},1$ ($d=1600$, 16 seeds): all within 2 s.e.; $k=10^{-6}$ ($d=800$, 12 seeds): within 0.3 s.e.\\
-one-sided decay, large $d$ & 36 numbers, $d=1600$, 24 seeds: all within 1 s.e.\\
-regulariser kept on, three choices of $R$ & 54 numbers, $d=1500$ and $6000$: all within 2.2 s.e.; 40 further seeds: overlap within $1.1\%$\\
-the same with retain/shared/forget blocks ($R=|\beta|$) & 36 numbers, $d=1000$, 10 seeds: all within 1.4 s.e.\ (s.e.\ about $4\%$)\\
-identities with blocks and a retain anchor & gradient descent vs \eqref{T2}: $1$--$5\times10^{-4}$ (soft-label pretraining; switched-off decay)\\
-one-sided decay, gradient descent & $0.05$--$0.45\%$, falling with the step size\\
-SGD $=$ flow from the shrunk scale & $10^{-4}$ to $4\times10^{-3}$; stage 2: $0.2\%$ against $4.7\%$ without $\kappa$\\
-SGD batch-size formula & mean of 8--16 runs: ratio $1.11,1.05,1.02$ at $\gamma=0.02,0.01,0.005$ ($b=1$)\\
-hard labels, penalty kept on ($R=|\beta|$, $\beta^2$; sign and sampled labels) & 48 numbers, $d=1000$, 16 seeds: all within 1.9 s.e.\\
-hard labels, no penalty, pretraining dynamics & $k=1,10^{-2}$, 64 runs each: overlap, loss, accuracy within $1\%$ (1 s.e.); norm $1.5$--$3\%$ high (1.7 s.e.), gap shrinking with $d$ ($1.6,1.5,1.0\%$ at $d=1000,3000,8000$)\\
-hard labels, stage 2 (ascent, NPO, flipped labels) & 16 runs each: within 2 s.e.\ while the norm is bounded; once ascent blows up the means are dominated by a few runs and agreement is not established\\
-distance and cosine to the retrained model, five stage-2 losses, $k=1,10^{-2}$ & 16 runs each: all within 1.5 s.e.\ before blow-up; distance $3\%$ high at the start of stage 2 (the norm offset above)\\
-several trainings on the same data (Section~\ref{multi}) & 26 distances, forget-only and R/Sh/F blocks with anchor and $\kappa=0.3$, $k=1,10^{-2}$: all within 1.8 s.e.\ except one at $d=1500$ (3.6), which is within 0.2 s.e.\ at $d=3000$\\
-SGD, large $d$ & $k=1$ (batch fraction $0.1$ and $1$), $k=10^{-2}$ ($0.1$), 8 runs: norm, error, loss, $\log\kappa$ within 1.8 s.e.; stage 2 at $k=10^{-2}$, both batch fractions: within 2 s.e.\\
-early stopping, non-zero targets and anchor & 5 losses, 6 budgets, $k=10^{-2}$ and $k=1$: within 1.6 s.e.\\
-hard labels at $\alpha=1.5$ and $\alpha=0.3$; task vector; WHP (coefficients 1, 3) & 10--12 runs each: cosine, accuracy, loss within 1.7 s.e.\ (cosine consistently $1\%$ low); at $\alpha=0.3$ the norm is $6\%$ high and the distance up to 2.6 s.e.\ off, the finite-size offset at its largest\\
-early-stopping dynamics & norm, overlap, unlearning distance at three scales; untraining distance at $k=10^{-6}$ to $4\%$ after averaging 7 runs\\\bottomrule
+\section{Checks against simulation}
+Nothing is fitted. ``s.e.''\ is the standard error over seeds.
+\begin{center}\small\begin{tabular}{@{}p{5.6cm}p{9.7cm}@{}}\toprule
+result & check\\\midrule
+\multicolumn{2}{@{}l}{\emph{End points (exact finite-$d$ projections)}}\\
+\eqref{T2} for soft-label cross-entropy & flow vs projection: $2\times10^{-6}$\\
+weight decay switched off $=$ rescaling & $0.1$--$1.2\%$ (step-size error); 42 large-$d$ numbers within 2 s.e.\\
+decay on $u$ only & 36 numbers within 1 s.e.\\
+SGD $=$ flow from the shrunk scale & $10^{-4}$ to $4\times10^{-3}$; batch formula: ratio $1.11,1.05,1.02$ at $\gamma=0.02,0.01,0.005$\\
+penalty kept on, \eqref{reg} & 132 numbers, three penalties, with and without blocks: $98\%$ within 2 s.e. (Figure~\ref{fig})\\
+several trainings, \eqref{ms}--\eqref{mc} & 26 distances (forget only; retain/shared/forget with anchor and $\kappa=0.3$): within 1.8 s.e.\ at $d=3000$\\
+hard labels with a penalty, \eqref{hp} & 48 numbers ($|\beta|$ and $\beta^2$ penalties, sign and sampled labels): within 1.9 s.e.\\\midrule
+\multicolumn{2}{@{}l}{\emph{Trajectories (simulated gradient descent, $d=3000$)}}\\
+early stopping, five losses, six budgets & within 1.6 s.e.\ at $k=1$ and $10^{-2}$\\
+hard-label pretraining & overlap, loss, accuracy within $1\%$; norm $1.5$--$3\%$ high (64 runs)\\
+ascent, NPO, flipped labels; distance and cosine & within 2 s.e.\ until the weights blow up; not verified after\\
+task vector, WHP & within 1.7 s.e.\\
+SGD, both stages & within 2 s.e.\\\bottomrule
 \end{tabular}\end{center}
-Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest $2.2$ (Figure~\ref{fig}).
+The trajectory solver is as noisy as a simulation of its size and is averaged over runs. Its norms sit above simulation: $1.6,1.5,1.0\%$ at $d=1000,3000,8000$ for $\alpha=0.3$, $k=1$, and $6\%$ in one run at $\alpha=0.3$ with a second stage. The gap shrinks with $d$; that it vanishes is not shown.
 
 \begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_regularisers_tight.png}
-\caption{Regulariser checks. Lines: theory. Markers: exact finite-size end points, $\pm1$ s.e.}\label{fig}\end{figure}
+\caption{Penalty kept on. Lines: theory. Markers: finite-$d$ end points, $\pm1$ s.e.}\label{fig}\end{figure}
+\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_labels.png}
+\caption{Hard labels. Top: penalty kept on, against $\lambda$. Middle: pretraining without a penalty. Bottom: pretraining, then stage 2 on half the samples.}\label{fighard}\end{figure}
 
+\clearpage
 \section{What is proved}\label{proof}
-Throughout, $X\in\mathbb R^{d\times n}$ has independent sub-Gaussian entries of variance $1/d$, $n/d\to\alpha$, so $\|X\|\le C_X$ almost surely for large $d$; $\bs$ has bounded entries. \emph{Truncated} means $\beta=w_M(\theta):=c\sinh(\tau_M(\theta))$ with $\tau_M$ smooth, nondecreasing, the identity on $[-M,M]$ and constant beyond $M+1$. The truncated flow equals the true one as long as $\max_j|\theta_j|\le M$.
+\textbf{Exact by elementary arguments:} \eqref{T1}, \eqref{T2}, everything in Section 2.2, and Section 3.1.
 
-\textbf{0. Exact, elementary.} \eqref{T1}, \eqref{T2}, the $\kappa$ identities, the early-stopping identity, the decoupled closed form.
+\textbf{Derived by the cavity method and checked numerically:} \eqref{T3}, \eqref{reg}, \eqref{ms}--\eqref{mc}, \eqref{hp}, \eqref{nl}.
 
-\textbf{1. The published theorem} (Nishiyama \& Imaizumi 2025, Thm.\ 4, extending Celentano, Cheng \& Montanari 2021, Thm.\ 2). For $\dot\Theta=p_t(g,\Theta)$, $g=\frac1\alpha X\ell_t(f;z)$, $f=X^\top w_t(\Theta)$, $\Theta\in\mathbb R^{d\times m}$, with $p_t,w_t,\ell_t$ and their Jacobians Lipschitz in the state and in $t$ (uniformly in $z$), and $\Theta(0),z$ independent of $X$: the empirical law of the paths $\Theta_j(\cdot)$ converges almost surely in $W_2$ to the solution of the dynamical equations.
+\textbf{Proved for a truncated network:} \eqref{nl}, as follows. Truncated means $\beta=w_M(\theta)=c\sinh(\tau_M(\theta))$, with $\tau_M$ smooth, nondecreasing, the identity on $[-M,M]$ and constant beyond $M+1$. The truncated flow is the true one while $\max_j|\theta_j|\le M$. Assume $X$ has independent sub-Gaussian entries of variance $1/d$, so that $\|X\|\le C_X$ for large $d$.
 
-\textbf{Proposition 1 (two stages with the retrained copy; truncated; ramped switch).} In the mirror variable there is no product of weight and gradient. Take $\Theta=(\theta,\theta',\bs)$, $z_i\in\{0,1\}$ the group (deleted/kept), $p(g)=(-4\alpha g_1,-4\alpha g_2,0)$,
+\textbf{Published theorem} (Nishiyama \& Imaizumi 2025, Thm.\ 4, extending Celentano, Cheng \& Montanari 2021). For $\dot\Theta=p_t(g,\Theta)$, $g=\frac1\alpha X\ell_t(f;z)$, $f=X^\top w_t(\Theta)$, with $p_t,w_t,\ell_t$ and their Jacobians Lipschitz in the state and in $t$, and $\Theta(0)$, $z$ independent of $X$: the empirical law of the paths $\Theta_j(\cdot)$ converges almost surely in $W_2$ to the solution of the dynamical equations.
+
+\textbf{Proposition 1 (two stages and the retrained copy; smooth switch).} The truncated flow with squared loss, sample weights $\omega_a(t)$ and targets $b_a(t)y$ on the groups $a\in\{$deleted, kept$\}$, together with the retrained copy, satisfies the theorem whenever $\omega_a,b_a$ have Lipschitz derivatives.
+
+\emph{Proof.} In the mirror variable the update is linear in the gradient. Take $\Theta=(\theta,\theta',\bs)$, $z_i\in\{0,1\}$ the group, $p(g)=(-4\alpha g_1,-4\alpha g_2,0)$,
 \[
-w_t(\Theta)=\big(\omega_{\rm del}(t)[w_M(\theta)-b_{\rm del}(t)\bs],\ \omega_{\rm kept}(t)[w_M(\theta)-b_{\rm kept}(t)\bs],\ w_M(\theta')-\bs\big),\quad
+w_t(\Theta)=\big(\omega_{\rm del}[w_M(\theta)-b_{\rm del}\bs],\ \omega_{\rm kept}[w_M(\theta)-b_{\rm kept}\bs],\ w_M(\theta')-\bs\big),\qquad
 \ell(f;z)=\big(zf_1+(1-z)f_2,\ (1-z)f_3,\ 0\big).
 \]
-$p$ is linear; $\ell$ is linear in $f$ with coefficients in $[0,1]$; all time dependence multiplies bounded quantities, so $w_t$ and its Jacobian (which includes $\partial_tw_t$) are Lipschitz in $(\Theta,t)$ whenever $\omega,b$ are $C^1$ with Lipschitz derivative. Hence Theorem 4 applies for every $M$ and every such schedule (a smooth ramp). For bounded-gradient losses (cross-entropy with soft labels, ascent, flipped labels) the schedule can sit in $\ell_t$ instead. $\square$
+$p$ and $\ell$ are linear with bounded coefficients. All time dependence is in $w_t$, where it multiplies the bounded quantities $w_M$ and $\bs$. $\square$
 
-\textbf{Lemma 2 (stability, uniform in $d$).} Let $F_t(\Theta)=-4X\ell_t(X^\top w_t(\Theta);z)$ with $w_t$, $\ell_t$ Lipschitz (constants $L_w,L_\ell$). Then $F_t$ is $L$-Lipschitz in Frobenius norm, $L=4C_X^2L_\ell L_w$. If $\dot\Theta=F_t(\Theta)$, $\dot{\tilde\Theta}=\tilde F_t(\tilde\Theta)$ from the same start and $\|F_t-\tilde F_t\|\le e(t)$ pointwise, then
+\textbf{Lemma 2 (stability, uniform in $d$).} $F_t(\Theta)=-4X\ell_t(X^\top w_t(\Theta);z)$ is Lipschitz with constant $L=4C_X^2L_\ell L_w$. If two such flows start together and $\|F_t-\tilde F_t\|\le e(t)$ pointwise, then
 \[
 \|\Theta(t)-\tilde\Theta(t)\|\le\int_0^te^{L(t-s)}e(s)\,ds,\qquad
 \frac1d\sum_j\sup_{t\le T}\|\Theta_j(t)-\tilde\Theta_j(t)\|^2\le\frac Td\int_0^T\big(L\|\Theta-\tilde\Theta\|+e\big)^2ds .
 \]
-\emph{Proof.} $\|X\ell(X^\top w(\Theta))-X\ell(X^\top w(\Theta'))\|\le C_X L_\ell C_X L_w\|\Theta-\Theta'\|$; Gr\"onwall; then $\sup_t|\Delta_j(t)|\le\int_0^T|\dot\Delta_j|$ and Cauchy--Schwarz. $\square$
+\emph{Proof.} Gr\"onwall; then $\sup_t|\Delta_j(t)|\le\int_0^T|\dot\Delta_j|$ and Cauchy--Schwarz. $\square$
 
-\textbf{Theorem 3 (sharp switch).} In Proposition 1 let $\omega,b$ jump at $T_1$, and let $P^\epsilon$ be the limit law when the jump is replaced by a smooth monotone ramp on $[T_1,T_1+\epsilon]$. Then $P^0=\lim_{\epsilon\to0}P^\epsilon$ exists in $W_2$ and the empirical law of the paths of the sharp flow converges to $P^0$ almost surely.
+\textbf{Theorem 3 (sharp switch).} Let $\omega,b$ jump at $T_1$, and let $P^\epsilon$ be the limit law when the jump is smoothed over $[T_1,T_1+\epsilon]$. Then $P^0=\lim_{\epsilon\to0}P^\epsilon$ exists in $W_2$, and the empirical law of the paths of the sharp flow converges to $P^0$ almost surely.
 
-\emph{Proof.} Sharp and ramped fields differ only on $[T_1,T_1+\epsilon]$, by at most $4C_X^2\sup\|w_t-\tilde w_t\|\le C\sqrt d$ since the entries of $w_M$ and $\bs$ are bounded. Lemma 2 gives $\frac1d\sum_j\sup_t\|\Delta_j\|^2\le C\epsilon$, uniformly in $d$; the same bound holds between two ramps. Hence $W_2(\hat\mu_d^{\epsilon},\hat\mu_d^{\epsilon'})\le C(\sqrt\epsilon+\sqrt{\epsilon'})$ for the empirical laws; letting $d\to\infty$, $(P^\epsilon)$ is Cauchy, and $W_2(\hat\mu_d^0,P^0)\le W_2(\hat\mu_d^0,\hat\mu_d^\epsilon)+W_2(\hat\mu_d^\epsilon,P^\epsilon)+W_2(P^\epsilon,P^0)$ gives the claim. $\square$
+\emph{Proof.} The sharp and smoothed fields differ only on $[T_1,T_1+\epsilon]$, by at most $C\sqrt d$ because $w_M$ and $\bs$ are bounded. By Lemma 2 the path laws are within $C\sqrt\epsilon$ in $W_2$, uniformly in $d$. So $(P^\epsilon)$ is Cauchy, and $W_2(\hat\mu_d^0,P^0)\le W_2(\hat\mu_d^0,\hat\mu_d^\epsilon)+W_2(\hat\mu_d^\epsilon,P^\epsilon)+W_2(P^\epsilon,P^0)$. $\square$
 
-\textbf{Theorem 4 (hard labels).} Let $X$ be Gaussian, labels $y_i=\operatorname{sign}(x_i^\top\bs)$, and a loss whose gradient is $s_t(f)-\frac12(1+y)$ times a bounded Lipschitz weight (cross-entropy, ascent, flipped labels, with any Lipschitz or jump schedule). Let $P^\delta$ be the limit law with $y$ replaced by $\tanh(x^\top\bs/\delta)$. Then $P^0=\lim_{\delta\to0}P^\delta$ exists and the empirical law of the truncated hard-label flow converges to it almost surely.
+\textbf{Theorem 4 (hard labels).} Let $X$ be Gaussian, $y_i=\operatorname{sign}(x_i^\top\bs)$, and the loss gradient a bounded Lipschitz function of the logit minus $\frac12(1+y)$, times a bounded weight: cross-entropy, ascent, flipped labels, any schedule. Let $P^\delta$ be the limit law with $y$ replaced by $\tanh(x^\top\bs/\delta)$. Then $P^0=\lim_{\delta\to0}P^\delta$ exists and the empirical law of the truncated hard-label flow converges to it almost surely.
 
-\emph{Proof.} The smoothed loss is Lipschitz with Lipschitz Jacobian, so Proposition 1 applies for each $\delta$. The two fields differ by at most $4C_X\big(\sum_i|\operatorname{sign}-\tanh|^2(x_i^\top\bs/\delta)\big)^{1/2}$. The $x_i^\top\bs$ are i.i.d.\ $\mathcal N(0,\|\bs\|^2/d)$, so by the law of large numbers this is at most $C\sqrt{\delta d}$ for large $d$. Lemma 2 gives $\frac1d\sum_j\sup_t\|\Delta_j\|^2\le C\delta$, and the argument of Theorem 3 concludes. $\square$
+\emph{Proof.} For each $\delta$ the smoothed loss satisfies the theorem. Since the $x_i^\top\bs$ are i.i.d.\ Gaussian, for large $d$ the two fields differ by at most
+\[4C_X\Big(\sum_i\big|\operatorname{sign}-\tanh\big|^2(x_i^\top\bs/\delta)\Big)^{1/2}\le C\sqrt{\delta d}.\] Conclude as in Theorem 3. $\square$
 
-\textbf{Proposition 5 (the truncation: what is missing, exactly).} Pretraining, squared loss, $y=X^\top\bs$. Write $\theta=-X\lambda$; then $\dot\lambda=4(X^\top w(-X\lambda)-y)$ is the Euclidean gradient flow of the convex function $\sum_jc\cosh((X\lambda)_j)+y^\top\lambda$. Since $w_M$ is nondecreasing, for the true and truncated flows
-\[
-\frac{d}{dt}\tfrac12\|\lambda-\lambda^M\|^2=-4\langle\theta-\theta^M,w_M(\theta)-w_M(\theta^M)\rangle-4\langle\theta-\theta^M,(w-w_M)(\theta)\rangle\le4C_X\|\lambda-\lambda^M\|\,\|(w-w_M)(\theta)\|,
-\]
-so $\frac1d\|\theta(t)-\theta^M(t)\|^2\le16C_X^4\,T\int_0^T\frac1d\sum_j\beta_j(s)^2\mathbf 1[|\theta_j(s)|>M]\,ds$, with no exponential factor. Therefore the untruncated flow converges to $\lim_MP^M$ \emph{provided}
-\[
-(\star)\qquad\lim_{M\to\infty}\ \limsup_{d\to\infty}\ \sup_{s\le T}\ \frac1d\sum_j\beta_j(s)^2\,\mathbf 1[|\theta_j(s)|>M]=0\quad\text{for the true flow.}
-\]
-What is available: $\frac1d\sum_jc\cosh\theta_j(t)\le C$ for all $t$ and $d$ (the Bregman divergence to $\bs$ decreases). That is a first moment of $|\beta|$; $(\star)$ needs uniform integrability of the second. Energy and operator-norm arguments do not give it, because $\sup_{\|b\|\le1}\frac1n\sum_i(x_i^\top b)^4\sim d$: a direction aligned with one sample is not excluded. With an anchor-free stage 2 the dual contraction itself fails, so stage 2 needs more.
-
-\textbf{Lemma 5b (leave-one-out bound; partial progress on $(\star)$).} Same setting, $X$ Gaussian. Let $\lambda^{(j)}$ be the dual flow with coordinate $j$ removed from model and teacher; it is independent of the row $X_j$. Put $\xi_j(t)=-X_j\lambda^{(j)}(t)$ and $S_j=\sup_{s\le t}|\xi_j(s)|$. Then, deterministically,
-\[
-\|\lambda(t)-\lambda^{(j)}(t)\|^2\le8t\,\Gamma_j,\qquad|\theta_j(t)|\le S_j+\|X_j\|\sqrt{8t\,\Gamma_j},\qquad\Gamma_j=\big(S_j+\asinh\tfrac{|\bs_j|}{c}\big)\big(c\sinh S_j+|\bs_j|\big).
-\]
-\emph{Proof.} With $\Delta=\lambda-\lambda^{(j)}$ and $\rho_j=-X_j\Delta$ we have $\theta_j=\xi_j+\rho_j$ and, by monotonicity of $\sinh$ on the other coordinates,
-$\frac{d}{dt}\frac12\|\Delta\|^2\le-4\rho_j\big(c\sinh(\xi_j+\rho_j)-\bs_j\big)$. The right side is positive only when $\rho_j$ lies between $0$ and $\asinh(\bs_j/c)-\xi_j$, where it is at most $4\Gamma_j$. $\square$
-
-Given the rest of the data, $\xi_j$ is a centred Gaussian process with variance $\|\lambda^{(j)}\|^2/d\le C$ and Lipschitz paths, so $S_j$ is sub-Gaussian (Borell--TIS). Consequences: removing one coordinate moves the dual by $O(1)$ (against $\|\lambda\|\sim\sqrt d$), which is the cavity assumption made rigorous; and the expected fraction of coordinates with $|\theta_j|>M$ is at most $e^{-c\log^2M}$ uniformly in $d$, so the truncation touches a vanishing fraction of coordinates. It does \emph{not} give $(\star)$: the bound on $\rho_j$ is of order $e^{S_j/2}$, so $\beta_j^2$ is only bounded by a double exponential of a Gaussian. Closing the gap needs $|\rho_j|\le C(1+S_j)$, i.e.\ that the feedback of the other coordinates on coordinate $j$ is restoring pointwise in time and not only on average; the energy inequality above gives the average statement $\int_0^t\rho_j(\beta_j-\bs_j)\le0$ only.
-
-\textbf{Proposition 6 (SGD; sketch).} The step $u\leftarrow u(1-2\gamma G)$, $v\leftarrow v(1+2\gamma G)$ is exactly
-\[
-\theta\leftarrow\theta-2\operatorname{artanh}(2\gamma G),\qquad s\leftarrow s+\log(1-4\gamma^2G^2),\qquad\beta=c\,e^{s}\sinh\theta ,
-\]
-so the weights are a function of the gradient history alone, and SGD is a general first-order method in the sense of Celentano, Montanari \& Wu (2020): $u^t=X^\top G_t(v^1,\dots,v^t)$, $v^{t+1}=XF_t(u^t;y,\text{masks})$. Their reduction to message passing (their Lemma 2) gives a state-evolution limit when $F_t,G_t$ are Lipschitz, $X$ is Gaussian and the label noise has a smooth positive density. This requires: truncating $\beta$ and clipping $|2\gamma G|\le1-\epsilon$ (so $G_t$ is Lipschitz); encoding the $T$ masks in one discrete side variable and clipping the residual at $K$ (so $F_t$ is jointly Lipschitz); adding label noise $\sigma$. The discrete-time analogue of our stability lemma removes $\sigma\to0$. Removing $K\to\infty$ needs fourth moments of the residual bounded uniformly in $K$ under state evolution. This holds: in their change of variables (their Eqs.\ 34a, 36) the residual is $b^t+\sum_{s<t}f_s\zeta_{t,s}$ with $b^t$ Gaussian of variance $\E g_t^2/\alpha$ (bounded, since $\beta$ is truncated), $|f_s|\le|{\rm residual}_s|/\phi$ and coefficients $\zeta,\xi$ that are expectations of derivatives of $1$-Lipschitz-in-the-clip functions, hence bounded independently of $K$; induct on $t$. Two things remain unwritten: their Lemma 2 states convergence for the coordinate-side iterates only (the sample side is in Javanmard \& Montanari 2013), and the identification of the state-evolution limit with the equations of Section 3 is the standard unfolding (Celentano et al.\ 2021, App.\ B). Weight truncation and gradient clipping remain.
-
-\textbf{Status.}
-\begin{center}\small\begin{tabular}{@{}p{5.2cm}p{10cm}@{}}\toprule
-two stages + retrained copy, sharp switch & proved for the truncated flow (Prop.\ 1, Thm.\ 3), given the published Theorem 4\\
-hard labels, ascent, flipped labels & proved for the truncated flow, Gaussian inputs (Thm.\ 4)\\
-removing the truncation & reduced to one estimate, $(\star)$, for pretraining; leave-one-out bound proved (Lemma 5b) but too weak; open\\
-SGD & exact reparametrisation; convergence for the truncated, clipped iteration with the moment bound checked; identification with our equations not written\\
-identification of $P^0$ & $P^0$ is the limit of the smoothed equations; that it solves the sharp equations is not shown\\\bottomrule
-\end{tabular}\end{center}
-Caveats: I read Celentano et al.\ (2021, 2020) directly. Nishiyama \& Imaizumi's hypotheses (their D.13--D.18: $\ell_t,w_t,p_t$ and Jacobians jointly Lipschitz with one constant; sub-Gaussian entries; almost-sure $W_2$ convergence) I checked through targeted queries of their appendix, not by reading it; Proposition 1 satisfies them as queried. Their proof omits two lemmas as ``essentially identical'' to Celentano et al. Note that their own Corollary 5 uses $p=-u\,\eta_M'(u^2)\,g$, which is not jointly Lipschitz in $(g,u)$; the mirror form used here avoids that. NPO needs the margin at $T_1$ as an extra frozen copy; not written out. Lemma 2(a) and the SGD identity are checked numerically in \texttt{check\_lemmas.py}.
-
-\section*{Limits}
+\textbf{Not proved.}
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item \textbf{Everything dynamic is numerical.} Early stopping, hard labels without a penalty, SGD at large $d$, task vector and WHP are exact equations solved by a noisy forward pass (average many runs), derived by a cavity argument; they are proved for the truncated flow, including a sharp switch and hard labels (Section~\ref{proof}); removing the truncation is open. Norms come out $1$--$3\%$ above simulation at $d=3000$; the gap shrinks with $d$ but its vanishing is not shown.
-\item \textbf{Ascent after blow-up} is not verified, and probably cannot be: the means are dominated by a few runs.
-\item \textbf{SGD:} no closed form in the step size beyond first order.
-\item \textbf{Hard labels:} three sample ratios, forget coordinates only; the norm offset is largest ($6\%$) at the smallest sample ratio.
-\item \textbf{Non-convex regularisers and deeper networks:} no static formula; the end point depends on the path.
-\item All checks use Gaussian inputs, $\rho=0.2$, and (unless stated) $\alpha=0.3$ with two thirds of the forget samples deleted.
+\item \emph{Removing the truncation.} For pretraining with squared loss, write $\theta=-X\lambda$; then $\lambda$ follows the gradient flow of a convex function, and comparing the true and truncated flows gives, with no exponential factor,
+\[
+\frac1d\|\theta(t)-\theta^M(t)\|^2\le16C_X^4\,T\int_0^T\frac1d\sum_j\beta_j(s)^2\,\mathbf 1[|\theta_j(s)|>M]\,ds .
+\]
+So it suffices that $\beta_j^2$ is uniformly integrable along the true flow, uniformly in $d$. What can be shown falls short. The Bregman divergence to $\bs$ decreases, which bounds $\frac1d\sum_j|\beta_j|$ only. A leave-one-out comparison (remove coordinate $j$; the remaining dual flow $\lambda^{(j)}$ is independent of the row $X_j$) gives, deterministically,
+\begin{gather*}
+|\theta_j(t)|\le S_j+\|X_j\|\sqrt{8t\,\Gamma_j},\\ S_j=\sup_{s\le t}|X_j\lambda^{(j)}(s)|,\qquad\Gamma_j=\big(S_j+\asinh\tfrac{|\bs_j|}c\big)\big(c\sinh S_j+|\bs_j|\big),
+\end{gather*}
+with $S_j$ sub-Gaussian. Hence the truncation touches a vanishing fraction of coordinates, but $\beta_j^2$ is bounded only by a double exponential of a Gaussian. The missing step is that the feedback of the other coordinates on coordinate $j$ is restoring at every time, not only on average.
+\item \emph{That $P^0$ solves the equations with a sharp switch or hard labels.} It is defined as the limit of the smoothed solutions.
+\item \emph{SGD.} By \eqref{sgd} the weights are a function of the gradient history, so SGD is a general first-order method (Celentano, Montanari \& Wu 2020), whose reduction to message passing gives a limit for a truncated iteration with clipped gradients. The identification of that limit with \eqref{nl} is not written out.
+\item \emph{The static formulas} \eqref{T3}, \eqref{reg}, \eqref{ms}--\eqref{mc}, \eqref{hp}. For one convex training, formulas of this type are proved in the literature by Gordon's comparison inequality; for coupled trainings no proof is attempted.
 \end{itemize}
+The hypotheses of the published theorem were checked against Proposition 1 by querying its appendix, not by reading it in full. Its own application writes the update as a product of weight and gradient, which is not jointly Lipschitz; the mirror form above avoids this.
 
-\small\textbf{References.} Woodworth et al., COLT 2020. Moroshko et al., NeurIPS 2020. Pesme, Pillaud-Vivien, Flammarion, NeurIPS 2021. Even, Pesme, Gunasekar, Flammarion, NeurIPS 2023. Pesme, Dragomir, Flammarion, NeurIPS 2024. Jacobs, Zhou, Burkholz, ICML 2025 (arXiv:2504.12883). Celentano, Cheng, Montanari, arXiv:2112.07572. Celentano, Montanari, Wu, COLT 2020 (arXiv:2002.12903). Nishiyama, Imaizumi, arXiv:2510.01930.
+\section*{Scope}
+Gaussian inputs, $\rho=0.2$. Hard-label trajectories: three pairs of sample ratios, forget coordinates only. Penalties: convex only.
+
+\small\textbf{References.} Woodworth et al., COLT 2020. Even, Pesme, Gunasekar, Flammarion, NeurIPS 2023. Jacobs, Zhou, Burkholz, ICML 2025. Nishiyama, Imaizumi, arXiv:2510.01930. Celentano, Cheng, Montanari, arXiv:2112.07572. Celentano, Montanari, Wu, COLT 2020.
 \end{document}
