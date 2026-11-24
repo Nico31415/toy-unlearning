@@ -1,4 +1,4 @@
-import sys, numpy as np; sys.path.insert(0, "/home/claude/out/ce")
+import sys, numpy as np; sys.path.insert(0, __import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)), "..", "ce"))
 from ce_tests import project
 from multi import solve, dist
 def sim(blocks, groups, systems, d, seed):

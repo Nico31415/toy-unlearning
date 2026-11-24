@@ -2,7 +2,7 @@
 2 x 2 in simulation: pretraining (soft labels, converged interpolator | hard labels, cross-entropy stopped at T1) x sample ratios (old 0.3/0.2 | new 0.6/0.3).
 Ascent on the deleted samples; cosine to the retrained model along the whole path."""
 import sys, numpy as np, pickle
-sys.path.insert(0, "/home/claude/out/ce")
+sys.path.insert(0, __import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)), "..", "ce"))
 from scipy.special import expit
 from multiprocessing import Pool
 from ce_tests import project

@@ -1,6 +1,6 @@
 """Early-stopped stage 2 with non-zero targets and with an anchor (squared loss): theory (dmft2) vs simulation, and the best loss at each budget.
 alpha_PT = 0.3, alpha_UL = 0.2, rho = 0.2. Targets on the deleted samples: b * y. Anchor: kept samples stay in the loss at their labels."""
-import sys, numpy as np, pickle; sys.path.insert(0, "/home/claude/out/ce")
+import sys, numpy as np, pickle; sys.path.insert(0, __import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)), "..", "ce"))
 from multiprocessing import Pool
 from dmft2 import run, simulate, setup, metrics
 k, T1 = float(sys.argv[1]), float(sys.argv[2]); dt, T2, rho, aPT, aUL = 0.05, 4.0, 0.2, 0.3, 0.2

@@ -233,6 +233,18 @@ Rich pretraining ($k=10^{-6}$), $\rho=0.2$, $|d_R|=|d_F|=400$, finite $d$, 6 see
 \item \textbf{Rescaling $\kappa$, weight decay that is switched off ($\kappa=e^{-2\Lambda}$) and mini-batch noise are the same operation} (exact; for SGD per coordinate). Weight decay kept on forgets the start instead.
 \end{enumerate}
 
+\section{Extensions (24 November)}
+Derivations, checks and proofs are in \texttt{extensions\_maths.pdf}; this is the list.
+\begin{enumerate}\setlength{\itemsep}{1pt}
+\item \textbf{Stage 2 with retain, shared and forget blocks is exact at large $d$.} Pretrained, unlearned and both retrained models are coupled copies of one static system; anchors and any $\kappa$ included. 26 distances within 1.8 s.e.
+\item \textbf{Cross-entropy.} Soft labels are the squared-loss model. Hard labels: exact end point with weight decay kept on; without it there is no end point and the exact object is the trajectory.
+\item \textbf{Ascent, NPO, flipped labels, task vector, WHP} on hard labels follow the same trajectory equations. Ascent improves the cosine to the retrained model after hard-label pretraining ($0.55\to0.75$) and not after soft-label pretraining ($0.52\to0.53$).
+\item \textbf{Early stopping at a fixed budget} ($k=10^{-2}$): short stage 2, overshooting targets $-0.5y$ with an anchor; long stage 2, zero targets with an anchor.
+\item \textbf{SGD} is a rescaling $\kappa_j$ per coordinate; its large-$d$ trajectory is exact at any step and batch size, in both stages.
+\item \textbf{Weight decay switched off is a rescaling}, $\kappa=e^{-2\Lambda}$; kept on, the end point is a lasso and forgets the start.
+\item \textbf{Proved:} the trajectory equations for the truncated network, with a sharp switch and hard labels. \textbf{Open:} removing the truncation; non-convex penalties.
+\end{enumerate}
+
 \section{Plan}
 Compute $\alpha_{\mathrm{UL}}$, $\alpha_{\mathrm{UT}}$ and $\alpha_{\mathrm{re}}$ over a grid of $\mu_a/\mu_d$ (loss), $k$ and $\kappa$ (geometry) and $|\Ff|/|d_F|$ (data), with weight decay as the deletion baseline. Repeat at finite stopping times $\tau$: in closed form in the lazy regime, and by gradient flow elsewhere, recording the readiness of the $d_F$ coordinates alongside $\alpha_{\mathrm{re}}$.
 
