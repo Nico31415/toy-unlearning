@@ -178,11 +178,13 @@ The trajectory solver is as noisy as a simulation of its size and is averaged ov
 
 \clearpage
 \section{What is proved}\label{proof}
+Every formula, curve and simulation in Sections 1--5 is for the network as defined in Section 1. This section is only about which of those statements have a rigorous proof. For the trajectory equations a proof exists only for a variant in which each weight is capped at a large level; no proof is known for the network itself, including in the published single-stage case.
+
 \textbf{Exact by elementary arguments:} \eqref{T1}, \eqref{T2}, everything in Section 2.2, and Section 3.1.
 
 \textbf{Derived by the cavity method and checked numerically:} \eqref{T3}, \eqref{reg}, \eqref{ms}--\eqref{mc}, \eqref{hp}, \eqref{nl}.
 
-\textbf{Proved for a truncated network:} \eqref{nl}, as follows. Truncated means $\beta=w_M(\theta)=c\sinh(\tau_M(\theta))$, with $\tau_M$ smooth, nondecreasing, the identity on $[-M,M]$ and constant beyond $M+1$. The truncated flow is the true one while $\max_j|\theta_j|\le M$. Assume $X$ has independent sub-Gaussian entries of variance $1/d$, so that $\|X\|\le C_X$ for large $d$.
+\textbf{Proved for the capped variant only:} \eqref{nl}, as follows. Capped (``truncated'') means $\beta=w_M(\theta)=c\sinh(\tau_M(\theta))$, with $\tau_M$ smooth, nondecreasing, the identity on $[-M,M]$ and constant beyond $M+1$. The truncated flow is the true one while $\max_j|\theta_j|\le M$. Assume $X$ has independent sub-Gaussian entries of variance $1/d$, so that $\|X\|\le C_X$ for large $d$.
 
 \textbf{Published theorem} (Nishiyama \& Imaizumi 2025, Thm.\ 4, extending Celentano, Cheng \& Montanari 2021). For $\dot\Theta=p_t(g,\Theta)$, $g=\frac1\alpha X\ell_t(f;z)$, $f=X^\top w_t(\Theta)$, with $p_t,w_t,\ell_t$ and their Jacobians Lipschitz in the state and in $t$, and $\Theta(0)$, $z$ independent of $X$: the empirical law of the paths $\Theta_j(\cdot)$ converges almost surely in $W_2$ to the solution of the dynamical equations.
 
