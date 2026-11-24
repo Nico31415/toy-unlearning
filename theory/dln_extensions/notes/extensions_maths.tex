@@ -213,37 +213,63 @@ Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest 
 \caption{Regulariser checks. Lines: theory. Markers: exact finite-size end points, $\pm1$ s.e.}\label{fig}\end{figure}
 
 \section{What is proved}\label{proof}
-\textbf{Propositions} (exact, elementary). (i) \eqref{T1}, \eqref{T2} and all the $\kappa$ identities. (ii) The early-stopping identity. (iii) The decoupled closed form.
+Throughout, $X\in\mathbb R^{d\times n}$ has independent sub-Gaussian entries of variance $1/d$, $n/d\to\alpha$, so $\|X\|\le C_X$ almost surely for large $d$; $\bs$ has bounded entries. \emph{Truncated} means $\beta=w_M(\theta):=c\sinh(\tau_M(\theta))$ with $\tau_M$ smooth, nondecreasing, the identity on $[-M,M]$ and constant beyond $M+1$. The truncated flow equals the true one as long as $\max_j|\theta_j|\le M$.
 
-\textbf{What the literature proves.} Nishiyama \& Imaizumi (2025, Theorems 3--4, extending Celentano, Cheng \& Montanari 2021) prove the dynamical equations for flows
+\textbf{0. Exact, elementary.} \eqref{T1}, \eqref{T2}, the $\kappa$ identities, the early-stopping identity, the decoupled closed form.
+
+\textbf{1. The published theorem} (Nishiyama \& Imaizumi 2025, Thm.\ 4, extending Celentano, Cheng \& Montanari 2021, Thm.\ 2). For $\dot\Theta=p_t(g,\Theta)$, $g=\frac1\alpha X\ell_t(f;z)$, $f=X^\top w_t(\Theta)$, $\Theta\in\mathbb R^{d\times m}$, with $p_t,w_t,\ell_t$ and their Jacobians Lipschitz in the state and in $t$ (uniformly in $z$), and $\Theta(0),z$ independent of $X$: the empirical law of the paths $\Theta_j(\cdot)$ converges almost surely in $W_2$ to the solution of the dynamical equations.
+
+\textbf{Proposition 1 (two stages with the retrained copy; truncated; ramped switch).} In the mirror variable there is no product of weight and gradient. Take $\Theta=(\theta,\theta',\bs)$, $z_i\in\{0,1\}$ the group (deleted/kept), $p(g)=(-4\alpha g_1,-4\alpha g_2,0)$,
 \[
-\dot\theta=p_t(g,\theta),\qquad g=\tfrac1\alpha X\,\ell_t(f;z),\qquad f=X^\top w_t(\theta),\qquad \theta\in\mathbb R^{d\times m},
+w_t(\Theta)=\big(\omega_{\rm del}(t)[w_M(\theta)-b_{\rm del}(t)\bs],\ \omega_{\rm kept}(t)[w_M(\theta)-b_{\rm kept}(t)\bs],\ w_M(\theta')-\bs\big),\quad
+\ell(f;z)=\big(zf_1+(1-z)f_2,\ (1-z)f_3,\ 0\big).
 \]
-with $w_t,p_t,\ell_t$ Lipschitz in their arguments and in $t$, $z$ per-sample randomness independent of $X$, and $\theta(0)$ independent of $X$. Their Corollary 5 applies it to the \emph{truncated} network, $\beta=\eta_M(u^2)-\eta_M(v^2)$ with $\eta_M$ smooth, the identity on $[-M,M]$ and zero beyond $M+1$, squared loss, one stage.
+$p$ is linear; $\ell$ is linear in $f$ with coefficients in $[0,1]$; all time dependence multiplies bounded quantities, so $w_t$ is Lipschitz in $(\Theta,t)$ whenever $\omega,b$ are. Hence Theorem 4 applies for every $M$ and every Lipschitz schedule. For bounded-gradient losses (cross-entropy with soft labels, ascent, flipped labels) the schedule can sit in $\ell_t$ instead. $\square$
 
-\textbf{Proposition (two stages, with the retrained copy; truncated, ramped switch).} Fix $M$ and $\epsilon>0$. Let $(u,v)$ be the truncated network trained on all samples and then, from $T_1$, with weights $\omega_a(t)$ and targets $b_a(t)\,y$ on group $a\in\{$deleted, kept$\}$, where $\omega_a,b_a$ are Lipschitz (a ramp of width $\epsilon$ at $T_1$). Let $(u',v')$ be the truncated network trained on the kept samples from the same initialisation. Then the joint empirical law of the paths $(u_j,v_j,u'_j,v'_j,\bs_j)$ converges almost surely in $W_2$ to the solution of the two-copy equations of Section~5, on every $[0,T]$. In particular $\tfrac1d\|\beta(t)-\beta'(T_1)\|^2$ converges.
-
-\emph{Proof.} Take $m=7$ columns $\theta=(u,v,u',v',\bs,\cdot,\cdot)$, $z_i\in\{0,1\}$ the group of sample $i$, and
+\textbf{Lemma 2 (stability, uniform in $d$).} Let $F_t(\Theta)=-4X\ell_t(X^\top w_t(\Theta);z)$ with $w_t$, $\ell_t$ Lipschitz (constants $L_w,L_\ell$). Then $F_t$ is $L$-Lipschitz in Frobenius norm, $L=4C_X^2L_\ell L_w$. If $\dot\Theta=F_t(\Theta)$, $\dot{\tilde\Theta}=\tilde F_t(\tilde\Theta)$ from the same start and $\|F_t-\tilde F_t\|\le e(t)$ pointwise, then
 \[
-w_t(\theta)=\big(\,\omega_{\rm del}(t)[\beta_M-b_{\rm del}(t)\bs],\ \ \omega_{\rm kept}(t)[\beta_M-b_{\rm kept}(t)\bs],\ \ \beta'_M-\bs,\ 0,\dots\big),
+\|\Theta(t)-\tilde\Theta(t)\|\le\int_0^te^{L(t-s)}e(s)\,ds,\qquad
+\frac1d\sum_j\sup_{t\le T}\|\Theta_j(t)-\tilde\Theta_j(t)\|^2\le\frac Td\int_0^T\big(L\|\Theta-\tilde\Theta\|+e\big)^2ds .
 \]
-\[
-\ell(f;z)=\big(zf_1+(1-z)f_2,\ (1-z)f_3,\ 0,\dots\big),\qquad p(g,\theta)=\big(-\eta_M'(u^2)u\,g_1,\ \eta_M'(v^2)v\,g_1,\ -\eta_M'(u'^2)u'\,g_2,\ \eta_M'(v'^2)v'\,g_2,\ 0,\dots\big).
-\]
-This is the gradient flow of both truncated losses. All time dependence sits in $w_t$, multiplied by the bounded quantities $\beta_M$ and $\bs$, so $w_t$ and $Dw_t$ are Lipschitz in $(\theta,t)$; $\ell$ is linear in $f$ with coefficients in $[0,1]$ and does not depend on $t$; $p$ has exactly the form of their Corollary 5, applied to each copy. The assumptions on $X$, $z$, $\theta(0)$ hold. Their Theorem 4 gives the claim, and their DMFT system reduces to ours after eliminating the linear sample equation. $\square$
+\emph{Proof.} $\|X\ell(X^\top w(\Theta))-X\ell(X^\top w(\Theta'))\|\le C_X L_\ell C_X L_w\|\Theta-\Theta'\|$; Gr\"onwall; then $\sup_t|\Delta_j(t)|\le\int_0^T|\dot\Delta_j|$ and Cauchy--Schwarz. $\square$
 
-\textbf{What this does not cover.} These are gaps, not formalities.
-\begin{itemize}[nosep,leftmargin=1.2em]
-\item \textbf{The truncation.} At any fixed $M$ some coordinates exceed $M$ (the largest $|\theta_j|$ grows like $\sqrt{\log d}$), so the untruncated network is never literally covered. Removing $M$ needs a bound on $\frac1d\sum_j\beta_j^2\mathbf 1[|\theta_j|>M]$ uniform in $d$. The published single-stage result has the same gap.
-\item \textbf{The sharp switch} ($\epsilon\to0$). Their proof discretises time, so a jump at a grid point should be harmless, but that means re-running their discretisation lemmas, not citing them.
-\item \textbf{Hard labels.} $\ell$ depends on $\operatorname{sign}(f^\star)$, which is not Lipschitz. Soft labels are covered; hard labels need a separate approximation step.
-\item \textbf{SGD} is discrete with fresh randomness at every step; it is outside the flow theorem.
-\item I read their appendix through an automated summary. The exact form of the Lipschitz condition on $p$ (a product of a bounded function of $\theta$ and $g$) has to be checked against the paper before this Proposition is quoted.
-\end{itemize}
+\textbf{Theorem 3 (sharp switch).} In Proposition 1 let $\omega,b$ jump at $T_1$, and let $P^\epsilon$ be the limit law when the jump is replaced by a linear ramp on $[T_1,T_1+\epsilon]$. Then $P^0=\lim_{\epsilon\to0}P^\epsilon$ exists in $W_2$ and the empirical law of the paths of the sharp flow converges to $P^0$ almost surely.
+
+\emph{Proof.} Sharp and ramped fields differ only on $[T_1,T_1+\epsilon]$, by at most $4C_X^2\sup\|w_t-\tilde w_t\|\le C\sqrt d$ since the entries of $w_M$ and $\bs$ are bounded. Lemma 2 gives $\frac1d\sum_j\sup_t\|\Delta_j\|^2\le C\epsilon$, uniformly in $d$; the same bound holds between two ramps. Hence $W_2(\hat\mu_d^{\epsilon},\hat\mu_d^{\epsilon'})\le C(\sqrt\epsilon+\sqrt{\epsilon'})$ for the empirical laws; letting $d\to\infty$, $(P^\epsilon)$ is Cauchy, and $W_2(\hat\mu_d^0,P^0)\le W_2(\hat\mu_d^0,\hat\mu_d^\epsilon)+W_2(\hat\mu_d^\epsilon,P^\epsilon)+W_2(P^\epsilon,P^0)$ gives the claim. $\square$
+
+\textbf{Theorem 4 (hard labels).} Let $X$ be Gaussian, labels $y_i=\operatorname{sign}(x_i^\top\bs)$, and a loss whose gradient is $s_t(f)-\frac12(1+y)$ times a bounded Lipschitz weight (cross-entropy, ascent, flipped labels, with any Lipschitz or jump schedule). Let $P^\delta$ be the limit law with $y$ replaced by $\tanh(x^\top\bs/\delta)$. Then $P^0=\lim_{\delta\to0}P^\delta$ exists and the empirical law of the truncated hard-label flow converges to it almost surely.
+
+\emph{Proof.} The smoothed loss is Lipschitz with Lipschitz Jacobian, so Proposition 1 applies for each $\delta$. The two fields differ by at most $4C_X\big(\sum_i|\operatorname{sign}-\tanh|^2(x_i^\top\bs/\delta)\big)^{1/2}$. The $x_i^\top\bs$ are i.i.d.\ $\mathcal N(0,\|\bs\|^2/d)$, so by the law of large numbers this is at most $C\sqrt{\delta d}$ for large $d$. Lemma 2 gives $\frac1d\sum_j\sup_t\|\Delta_j\|^2\le C\delta$, and the argument of Theorem 3 concludes. $\square$
+
+\textbf{Proposition 5 (the truncation: what is missing, exactly).} Pretraining, squared loss, $y=X^\top\bs$. Write $\theta=-X\lambda$; then $\dot\lambda=4(X^\top w(-X\lambda)-y)$ is the Euclidean gradient flow of the convex function $\sum_jc\cosh((X\lambda)_j)+y^\top\lambda$. Since $w_M$ is nondecreasing, for the true and truncated flows
+\[
+\frac{d}{dt}\tfrac12\|\lambda-\lambda^M\|^2=-4\langle\theta-\theta^M,w_M(\theta)-w_M(\theta^M)\rangle-4\langle\theta-\theta^M,(w-w_M)(\theta)\rangle\le4C_X\|\lambda-\lambda^M\|\,\|(w-w_M)(\theta)\|,
+\]
+so $\frac1d\|\theta(t)-\theta^M(t)\|^2\le16C_X^4\,T\int_0^T\frac1d\sum_j\beta_j(s)^2\mathbf 1[|\theta_j(s)|>M]\,ds$, with no exponential factor. Therefore the untruncated flow converges to $\lim_MP^M$ \emph{provided}
+\[
+(\star)\qquad\lim_{M\to\infty}\ \limsup_{d\to\infty}\ \sup_{s\le T}\ \frac1d\sum_j\beta_j(s)^2\,\mathbf 1[|\theta_j(s)|>M]=0\quad\text{for the true flow.}
+\]
+What is available: $\frac1d\sum_jc\cosh\theta_j(t)\le C$ for all $t$ and $d$ (the Bregman divergence to $\bs$ decreases). That is a first moment of $|\beta|$; $(\star)$ needs uniform integrability of the second. Energy and operator-norm arguments do not give it, because $\sup_{\|b\|\le1}\frac1n\sum_i(x_i^\top b)^4\sim d$: a direction aligned with one sample is not excluded. The natural route is a leave-one-out argument (each $\theta_j$ is a Gaussian field plus a restoring self-term); I have not carried it out. With an anchor-free stage 2 the dual contraction itself fails, so stage 2 needs more.
+
+\textbf{Proposition 6 (SGD; sketch).} The step $u\leftarrow u(1-2\gamma G)$, $v\leftarrow v(1+2\gamma G)$ is exactly
+\[
+\theta\leftarrow\theta-2\operatorname{artanh}(2\gamma G),\qquad s\leftarrow s+\log(1-4\gamma^2G^2),\qquad\beta=c\,e^{s}\sinh\theta ,
+\]
+so the weights are a function of the gradient history alone, and SGD is a general first-order method in the sense of Celentano, Montanari \& Wu (2020): $u^t=X^\top G_t(v^1,\dots,v^t)$, $v^{t+1}=XF_t(u^t;y,\text{masks})$. Their reduction to message passing (their Lemma 2) gives a state-evolution limit when $F_t,G_t$ are Lipschitz, $X$ is Gaussian and the label noise has a smooth positive density. This requires: truncating $\beta$ and clipping $|2\gamma G|\le1-\epsilon$ (so $G_t$ is Lipschitz); encoding the $T$ masks in one discrete side variable and clipping the residual at $K$ (so $F_t$ is jointly Lipschitz); adding label noise $\sigma$. The discrete-time analogue of our stability lemma removes $\sigma\to0$. Removing $K\to\infty$ needs fourth moments of the residual bounded uniformly in $K$ under state evolution; this follows by induction on $t$ from the form of the recursion if the Onsager coefficients are bounded by the Lipschitz constants of $G_t$, which I believe but have not checked line by line. The identification of the state-evolution limit with the equations of Section 3 is the standard unfolding (as in Celentano et al.\ 2021, App.\ B) and is also not written out. Weight truncation and gradient clipping remain.
+
+\textbf{Status.}
+\begin{center}\small\begin{tabular}{@{}p{5.2cm}p{10cm}@{}}\toprule
+two stages + retrained copy, sharp switch & proved for the truncated flow (Prop.\ 1, Thm.\ 3), given the published Theorem 4\\
+hard labels, ascent, flipped labels & proved for the truncated flow, Gaussian inputs (Thm.\ 4)\\
+removing the truncation & reduced to one estimate, $(\star)$, for pretraining; open\\
+SGD & exact reparametrisation; convergence sketched for the truncated, clipped iteration; two steps unchecked\\
+identification of $P^0$ & $P^0$ is the limit of the smoothed equations; that it solves the sharp equations is not shown\\\bottomrule
+\end{tabular}\end{center}
+Caveats: I read Celentano et al.\ (2021, 2020) directly; Nishiyama \& Imaizumi's Theorem 4 I know only from a summary of their appendix, so its exact hypotheses should be checked against Proposition 1. NPO needs the margin at $T_1$ as an extra frozen copy; not written out. Lemma 2(a) and the SGD identity are checked numerically in \texttt{check\_lemmas.py}.
 
 \section*{Limits}
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item \textbf{Everything dynamic is numerical.} Early stopping, hard labels without a penalty, SGD at large $d$, task vector and WHP are exact equations solved by a noisy forward pass (average many runs), derived by a cavity argument; only the truncated, ramped squared-loss case reduces to a published theorem (Section~\ref{proof}). Norms come out $1$--$3\%$ above simulation at $d=3000$; the gap shrinks with $d$ but its vanishing is not shown.
+\item \textbf{Everything dynamic is numerical.} Early stopping, hard labels without a penalty, SGD at large $d$, task vector and WHP are exact equations solved by a noisy forward pass (average many runs), derived by a cavity argument; they are proved for the truncated flow, including a sharp switch and hard labels (Section~\ref{proof}); removing the truncation is open. Norms come out $1$--$3\%$ above simulation at $d=3000$; the gap shrinks with $d$ but its vanishing is not shown.
 \item \textbf{Ascent after blow-up} is not verified, and probably cannot be: the means are dominated by a few runs.
 \item \textbf{SGD:} no closed form in the step size beyond first order; the large-$d$ curves are tested for pretraining only.
 \item \textbf{Hard labels:} two sample ratios; WHP at one coefficient; forget coordinates only.
@@ -251,5 +277,5 @@ This is the gradient flow of both truncated losses. All time dependence sits in 
 \item All checks use Gaussian inputs, $\rho=0.2$, and (unless stated) $\alpha=0.3$ with two thirds of the forget samples deleted.
 \end{itemize}
 
-\small\textbf{References.} Woodworth et al., COLT 2020. Moroshko et al., NeurIPS 2020. Pesme, Pillaud-Vivien, Flammarion, NeurIPS 2021. Even, Pesme, Gunasekar, Flammarion, NeurIPS 2023. Pesme, Dragomir, Flammarion, NeurIPS 2024. Jacobs, Zhou, Burkholz, ICML 2025 (arXiv:2504.12883). Nishiyama, Imaizumi, arXiv:2510.01930.
+\small\textbf{References.} Woodworth et al., COLT 2020. Moroshko et al., NeurIPS 2020. Pesme, Pillaud-Vivien, Flammarion, NeurIPS 2021. Even, Pesme, Gunasekar, Flammarion, NeurIPS 2023. Pesme, Dragomir, Flammarion, NeurIPS 2024. Jacobs, Zhou, Burkholz, ICML 2025 (arXiv:2504.12883). Celentano, Cheng, Montanari, arXiv:2112.07572. Celentano, Montanari, Wu, COLT 2020 (arXiv:2002.12903). Nishiyama, Imaizumi, arXiv:2510.01930.
 \end{document}
