@@ -6,7 +6,7 @@
 \setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
 \newcommand{\bs}{\beta^\star}\newcommand{\E}{\mathbb E}\newcommand{\asinh}{\operatorname{arcsinh}}\newcommand{\prox}{\operatorname{prox}}
 \title{One template and its variants:\\ cross-entropy, early stopping, SGD and regularisers in the diagonal-network model}
-\author{}\date{23 November 2026}
+\author{}\date{24 November 2026}
 \begin{document}\maketitle
 
 \section{The template}
@@ -35,27 +35,29 @@ Every variant below changes one of three things: the \emph{scale} $c$, the \emph
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{6.6cm}>{\raggedright\arraybackslash}p{4.9cm}@{}}\toprule
 variant & what changes in the template & status\\\midrule
-cross-entropy, soft labels & targets $y\to$ label logits & exact (hard labels: unsolved)\\
+cross-entropy, soft labels & targets $y\to$ label logits & exact\\
+cross-entropy, hard labels, penalty kept on & \eqref{T3} with a nonlinear sample equation & exact (Section~\ref{hard})\\
+cross-entropy, hard labels, no penalty & no end point; needs dynamics & exact, solved numerically\\
 rescaling the weights by $\sqrt\kappa$ & $c\to\kappa c$, $\beta_0\to\kappa\beta_0$ & exact\\
 weight decay, then switched off & the same, with $\kappa=e^{-2\Lambda}$ & exact\\
 mini-batch SGD & the same, with $\kappa_j=\prod_k(1-4\gamma^2g_{k,j}^2)$ per coordinate & exact; one common $\kappa$ is approximate\\
 one-sided decay, then switched off & $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$ & exact\\
 regulariser kept on & \eqref{T2} becomes a penalised fit; start forgotten & exact (convex $R$)\\
 early stopping & targets $\to$ current predictions; needs dynamics & exact, solved numerically\\
-ascent on hard labels & no end point & simulation only\\
+ascent, NPO, flipped labels on hard labels & no end point; same dynamics, different $\ell$ & exact until the weights blow up\\
 non-convex regulariser & end point depends on the path & no formula\\\bottomrule
 \end{tabular}\caption{The variants.}\label{tab}\end{table}
 
 \section{Cross-entropy}
 \textbf{Soft labels.} If the labels are probabilities $p_i\in(0,1)$, the loss is minimised at the finite logits $\log\frac{p_i}{1-p_i}$. By \eqref{T1} the flow converges to \eqref{T2} with those logits as targets. With a logistic teacher, $p_i=\sigma(x_i^\top\bs)$, the targets are $x_i^\top\bs$: \emph{cross-entropy pretraining is the squared-loss model}, and everything known for it carries over. (Flow vs \eqref{T2}: $2\times10^{-6}$.)
 
-\textbf{Hard labels.} The weights diverge and only a limiting direction is known (Moroshko et al.; Pesme et al.). At realistic losses neither the hard-margin projection ($27$--$54\%$ off) nor the regularisation path ($19$--$38\%$) describes the flow. We do not use hard labels for pretraining.
+\textbf{Hard labels.} With $y_i=\pm1$ and no penalty the weights diverge; only a limiting direction is known (Moroshko et al.; Pesme et al.), and at realistic losses neither the hard-margin projection ($27$--$54\%$ off) nor the regularisation path ($19$--$38\%$) describes the flow. Section~\ref{hard} gives what is exact: the end point when a penalty is kept on, and the whole trajectory when it is not.
 
 \textbf{Ascent on hard labels} (gradient ascent, NPO). With $z_i=y_ix_i$ and per-sample weight $w(\cdot)>0$ on the margin $m_i=z_i^\top\beta$,
 \begin{equation}
 \theta(t)=\theta_0-\sum_i\Lambda_i(t)\,z_i,\qquad \dot\Lambda_i=4\,w(m_i).
 \end{equation}
-The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point and we have no formula; what follows is simulation (forget coordinates only, $d=400$, 10 seeds, three scales).
+The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point; the trajectory is given by Section~\ref{hard}. What follows is simulation (forget coordinates only, $d=400$, 10 seeds, three scales).
 \begin{itemize}[nosep,leftmargin=1.2em]
 \item Both can be stopped at the retrained model's held-out accuracy. The model reached is not the retrained one: its cosine to $A(D\setminus F)$ is $0.23$--$0.37$ (ascent) and $0.28$--$0.54$ (NPO), no better than doing nothing ($0.34$--$0.55$). Soft targets at the uniform label (zero logit; exact by \eqref{T2}) reach $0.44$--$0.75$. The cosine does not depend on scale, so this is not an artefact of measuring distance.
 \item Ascent inflates the logits: mean squared logit $2$--$8$ at matched accuracy, against $0.1$--$0.3$ for the reference. NPO does not ($0.2$--$0.45$).
@@ -111,6 +113,32 @@ where $\eta$ is a Gaussian process and $K=(1-R)^{-1}$ a causal operator in time,
 
 Its sampling noise is as large as a simulation's of the same size, so it must be averaged over runs. At $k=10^{-6}$ (seven runs of 2000 paths) the untraining distance relative to its value before stage 2 is $0.411\pm0.016$ at the best stopping time and $0.441\pm0.017$ at $\tau=6$, against $0.405$ and $0.435$ in simulation; in every run the distance is lower at the best stopping time than at $\tau=6$, and the exact converged value is higher still. The derivation is a cavity argument, not a proof, and only zero targets without an anchor have been tested.
 
+\section{Hard labels}\label{hard}
+Labels $y_i=\operatorname{sign}(x_i^\top\bs)$ (or sampled from $\sigma(x_i^\top\bs)$), loss $\ell(p)=\log(1+e^{-yp})$ on the logit $p=x^\top\beta$. The squared loss made the sample side of \eqref{T3} linear; now it is one scalar equation per sample.
+
+\textbf{Penalty kept on.} $U=\arg\min\sum_i\ell(x_i^\top\beta)+\lambda\sum_jR(\beta_j)$, convex $R$ (weight decay: $R=|\beta|$). Write $Q=\E\beta^2$, $M=\E\beta\bs$. For a training sample let $(z,\zeta)$ be Gaussian with variances $1,Q$ and covariance $M$: $z$ is the teacher's logit, $\zeta$ the logit the model would give had it not seen the sample. Training on it moves the logit to
+\begin{equation}
+p=\zeta-V\,\ell'(p),
+\end{equation}
+with $V>0$ one number. Then each weight is
+\begin{equation}
+\beta=\prox_{\lambda R/A}\!\Big(\frac{B\bs+\sqrt C\,h}{A}\Big),\qquad A=\alpha\,\E\frac{\ell''}{1+V\ell''},\quad B=-\alpha\,\E\,\partial_z\ell'(p),\quad C=\alpha\,\E\,\ell'(p)^2,\quad V=\frac{\E[\prox{}']}{A}.
+\end{equation}
+Three unknowns $(Q,M,V)$. With the squared loss this is \eqref{reg}. $B$ is computed as $-\alpha(\E[z\,\ell']-MA/\alpha)$. (Code: \texttt{se\_logistic.py}.)
+
+\textbf{No penalty: dynamics.} For any loss and any schedule of losses,
+\begin{equation}\label{nl}
+p(t)=\zeta(t)+\int_0^t R_\beta(t,s)\,\ell'(p(s))\,ds,\qquad
+\dot\theta=-4\Big(\eta+\int_0^tR_\ell(t,s)\,\beta(s)\,ds+\mu(t)\,\bs\Big),
+\end{equation}
+with $\zeta$ Gaussian with the covariance of $\beta(t)$, $\eta$ Gaussian with covariance $\alpha\,\E\,\ell'(p(t))\ell'(p(s))$, and
+$R_\beta=\E\,\partial\beta(t)/\partial\eta(s)$, $R_\ell=\alpha\,\E\,\partial\ell'(p(t))/\partial\zeta(s)$, $\mu=\alpha\,\E\,\partial_z\ell'(p(t))$. The first equation is the sample equation above with memory; the second is the early-stopping equation with $\alpha K$ replaced by $R_\ell$. Solved by the same forward pass. Stage 2 only changes $\ell$ on the forget samples at the switch time: ascent ($-\ell$), flipped labels ($\ell$ at $-y$), NPO. (Code: \texttt{dmft\_nl.py}, \texttt{dmft\_nl2.py}.)
+
+\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_labels.png}
+\caption{Hard labels. Top: penalty kept on, against $\lambda$. Middle: no penalty, pretraining. Bottom: pretraining then stage 2 on half the samples. Lines: theory. Markers: simulation, $\pm1$ s.e.}\label{fighard}\end{figure}
+
+What is still missing: for hard labels without a penalty there is no closed-form end point at finite time, only the trajectory \eqref{nl}; and no reference-distance curves (to $A(D\setminus F)$) have been computed from it yet.
+
 \section{Checks}
 \begin{center}\small\begin{tabular}{@{}p{6.1cm}p{9.2cm}@{}}\toprule
 claim & check\\\midrule
@@ -125,6 +153,9 @@ identities with blocks and a retain anchor & gradient descent vs \eqref{T2}: $1$
 one-sided decay, gradient descent & $0.05$--$0.45\%$, falling with the step size\\
 SGD $=$ flow from the shrunk scale & $10^{-4}$ to $4\times10^{-3}$; stage 2: $0.2\%$ against $4.7\%$ without $\kappa$\\
 SGD batch-size formula & mean of 8--16 runs: ratio $1.11,1.05,1.02$ at $\gamma=0.02,0.01,0.005$ ($b=1$)\\
+hard labels, penalty kept on ($R=|\beta|$, $\beta^2$; sign and sampled labels) & 48 numbers, $d=1000$, 16 seeds: all within 1.9 s.e.\\
+hard labels, no penalty, pretraining dynamics & $k=1,10^{-2}$, 64 runs each: overlap, loss, accuracy within $1\%$ (1 s.e.); norm $1.5$--$3\%$ high (1.7 s.e.), gap shrinking with $d$ ($1.6,1.5,1.0\%$ at $d=1000,3000,8000$)\\
+hard labels, stage 2 (ascent, NPO, flipped labels) & 16 runs each: within 2 s.e.\ while the norm is bounded; once ascent blows up the means are dominated by a few runs and agreement is not established\\
 early-stopping dynamics & norm, overlap, unlearning distance at three scales; untraining distance at $k=10^{-6}$ to $4\%$ after averaging 7 runs\\\bottomrule
 \end{tabular}\end{center}
 Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest $2.2$ (Figure~\ref{fig}).
@@ -134,8 +165,8 @@ Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest 
 
 \section*{Limits}
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item \textbf{Cross-entropy is exact only for soft labels.} That is a modelling choice which makes it the squared-loss model. Hard sampled labels, as in real training, remain unsolved.
-\item \textbf{Ascent losses have no formula.} The statements above are simulations at one size and one pair of sample ratios.
+\item \textbf{Hard labels without a penalty have no closed form.} The trajectory is exact but numerical, noisy (average many runs), and tested at one pair of sample ratios. It is a cavity argument, not a proof.
+\item \textbf{Ascent losses:} the trajectory is verified only before the weights blow up. Distances to the retrained model have not been computed from it; those statements are still simulation.
 \item \textbf{The large-$d$ curves for stage 2 from a pretrained model exist only for forget coordinates.} With retain and shared blocks, the identities are checked by gradient descent and the regulariser-kept-on curves by simulation, but there are no stage-2 curves.
 \item \textbf{SGD:} one common $\kappa$ is approximate; the batch-size formula is first order in the step size; no large-$d$ curves.
 \item \textbf{Early stopping:} a cavity derivation, numerically noisy at small scale; tested for zero targets only.

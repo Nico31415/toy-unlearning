@@ -9,6 +9,7 @@ The maths is in `notes/extensions_maths.pdf` (one template and its variants). `n
 | `ce/` | `ce_tests.py` (`project`, `flow`, hard-label tests), `se_sign.py` (sign-label channel), `soft.py`, `het.py`, `diag*.py`, `ce_grid.py` (ascent losses), `ksweep*.py` (theory vs simulation against k), `dmft2.py` + `es_fig.py` (two-stage dynamical solver, early stopping) |
 | `wd/` | `se_wd.py` (channel for a regulariser kept on), `switchoff.py`, `wd_fig.py` (switched-off weight decay = rescaling), `left2.py` (one-sided decay), `left1.py` (non-convex penalty, negative result), `reg_fig.py`, `more_seeds.py`, `analyse_more.py`, `overlap_check.py` (many-seed checks) |
 | `crit/` | follow-up checks: `tamper.py` (ascent losses: cosine to the reference and a relearning attack), `se_blocks.py` (regulariser channel with retain/shared/forget blocks), `block_identity.py`, `onesided_gd.py` (identities by gradient descent), `sgd_kappa.py` (how uniform SGD's shrink factor is) |
+| `hard/` | hard-label cross-entropy: `se_logistic.py` (end point with a penalty kept on, large d), `dmft_nl.py` (exact large-d training dynamics without a penalty), `dmft_nl2.py` (two stages: ascent, NPO, flipped labels), `nl_check.py`, `lam_sweep.py`, `hard_fig.py` |
 | `sgd/` | `check.py` (batch-size scaling, stage-2 rescaling identity) |
 | `figures/` | the figures used in the notes |
 
