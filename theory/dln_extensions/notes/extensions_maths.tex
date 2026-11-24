@@ -77,7 +77,7 @@ A=\alpha L,\qquad \operatorname{Cov}(\eta)=\alpha\,LCL^\top,\qquad V[s,m]=\E\fra
 \]
 The unknowns are the two matrices $C$ and $V$, found by iterating these equations. One model from zero reduces to \eqref{T3}. Rescaling before stage 2 is $c_s=\kappa c_{\text{parent}}$. Every distance between two models is read off $C$.
 
-\emph{Groups and blocks.} Forget and kept samples are used by different models, so in practice samples come in groups $a$ ($\alpha_ad$ samples each), and with two classes coordinates come in blocks $B$ (a fraction $q_B$ of the coordinates each). Then every group has its own $C_a,V_a,L_a$ and every block its own $A_B$ and $\operatorname{Cov}(\eta)$: the averages over coordinates become $\sum_{B}q_B\,\E_B$ over the blocks the group's inputs touch, and the factors $\alpha$ become $\sum_a\alpha_a$ over the groups that touch the block.
+\emph{Groups and blocks.} Forget and kept samples are used by different models, so in practice samples come in groups $a$ ($\alpha_ad$ samples each), and with two classes coordinates come in blocks $B$ (a fraction $q_B$ of the coordinates each). Then every group has its own $C_a,V_a,L_a$ and every block its own $A_B$ and $\operatorname{Cov}(\eta)$: the averages over coordinates become $\sum_{B}q_B\,\E_B$ over the blocks the group's inputs touch, and the factors $\alpha$ become $\sum_a\alpha_a$ over the groups that touch the block. The same equations cover three further cases with no new ingredient: \emph{fresh samples} in stage 2 (a group that only the unlearned model uses), a \emph{relearning attack} (one more model, which starts from the unlearned one and trains on a few correctly labelled samples), and \emph{label noise} (the label is $\zeta_0$ plus an independent Gaussian, one more entry of $\zeta$).
 
 \subsection{Cross-entropy}\label{ce}
 Now $x^\top\beta$ is a logit and the label a probability or a class. \textbf{Soft labels.} With labels $\sigma(x_i^\top\bs)$ the cross-entropy is minimised when the logits equal $x_i^\top\bs$, so training ends at \eqref{T2} with $y=X^\top\bs$: this is the squared-loss model, and everything above applies.
@@ -121,6 +121,19 @@ What it covers, by the choice of $\ell_t$:
 \item \emph{task vector} (Ilharco et al.) and \emph{WHP} (Eldan \& Russinovich): both first continue training on the forget samples only, giving a ``reinforced'' model. With $w=(u,v)$, the task vector sets $w=w_{\rm pre}-\lambda_{\rm tv}(w_{\rm reinf}-w_{\rm pre})$, a function of one coordinate's $\theta$ at two times. WHP returns to $w_{\rm pre}$ and trains the forget samples to soft labels whose logit is the pretrained one minus a coefficient times the confidence the reinforced model gained. Returning to earlier weights is a function of the past, so the same forward pass applies.
 \end{itemize}
 
+With groups of samples and blocks of coordinates (two classes), averages become weighted sums exactly as in Section 2.4.
+
+\subsection{Two limits in closed form}
+Consider stage 2 from a converged pretrained model $\beta^{\rm pre}$.
+
+\textbf{Lazy limit} ($c\to\infty$). Then $\beta\approx c\,\theta$ and \eqref{T1} is linear: $\dot\beta=-4c\,\nabla_\beta L$. The trajectory depends on $c$ and $t$ only through $ct$, so the time a stage 2 needs scales as $1/c$.
+
+\textbf{Rich limit} ($c\to0$), for a stage 2 much shorter than $\log(1/c)$. A weight that pretraining left at zero needs a time of order $\log(1/c)$ to grow, so it stays at zero; the others have $|\beta_j|\gg c$, where $c\sinh\theta$ is an exponential. Hence
+\begin{equation}\label{mult}
+\dot\beta_j=-4\,|\beta_j|\,\nabla_{\beta_j}L,\qquad\beta_j(T_1)=\beta^{\rm pre}_j ,
+\end{equation}
+with no further dependence on $c$: stage 2 only rescales the weights pretraining selected, it cannot move to new coordinates. The scale enters only through $\beta^{\rm pre}$ and the retrained model, both given by Section 2.
+
 \subsection{SGD}
 The steps \eqref{sgd} obey \eqref{nl} in discrete time, with each sample's gradient multiplied at every step by a fresh random mask: $n/n_b$ with probability $n_b/n$ (the sample is in the batch), else $0$. This gives the trajectory and $\kappa_j$ at any step and batch size, in both stages.
 
@@ -151,9 +164,13 @@ WHP, coefficient 3 & $0.83$ ($k=1$) & forget accuracy $0.93$\\\bottomrule
 \end{tabular}\end{center}
 The squared distance is mostly norm (the pretrained model is larger than the retrained one), so the cosine is the cleaner measure. With more data ($\alpha_{\rm PT}=1.5$, $\alpha_{\rm UL}=0.3$) doing nothing is already at $0.93$, NPO reaches $0.96$, and flipped labels only lower it.
 
-\textbf{4. Relearning after ascent} (soft-label pretraining, simulation only, $d=400$). After stage 2 the model is trained on $0.15\,d$ fresh labelled samples and its test accuracy is measured. NPO stopped at chance accuracy relearns to $0.585$, like a model never trained on the class ($0.59$--$0.62$). Ascent stopped at the retrained model's accuracy relearns to $0.66$--$0.67$, above the retrained model ($0.61$--$0.66$): it still carries the class. Ascent also inflates the logits (mean square $2$--$8$ against $0.1$--$0.3$).
+\textbf{4. Reused or fresh samples; relearning} (squared loss, converged, forget coordinates only, $\alpha_{\rm PT}=0.3$, $\alpha_{\rm UL}=0.2$, zero targets; $k=1$ / $k=10^{-2}$). Stage 2 on the forget samples themselves ends at distance $0.038$ / $0.090$ from the retrained model; on fresh samples of the same class, $0.165$ / $0.178$. A relearning attack with $0.15\,d$ fresh labelled samples leaves an error $\|\beta-\bs\|^2/\|\bs\|^2$ of $0.765$ / $0.820$ after reused-sample unlearning, against $0.764$ / $0.876$ for the retrained model and $0.572$ / $0.627$ for the pretrained one; after fresh-sample unlearning, $0.633$ / $0.679$. At $k=1$ unlearning with the forget samples is as hard to undo as retraining; with fresh samples it is not.
 
-\textbf{5. SGD} (pretraining, $\gamma=0.04$, $\alpha=0.3$; Figure~\ref{figfinal}, top). Mean of $\log\kappa_j$ over coordinates: $-0.011$ full batch; $-0.200$ with $n_b/n=0.1$ ($k=1$); $-0.455$ ($k=10^{-2}$). Small batches shrink the scale, i.e.\ make the model richer.
+\textbf{5. Two classes with a finite budget} (squared loss; retain, shared, forget coordinates in proportion $0.4,0.2,0.4$; $k=1$). The anchor decides which reference is approached. With the kept samples of the forget class in the anchor, the distance to the model retrained without $F$ falls to $0.028$ and the distance to the model trained on the retain class only stays at $0.084$. With only the retain class in the anchor, the latter falls to $0.063$ and the former stops at $0.035$--$0.040$. Overshooting targets help only for a short stage 2, as with one class.
+
+\textbf{6. Relearning after ascent} (soft-label pretraining, simulation only, $d=400$). After stage 2 the model is trained on $0.15\,d$ fresh labelled samples and its test accuracy is measured. NPO stopped at chance accuracy relearns to $0.585$, like a model never trained on the class ($0.59$--$0.62$). Ascent stopped at the retrained model's accuracy relearns to $0.66$--$0.67$, above the retrained model ($0.61$--$0.66$): it still carries the class. Ascent also inflates the logits (mean square $2$--$8$ against $0.1$--$0.3$).
+
+\textbf{7. SGD} (pretraining, $\gamma=0.04$, $\alpha=0.3$; Figure~\ref{figfinal}, top). Mean of $\log\kappa_j$ over coordinates: $-0.011$ full batch; $-0.200$ with $n_b/n=0.1$ ($k=1$); $-0.455$ ($k=10^{-2}$). Small batches shrink the scale, i.e.\ make the model richer.
 
 \begin{figure}[!ht]\centering\includegraphics[width=0.78\linewidth]{fig_final.png}
 \caption{Lines: theory (band: $\pm1$ standard error over runs). Markers: simulation. Top: SGD. Bottom left: distance to the retrained model against the time spent in stage 2, for five losses. Bottom right: task vector.}\label{figfinal}\end{figure}
@@ -171,13 +188,16 @@ decay on $u$ only & 36 numbers within 1 s.e.\\
 SGD $=$ flow from the shrunk scale & $10^{-4}$ to $4\times10^{-3}$; batch formula: ratio $1.11,1.05,1.02$ at $\gamma=0.02,0.01,0.005$\\
 penalty kept on, \eqref{reg} & 132 numbers, three penalties, with and without blocks: $98\%$ within 2 s.e. (Figure~\ref{fig})\\
 several trainings, \eqref{ms}--\eqref{mc} & 26 distances (forget only; retain/shared/forget with anchor and $\kappa=0.3$): within 1.8 s.e.\ at $d=3000$\\
+fresh samples, relearning attack, label noise ($0.5$) & 24 distances at $k=1,10^{-2}$: within 2.1 s.e.\\
 hard labels with a penalty, \eqref{hp} & 48 numbers ($|\beta|$ and $\beta^2$ penalties, sign and sampled labels): within 1.9 s.e.\\\midrule
 \multicolumn{2}{@{}l}{\emph{Trajectories (simulated gradient descent, $d=3000$)}}\\
 early stopping, five losses, six budgets & within 1.6 s.e.\ at $k=1$ and $10^{-2}$\\
 hard-label pretraining & $\E\beta\bs$, loss, accuracy within $1\%$; $\E\beta^2$ $1.5$--$3\%$ high (64 runs)\\
 ascent, NPO, flipped labels; distance and cosine & within 2 s.e.\ until the weights blow up; not verified after\\
 task vector, WHP & within 1.7 s.e.\\
-SGD, both stages & within 2 s.e.\\\bottomrule
+SGD, both stages & within 2 s.e.\\
+two classes, four stage-2 losses, two references & 80 numbers at $k=1,10^{-2}$: within 1.3 s.e.\\
+lazy limit; rich limit \eqref{mult} & curves in $ct$ agree to 4 digits for $k\ge10^2$; \eqref{mult} agrees with the flow to 4 digits for $k\le10^{-4}$ and to $4\%$ at $k=10^{-2}$\\\bottomrule
 \end{tabular}\end{center}
 \textbf{Scales.} The rows above are at $k=10^{-2}$ and $1$ unless stated. Repeated at the extremes:
 \begin{center}\small\begin{tabular}{@{}p{5.6cm}p{4.6cm}p{4.9cm}@{}}\toprule
@@ -189,7 +209,7 @@ early stopping, five losses & curves $12\%$ high (2--3 s.e.), all inherited from
 \end{tabular}\end{center}
 The $12\%$ at $k=10^{-6}$ was a fluctuation of the starting distance in a small batch (4 theory runs, 6 simulations): with 38 more simulations and 14 more theory runs it is $0.442$--$0.455$ in simulation ($d=800$ to $8000$, rising with $d$) against $0.460$--$0.467$ in theory, a gap of $1$--$4\%$.
 
-The trajectory solver is as noisy as a simulation of its size and is averaged over runs. Its norms sit above simulation: $1.6,1.5,1.0\%$ at $d=1000,3000,8000$ for $\alpha=0.3$, $k=1$, and $6\%$ in one run at $\alpha=0.3$ with a second stage. The gap shrinks with $d$; that it vanishes is not shown.
+The trajectory solver is as noisy as a simulation of its size and is averaged over runs; with small groups of samples it needs several thousand paths per group. Its norms sit above simulation: $1.6,1.5,1.0\%$ at $d=1000,3000,8000$ for $\alpha=0.3$, $k=1$, and $6\%$ in one run at $\alpha=0.3$ with a second stage. The gap shrinks with $d$; that it vanishes is not shown.
 
 \begin{figure}[!ht]\centering\includegraphics[width=0.8\linewidth]{fig_endpoints.png}
 \caption{End points when the scale or the penalty changes (Sections 2.2, 2.3); forget coordinates only, $\alpha_{\rm PT}=0.3$, $\alpha_{\rm UL}=0.2$. Lines: theory. Markers: exact finite-$d$ end points, $\pm1$ s.e.}\label{fig}\end{figure}

@@ -11,28 +11,31 @@ def anc(parent, s):
     while parent[s] is not None: s = parent[s]; out.append(s)
     return out
 
-def solve(blocks, groups, systems, N=40000, iters=400, damp=0.5, seed=0, tol=1e-7, verbose=False):
-    """blocks: [(q, rho)], groups: [(alpha, [block ids])], systems: [dict(parent=None|index (1-based), c=..., use={group id: b})] (system ids 1..S)."""
+def solve(blocks, groups, systems, N=40000, iters=400, damp=0.5, seed=0, tol=1e-7, verbose=False, noise=None):
+    """blocks: [(q, rho)], groups: [(alpha, [block ids])], systems: [dict(parent=None|index (1-based), c=..., use={group id: b})] (system ids 1..S).
+    noise: per-group standard deviation of label noise (labels = teacher logit + noise; targets are b * label). The noise is one more Gaussian input, index S+1."""
     S = len(systems); nB, nG = len(blocks), len(groups); rng = np.random.default_rng(seed); parent = [None] + [sy["parent"] for sy in systems]
     eps = rng.standard_normal((nB, N, S)); bst = np.zeros((nB, N))
     for B, (q, rho) in enumerate(blocks): m = int(round(rho * N / 2)); bst[B, :m] = rho**-0.5; bst[B, m:2 * m] = -rho**-0.5
+    sig = [0.0] * nG if noise is None else list(noise)
+    def full(Ca, a): Cf = np.zeros((S + 2, S + 2)); Cf[:S + 1, :S + 1] = Ca; Cf[S + 1, S + 1] = sig[a]**2; return Cf
     C = np.array([np.eye(S + 1) * sum(blocks[B][0] for B in sup) for al, sup in groups]); V = np.array([-np.eye(S + 1) for _ in groups]); mom = None
     for it in range(iters):
         # sample side: g = L w, w = (zeta_0..zeta_S)
         Ls = []
         for a in range(nG):
-            L = np.zeros((S + 1, S + 1))
+            L = np.zeros((S + 1, S + 2))
             for s in range(1, S + 1):
                 use = systems[s - 1]["use"]
                 if a in use:
-                    r = -np.eye(S + 1)[s]; r[0] += use[a]
+                    r = -np.eye(S + 2)[s]; r[0] += use[a]; r[S + 1] += use[a]
                     for m in anc(parent, s): r = r - V[a][s, m] * L[m]
                     L[s] = r / V[a][s, s]
             Ls.append(L)
         Cn = np.zeros_like(C); Vn = np.zeros_like(V); mom = []
         for B, (q, rho) in enumerate(blocks):
             gs = [a for a in range(nG) if B in groups[a][1]]
-            aB = sum(groups[a][0] * Ls[a] for a in gs); Sig = sum(groups[a][0] * Ls[a] @ C[a] @ Ls[a].T for a in gs)[1:, 1:]
+            aB = sum(groups[a][0] * Ls[a][:, :S + 1] for a in gs); Sig = sum(groups[a][0] * Ls[a] @ full(C[a], a) @ Ls[a].T for a in gs)[1:, 1:]
             w, U = np.linalg.eigh((Sig + Sig.T) / 2); eta = eps[B] @ (U * np.sqrt(np.maximum(w, 0))).T
             beta = np.zeros((S + 1, N)); beta[0] = bst[B]; th = np.zeros((S + 1, N)); D = np.ones((S + 1, N)); T = np.zeros((S + 1, S + 1, N))
             for s in range(1, S + 1):
