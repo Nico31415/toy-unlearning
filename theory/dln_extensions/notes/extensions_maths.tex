@@ -179,6 +179,7 @@ The squared distance is mostly norm (the pretrained model is larger than the ret
 \begin{figure}[!ht]\centering\includegraphics[width=0.9\linewidth]{fig_hard_distance.png}
 \caption{Stage 2 on hard labels, $\alpha_{\rm PT}=0.6$, $\alpha_{\rm UL}=0.3$. Lines: theory (band: $\pm1$ s.e.). Markers: simulation.}\label{figdist}\end{figure}
 
+\clearpage
 \section{Checks against simulation}
 Nothing is fitted. ``s.e.''\ is the standard error over random seeds; ``within 2 s.e.''\ means theory and simulation differ by less than twice their combined standard error.
 \begin{center}\small\begin{tabular}{@{}p{5.6cm}p{9.7cm}@{}}\toprule
@@ -191,7 +192,9 @@ SGD $=$ flow from the shrunk scale & $10^{-4}$ to $4\times10^{-3}$; batch formul
 penalty kept on, \eqref{reg} & 132 numbers, three penalties, with and without blocks: $98\%$ within 2 s.e. (Figure~\ref{fig})\\
 several trainings, \eqref{ms}--\eqref{mc} & 26 distances (forget only; retain/shared/forget with anchor and $\kappa=0.3$): within 1.8 s.e.\ at $d=3000$\\
 fresh samples, relearning attack, label noise ($0.5$) & 24 distances at $k=1,10^{-2}$: within 2.1 s.e.\\
-hard labels with a penalty, \eqref{hp} & 48 numbers ($|\beta|$ and $\beta^2$ penalties, sign and sampled labels): within 1.9 s.e.\\\midrule
+hard labels with a penalty, \eqref{hp} & 48 numbers ($|\beta|$ and $\beta^2$ penalties, sign and sampled labels): within 1.9 s.e.\\\bottomrule
+\end{tabular}\end{center}
+\begin{center}\small\begin{tabular}{@{}p{5.6cm}p{9.7cm}@{}}\toprule
 \multicolumn{2}{@{}l}{\emph{Trajectories (simulated gradient descent, $d=3000$)}}\\
 early stopping, five losses, six budgets & within 1.6 s.e.\ at $k=1$ and $10^{-2}$\\
 hard-label pretraining & $\E\beta\bs$, loss, accuracy within $1\%$; $\E\beta^2$ $1.5$--$3\%$ high (64 runs)\\
