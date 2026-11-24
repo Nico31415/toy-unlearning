@@ -2,7 +2,7 @@
 \usepackage[a4paper,margin=2.1cm]{geometry}
 \usepackage{amsmath,amssymb,booktabs,graphicx,enumitem,array}
 \usepackage[T1]{fontenc}\usepackage{lmodern}
-\usepackage[font=small]{caption}
+\usepackage[font=small]{caption}\usepackage{placeins}
 \setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
 \newcommand{\bs}{\beta^\star}\newcommand{\E}{\mathbb E}\newcommand{\asinh}{\operatorname{arcsinh}}\newcommand{\prox}{\operatorname{prox}}
 \title{Unlearning in the diagonal-network model:\\ end points, trajectories and their derivation}
@@ -66,16 +66,18 @@ Add a penalty $\lambda\sum_jR(\beta_j)$ with $R$ convex and keep it on. Training
 \subsection{Several trainings on the same data}\label{multi}
 Unlearning compares models trained on overlapping data. Number them $s=1,2,\dots$; for example $s=1$ pretrained (all samples), $s=2$ unlearned (starts from model 1; forget samples with target $0$), $s=3$ retrained (kept samples, from zero). Index $0$ is the teacher, $\beta_0=\bs$. Model $s$ starts from the end point of its parent (or from zero) with scale $c_s$ and trains to convergence on the samples it uses. By \eqref{T1}, $\theta_s=\theta_{\text{parent}(s)}-Xg_s$, where $g_s\in\mathbb R^n$ is the loss gradient of each sample accumulated over the training of model $s$; it is zero on samples $s$ does not use.
 
-Coordinates come in blocks $B$ (a fraction $q_B$ of the $d$ coordinates) and samples in groups $a$ ($n_a=\alpha_ad$ samples, inputs supported on some of the blocks; all samples of a group are treated alike by every model). At large $d$, for one sample of group $a$ and one coordinate of block $B$:
+At large $d$, for one sample and one coordinate (first with one class, and all samples treated alike):
 \begin{align}
-\text{sample in group }a:&\quad p_s=\zeta_s+\sum_{m\preceq s}V_a[s,m]\,g_m ,\qquad p_s=b_{s,a}\,\zeta_0\ \text{if $s$ uses $a$},\quad g_s=0\ \text{otherwise};\label{ms}\\
-\text{coordinate in block }B:&\quad \theta_s=\theta_{\text{parent}(s)}-\Big(\eta_s+\sum_{m}A_B[s,m]\,\beta_m\Big),\qquad \beta_s=c_s\sinh\theta_s .\label{mc}
+\text{sample:}&\quad p_s=\zeta_s+\sum_{m\preceq s}V[s,m]\,g_m ,\qquad p_s=b_s\,\zeta_0\ \text{if model $s$ uses the sample},\quad g_s=0\ \text{otherwise};\label{ms}\\
+\text{coordinate:}&\quad \theta_s=\theta_{\text{parent}(s)}-\Big(\eta_s+\sum_{m}A[s,m]\,\beta_m\Big),\qquad \beta_s=c_s\sinh\theta_s .\label{mc}
 \end{align}
-Here $p_s$ is the prediction of model $s$ on the sample; $\zeta_s$ is the prediction it would make had no model seen that sample, and $\zeta_0$ is the label; $b_{s,a}$ is the target of model $s$ on group $a$ as a multiple of the label; $m\preceq s$ runs over $s$ and its ancestors; $\eta_s$ is a Gaussian field. $\E_B$ averages over the coordinates of block $B$. The vector $\zeta=(\zeta_0,\zeta_1,\dots)$ is Gaussian with covariance $C_a[s,m]=\sum_{B\in a}q_B\,\E_B\beta_s\beta_m$. Equation \eqref{ms} is linear in $g=(g_1,g_2,\dots)$, so $g=L_a\zeta$ for a matrix $L_a$ obtained by solving it, and
+In \eqref{ms}: $p_s$ is the prediction of model $s$ on the sample; $\zeta_s$ is the prediction it would make had no model seen that sample, and $\zeta_0$ is the label; $b_s$ is the target of model $s$ as a multiple of the label; $m\preceq s$ runs over $s$ and its ancestors. The vector $\zeta=(\zeta_0,\zeta_1,\dots)$ is Gaussian with covariance $C[s,m]=\E\beta_s\beta_m$. Since \eqref{ms} is linear, $g=L\zeta$ for a matrix $L$ obtained by solving it. In \eqref{mc}: $\eta=(\eta_1,\eta_2,\dots)$ is Gaussian, and
 \[
-A_B=\sum_{a\ni B}\alpha_aL_a,\qquad \operatorname{Cov}(\eta)=\sum_{a\ni B}\alpha_aL_aC_aL_a^\top,\qquad V_a[s,m]=\sum_{B\in a}q_B\,\E_B\frac{\partial\beta_s}{\partial\eta_m}.
+A=\alpha L,\qquad \operatorname{Cov}(\eta)=\alpha\,LCL^\top,\qquad V[s,m]=\E\frac{\partial\beta_s}{\partial\eta_m}.
 \]
-The unknowns are the matrices $C_a$ and $V_a$; they are found by iterating these equations. One model from zero reduces to \eqref{T3}. Rescaling before stage 2 is $c_s=\kappa c_{\text{parent}}$. Every distance between two models is read off $\E_B\beta_s\beta_m$.
+The unknowns are the two matrices $C$ and $V$, found by iterating these equations. One model from zero reduces to \eqref{T3}. Rescaling before stage 2 is $c_s=\kappa c_{\text{parent}}$. Every distance between two models is read off $C$.
+
+\emph{Groups and blocks.} Forget and kept samples are used by different models, so in practice samples come in groups $a$ ($\alpha_ad$ samples each), and with two classes coordinates come in blocks $B$ (a fraction $q_B$ of the coordinates each). Then every group has its own $C_a,V_a,L_a$ and every block its own $A_B$ and $\operatorname{Cov}(\eta)$: the averages over coordinates become $\sum_{B}q_B\,\E_B$ over the blocks the group's inputs touch, and the factors $\alpha$ become $\sum_a\alpha_a$ over the groups that touch the block.
 
 \subsection{Cross-entropy}\label{ce}
 Now $x^\top\beta$ is a logit and the label a probability or a class. \textbf{Soft labels.} With labels $\sigma(x_i^\top\bs)$ the cross-entropy is minimised when the logits equal $x_i^\top\bs$, so training ends at \eqref{T2} with $y=X^\top\bs$: this is the squared-loss model, and everything above applies.
@@ -105,7 +107,7 @@ Let $\ell_t(p)$ be the loss of one sample at time $t$ as a function of its predi
 p(t)=\zeta(t)+\int_0^tR_\beta(t,s)\,\ell_s'(p(s))\,ds,\qquad
 \dot\theta=-4\Big(\eta+\int_0^tR_\ell(t,s)\,\beta(s)\,ds+\mu(t)\,\bs\Big).
 \end{equation}
-This is \eqref{ms}--\eqref{mc} with time in place of the model index: $p(t)$ is the prediction, $\zeta(t)$ the prediction had the sample not been seen, a Gaussian process with covariance $\E\beta(t)\beta(s)$ (and covariance $\E\beta(t)\bs$ with the label input $\zeta_0$); $\eta(t)$ is a Gaussian process with covariance $\alpha\,\E\,\ell_t'(p(t))\ell_s'(p(s))$; and
+This has the form of \eqref{ms}--\eqref{mc} with time in place of the model index: $p(t)$ is the prediction, $\zeta(t)$ the prediction had the sample not been seen, a Gaussian process with covariance $\E\beta(t)\beta(s)$ (and covariance $\E\beta(t)\bs$ with the label input $\zeta_0$); $\eta(t)$ is a Gaussian process with covariance $\alpha\,\E\,\ell_t'(p(t))\ell_s'(p(s))$; and
 \[
 R_\beta(t,s)=\E\frac{\partial\beta(t)}{\partial\eta(s)},\qquad R_\ell(t,s)=\alpha\,\E\frac{\partial\ell_t'(p(t))}{\partial\zeta(s)},\qquad\mu(t)=\alpha\,\E\,\partial_{\zeta_0}\ell_t'(p(t)).
 \]
@@ -125,7 +127,7 @@ The steps \eqref{sgd} obey \eqref{nl} in discrete time, with each sample's gradi
 \section{What the theory says}
 All numbers are theory, confirmed by simulation (Section 5), unless marked. ``Distance'' and ``cosine'' are to the retrained model $A(K)$ (Section 1); $t$ is the time spent in stage 2. \emph{Forget accuracy} is the fraction of forget samples still classified with their original label; \emph{test accuracy} is on fresh inputs.
 
-\textbf{1. Which loss for which budget} (squared loss, forget coordinates only, $\alpha_{\rm PT}=0.3$, $\alpha_{\rm UL}=0.2$; Figure~\ref{figfinal}, third panel). Stage 2 uses targets $b\,y$ on the forget samples, with or without an anchor; the numbers are distances. For a short stage 2, overshoot: $b=-0.5$ with an anchor ($0.063$ at $t=0.5$, $k=10^{-2}$, against $0.080$ for $b=0$ with an anchor). For a long one, zero targets with an anchor ($0.039$; the overshooting targets drift to $0.117$). Shrunk labels $+0.5y$ are slowest at every budget. At $k=1$ the crossover is earlier ($t\approx0.5$).
+\textbf{1. Which loss for which budget} (squared loss, forget coordinates only, $\alpha_{\rm PT}=0.3$, $\alpha_{\rm UL}=0.2$; Figure~\ref{figfinal}, bottom left). Stage 2 uses targets $b\,y$ on the forget samples, with or without an anchor; the numbers are distances. For a short stage 2, overshoot: $b=-0.5$ with an anchor ($0.063$ at $t=0.5$, $k=10^{-2}$, against $0.080$ for $b=0$ with an anchor). For a long one, zero targets with an anchor ($0.039$; the overshooting targets drift to $0.117$). Shrunk labels $+0.5y$ are slowest at every budget. At $k=1$ the crossover is earlier ($t\approx0.5$).
 
 \textbf{2. Ascent works after hard-label training and not after soft-label training} (simulation, $d=1000$). Cosine before stage 2 $\to$ best cosine reached along the ascent path:
 \begin{center}\small\begin{tabular}{@{}lcccc@{}}\toprule
@@ -151,12 +153,12 @@ The squared distance is mostly norm (the pretrained model is larger than the ret
 
 \textbf{4. Relearning after ascent} (soft-label pretraining, simulation only, $d=400$). After stage 2 the model is trained on $0.15\,d$ fresh labelled samples and its test accuracy is measured. NPO stopped at chance accuracy relearns to $0.585$, like a model never trained on the class ($0.59$--$0.62$). Ascent stopped at the retrained model's accuracy relearns to $0.66$--$0.67$, above the retrained model ($0.61$--$0.66$): it still carries the class. Ascent also inflates the logits (mean square $2$--$8$ against $0.1$--$0.3$).
 
-\textbf{5. SGD} (pretraining, $\gamma=0.04$, $\alpha=0.3$; Figure~\ref{figfinal}, first two panels). Mean of $\log\kappa_j$ over coordinates: $-0.011$ full batch; $-0.200$ with $n_b/n=0.1$ ($k=1$); $-0.455$ ($k=10^{-2}$). Small batches shrink the scale, i.e.\ make the model richer.
+\textbf{5. SGD} (pretraining, $\gamma=0.04$, $\alpha=0.3$; Figure~\ref{figfinal}, top). Mean of $\log\kappa_j$ over coordinates: $-0.011$ full batch; $-0.200$ with $n_b/n=0.1$ ($k=1$); $-0.455$ ($k=10^{-2}$). Small batches shrink the scale, i.e.\ make the model richer.
 
-\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_final.png}
-\caption{Lines: theory ($\pm1$ standard error over runs). Markers: simulation. Panels: SGD error and scale against the step number; distance to the retrained model against the stage-2 time for five losses; cosine against the task-vector coefficient (written $\lambda$ on the axis).}\label{figfinal}\end{figure}
-\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_distance.png}
-\caption{Stage 2 on hard labels against the retrained model. Lines: theory ($\pm1$ s.e.). Markers: simulation.}\label{figdist}\end{figure}
+\begin{figure}[!ht]\centering\includegraphics[width=0.78\linewidth]{fig_final.png}
+\caption{Lines: theory (band: $\pm1$ standard error over runs). Markers: simulation. Top: SGD. Bottom left: distance to the retrained model against the time spent in stage 2, for five losses. Bottom right: task vector.}\label{figfinal}\end{figure}
+\begin{figure}[!ht]\centering\includegraphics[width=0.9\linewidth]{fig_hard_distance.png}
+\caption{Stage 2 on hard labels, $\alpha_{\rm PT}=0.6$, $\alpha_{\rm UL}=0.3$. Lines: theory (band: $\pm1$ s.e.). Markers: simulation.}\label{figdist}\end{figure}
 
 \section{Checks against simulation}
 Nothing is fitted. ``s.e.''\ is the standard error over random seeds; ``within 2 s.e.''\ means theory and simulation differ by less than twice their combined standard error.
@@ -189,12 +191,12 @@ The $12\%$ at $k=10^{-6}$ was a fluctuation of the starting distance in a small 
 
 The trajectory solver is as noisy as a simulation of its size and is averaged over runs. Its norms sit above simulation: $1.6,1.5,1.0\%$ at $d=1000,3000,8000$ for $\alpha=0.3$, $k=1$, and $6\%$ in one run at $\alpha=0.3$ with a second stage. The gap shrinks with $d$; that it vanishes is not shown.
 
-\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_regularisers_tight.png}
-\caption{Penalty kept on. Lines: theory. Markers: finite-$d$ end points, $\pm1$ s.e.}\label{fig}\end{figure}
-\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_labels.png}
-\caption{Hard labels. Top: penalty kept on, against $\lambda$. Middle: pretraining without a penalty. Bottom: pretraining, then stage 2 on half the samples.}\label{fighard}\end{figure}
+\begin{figure}[!ht]\centering\includegraphics[width=0.8\linewidth]{fig_endpoints.png}
+\caption{End points when the scale or the penalty changes (Sections 2.2, 2.3); forget coordinates only, $\alpha_{\rm PT}=0.3$, $\alpha_{\rm UL}=0.2$. Lines: theory. Markers: exact finite-$d$ end points, $\pm1$ s.e.}\label{fig}\end{figure}
+\begin{figure}[!ht]\centering\includegraphics[width=0.85\linewidth]{fig_hard_labels.png}
+\caption{Hard labels: theory against simulation. Top: end point with a penalty kept on \eqref{hp}. Bottom: pretraining trajectory without a penalty \eqref{nl}.}\label{fighard}\end{figure}
 
-\clearpage
+\FloatBarrier
 \section{Derivation}\label{proof}
 All large-$d$ formulas come from one argument, the cavity method: add one coordinate, then add one sample, and treat each as a small perturbation of the rest. It is a derivation, not a proof; it assumes that (i) one row or column of $X$ perturbs the others to first order only, and (ii) sums over many independent entries equal their means. Entries of $X$ have variance $1/d$.
 
