@@ -40,10 +40,12 @@ cross-entropy, hard labels, penalty kept on & \eqref{T3} with a nonlinear sample
 cross-entropy, hard labels, no penalty & no end point; needs dynamics & exact, solved numerically\\
 rescaling the weights by $\sqrt\kappa$ & $c\to\kappa c$, $\beta_0\to\kappa\beta_0$ & exact\\
 weight decay, then switched off & the same, with $\kappa=e^{-2\Lambda}$ & exact\\
-mini-batch SGD & the same, with $\kappa_j=\prod_k(1-4\gamma^2g_{k,j}^2)$ per coordinate & exact; one common $\kappa$ is approximate\\
+mini-batch SGD & the same, with $\kappa_j=\prod_k(1-4\gamma^2g_{k,j}^2)$ per coordinate & exact; large-$d$ curves numerical (Section~\ref{sgdd})\\
 one-sided decay, then switched off & $c\to e^{-\Lambda}c$ and $\theta_0\to\theta_0-\Lambda$ & exact\\
 regulariser kept on & \eqref{T2} becomes a penalised fit; start forgotten & exact (convex $R$)\\
+stage 2 with retain/shared/forget blocks, anchors, references & several coupled copies of \eqref{T2} & exact (Section~\ref{multi})\\
 early stopping & targets $\to$ current predictions; needs dynamics & exact, solved numerically\\
+task vector, WHP (hard labels) & same dynamics with a reset & exact, solved numerically\\
 ascent, NPO, flipped labels on hard labels & no end point; same dynamics, different $\ell$ & exact until the weights blow up\\
 non-convex regulariser & end point depends on the path & no formula\\\bottomrule
 \end{tabular}\caption{The variants.}\label{tab}\end{table}
@@ -57,7 +59,7 @@ non-convex regulariser & end point depends on the path & no formula\\\bottomrule
 \begin{equation}
 \theta(t)=\theta_0-\sum_i\Lambda_i(t)\,z_i,\qquad \dot\Lambda_i=4\,w(m_i).
 \end{equation}
-The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point; the trajectory is given by Section~\ref{hard}. What follows is simulation (forget coordinates only, $d=400$, 10 seeds, three scales).
+The losses differ only in $w$ (ascent: $\sigma(-m)$; NPO: that times a factor that decays as the sample is forgotten). There is no end point; the trajectory is given by Section~\ref{hard}. What follows is simulation (forget coordinates only, $d=400$, 10 seeds, three scales) \emph{after soft-label pretraining to convergence}; after hard-label pretraining the first conclusion reverses (Section~\ref{hard}).
 \begin{itemize}[nosep,leftmargin=1.2em]
 \item Both can be stopped at the retrained model's held-out accuracy. The model reached is not the retrained one: its cosine to $A(D\setminus F)$ is $0.23$--$0.37$ (ascent) and $0.28$--$0.54$ (NPO), no better than doing nothing ($0.34$--$0.55$). Soft targets at the uniform label (zero logit; exact by \eqref{T2}) reach $0.44$--$0.75$. The cosine does not depend on scale, so this is not an artefact of measuring distance.
 \item Ascent inflates the logits: mean squared logit $2$--$8$ at matched accuracy, against $0.1$--$0.3$ for the reference. NPO does not ($0.2$--$0.45$).
@@ -87,6 +89,8 @@ The decay never touches $\theta$; it only shrinks the scale. After switch-off an
 \end{equation}
 the integrals taken along gradient flow. The relative error is of order $\gamma c_b$ ($11\%$ at $\gamma c_b=0.02$, $2\%$ at $0.005$); it comes from the path changing with the noise and has no closed form. As $\gamma\to0$, $\kappa\to1$ for every batch size: SGD with infinitesimal steps is gradient flow.
 
+\textbf{Large $d$, any step size and batch size.}\label{sgdd} The discrete steps obey the dynamics of Section~\ref{hard} with two changes: each sample's gradient is multiplied by a fresh Bernoulli mask (mean one) at every step, and each coordinate carries $(u,v)$ updated multiplicatively as above instead of $\theta$. This gives the whole SGD trajectory and $\E\log\kappa_j$ with no expansion in $\gamma$ (Figure~\ref{figfinal}; \texttt{sgd\_dmft.py}). Example ($\gamma=0.04$, $\alpha=0.3$): mean $\log\kappa=-0.011$ full batch, $-0.200$ at batch fraction $0.1$ ($k=1$), $-0.455$ ($k=10^{-2}$); simulation $-0.011,-0.204,-0.459$.
+
 \section{A regulariser that stays on}
 With a penalty $\lambda\sum_jR(\beta_j)$ kept on, training converges to the minimiser of loss plus penalty. For convex $R$ it is unique: \emph{the start and the scale are forgotten}. Weight decay on $(u,v)$ is $R=|\beta|$ (the cheapest factorisation of $\beta$ costs $|\beta|$), so the end point is a lasso. Large $d$: \eqref{T3} with one change,
 \begin{equation}\label{reg}
@@ -95,6 +99,18 @@ With a penalty $\lambda\sum_jR(\beta_j)$ kept on, training converges to the mini
 ($\lambda\to0$ recovers \eqref{T3}.) With several groups of samples (different targets) and several blocks of coordinates (retain, shared, forget), each block has its own $(\tau,\sigma)$ and $\bs$, $\alpha$ become sums over the groups that touch the block; the formulas are in \texttt{se\_wd.py} and \texttt{se\_blocks.py}.
 
 For non-convex $R$ (weight decay on a three-layer diagonal network gives $|\beta|^{2/3}$) this fails: different algorithms and different initialisations end at different points (norm between $0.14$ and $0.30$ in one setting), and the solution of \eqref{reg} ($0.42$) is none of them. The end point is path-dependent.
+
+\section{Several trainings on the same data}\label{multi}
+Unlearning compares models trained on overlapping data: the pretrained model, the unlearned one that starts from it, and the retrained references. Each is a converged flow, $\theta_s=\theta_{\text{parent}(s)}-Xg_s$ with $X_s^\top\beta_s=$ targets on the samples it uses ($g_s$ is zero on the others). Index the teacher by $0$. With blocks of coordinates $B$ (fraction $q_B$ of $d$) and groups of samples $a$ ($\alpha_a=n_a/d$, inputs supported on some blocks), at large $d$:
+\begin{align}
+\text{sample in group }a:&\quad p_s=\zeta_s+\sum_{m\preceq s}V_a[s,m]\,g_m,\qquad p_s=b_{s,a}\,\zeta_0\ \text{ if $s$ uses $a$},\quad g_s=0\ \text{ otherwise};\\
+\text{coordinate in block }B:&\quad \theta_s=\theta_{\text{parent}(s)}-\Big(\eta_s+\sum_{m}A_B[s,m]\,\beta_m\Big),\qquad \beta_s=c_s\sinh\theta_s .
+\end{align}
+Here $m\preceq s$ runs over $s$ and its ancestors; $(\zeta_0,\zeta_1,\dots)$ is Gaussian with covariance $C_a[s,m]=\sum_{B\in a}q_B\,\E_B\beta_s\beta_m$; the sample equations are linear, so $g=L_a\zeta$ in closed form; and
+\[
+A_B=\sum_{a\ni B}\alpha_aL_a,\qquad \operatorname{Cov}(\eta)=\sum_{a\ni B}\alpha_aL_aC_aL_a^\top,\qquad V_a[s,m]=\sum_{B\in a}q_B\,\E_B\frac{\partial\beta_s}{\partial\eta_m}.
+\]
+One system from zero is \eqref{T3}. Rescaling by $\sqrt\kappa$ is $c_s=\kappa c_{\text{parent}}$. Every distance between systems is read off $\E\beta_s\beta_m$. This replaces the Gordon argument for forget coordinates and covers retain and shared blocks, anchors, any $\kappa$, and both references at once (\texttt{multi.py}; converges in 40--90 iterations).
 
 \section{Early stopping}
 \textbf{Identity.} By \eqref{T1}, at every time $\beta(t)$ is \eqref{T2} with targets $X^\top\beta(t)$: early stopping is the same bias applied to partly fitted targets. What is missing is how the predictions move.
@@ -111,7 +127,9 @@ Forgetting to $b=0$ at small $c$ is a power law, $\beta(t)\approx\beta_0/(1+4s\b
 \end{equation}
 where $\eta$ is a Gaussian process and $K=(1-R)^{-1}$ a causal operator in time, with $R(t,s)=\E\,\partial\beta(t)/\partial\eta(s)$. The residual of a training sample is $K\zeta$, $\zeta$ Gaussian with the covariance of $\beta-a\bs$, and $\eta=\sqrt\alpha\,K\zeta$. Groups of samples with different targets or weights add their terms. This extends Nishiyama \& Imaizumi (2025) from a zero start to a switch. It is solved by one forward pass in time over sampled paths. A second copy trained on the kept samples only, driven by the same randomness, gives the distance to the retrained model at every stopping time.
 
-Its sampling noise is as large as a simulation's of the same size, so it must be averaged over runs. At $k=10^{-6}$ (seven runs of 2000 paths) the untraining distance relative to its value before stage 2 is $0.411\pm0.016$ at the best stopping time and $0.441\pm0.017$ at $\tau=6$, against $0.405$ and $0.435$ in simulation; in every run the distance is lower at the best stopping time than at $\tau=6$, and the exact converged value is higher still. The derivation is a cavity argument, not a proof, and only zero targets without an anchor have been tested.
+Its sampling noise is as large as a simulation's of the same size, so it must be averaged over runs. At $k=10^{-6}$ (seven runs of 2000 paths) the untraining distance relative to its value before stage 2 is $0.411\pm0.016$ at the best stopping time and $0.441\pm0.017$ at $\tau=6$, against $0.405$ and $0.435$ in simulation; in every run the distance is lower at the best stopping time than at $\tau=6$, and the exact converged value is higher still. The derivation is a cavity argument, not a proof.
+
+\textbf{Other targets, an anchor, and a fixed budget.} Targets $b\,y$ on the deleted samples, with or without the kept samples in the loss; reference $=$ retrained for the pretraining time ($k=10^{-2}$, $\alpha_{\mathrm{PT}}=0.3$, $\alpha_{\mathrm{UL}}=0.2$; Figure~\ref{figfinal}). Theory and simulation agree within 1.6 s.e.\ for all five losses. The best loss depends on the budget: for a short stage 2 ($t\le1$) overshooting targets $-0.5y$ with an anchor are best ($0.085$, $0.063$, $0.051$ at $t=0.25,0.5,1$, against $0.110$, $0.080$, $0.056$ for zero targets with an anchor); for a long one zero targets with an anchor win ($0.039$) and the overshooting targets drift away ($0.117$). Shrunk labels $+0.5y$ are the slowest at every budget.
 
 \section{Hard labels}\label{hard}
 Labels $y_i=\operatorname{sign}(x_i^\top\bs)$ (or sampled from $\sigma(x_i^\top\bs)$), loss $\ell(p)=\log(1+e^{-yp})$ on the logit $p=x^\top\beta$. The squared loss made the sample side of \eqref{T3} linear; now it is one scalar equation per sample.
@@ -145,12 +163,25 @@ $R_\beta=\E\,\partial\beta(t)/\partial\eta(s)$, $R_\ell=\alpha\,\E\,\partial\ell
 \item Ascent, with or without a retain term, follows NPO until it blows up (cosine $0.78$--$0.80$ / $0.70$--$0.73$ at forget accuracy $\approx0.9$).
 \item The retain term alone moves the cosine slowly ($0.76$ / $0.68$ at the end) and never lowers forget accuracy.
 \end{itemize}
-In this setting every forgetting loss beats doing nothing on the cosine. The earlier simulation (Section 2: forget coordinates only, a different deletion fraction, retrained model defined at matched accuracy) found ascent and NPO no better than doing nothing; the two have not been reconciled.
+\textbf{Why Section 2 found the opposite.} What matters is the pretraining, not the sample ratios or the stopping rule (ascent, $d=1000$, 8 seeds; cosine for doing nothing $\to$ best point on the ascent path):
+\begin{center}\small\begin{tabular}{@{}lcccc@{}}\toprule
+pretraining & $\alpha=0.3/0.2$, $k=1$ & $0.3/0.2$, $k=10^{-2}$ & $0.6/0.3$, $k=1$ & $0.6/0.3$, $k=10^{-2}$\\\midrule
+soft labels, converged & $0.52\to0.53$ & $0.42\to0.43$ & $0.70\to0.70$ & $0.64\to0.64$\\
+hard labels, stopped at $T_1$ & $0.55\to0.75$ & $0.43\to0.67$ & $0.71\to0.80$ & $0.63\to0.75$\\\bottomrule
+\end{tabular}\end{center}
+After hard-label training $\theta=-\sum_i\Lambda_iy_ix_i$, and ascent on the deleted samples lowers exactly their $\Lambda_i$: it undoes what they added. After soft-label interpolation the deleted samples entered through regression duals unrelated to $y_ix_i$, and ascent removes nothing useful. Stopping at the retrained model's accuracy is past the best point in both cases.
+
+\textbf{Other sample ratios} ($\alpha=1.5$, one fifth forgotten, $k=10^{-2}$): theory and simulation agree within 1.6 s.e. Doing nothing is already at cosine $0.93$; NPO with a retain term reaches $0.96$; flipped labels now only lower it.
+
+\textbf{Task vector and WHP.} Phase 2 trains on the forget samples only (``reinforce''). The task vector sets $w=w_{\text{pre}}-\lambda(w_{\text{reinforced}}-w_{\text{pre}})$ on $(u,v)$, a function of each coordinate's $\theta$ at two times. WHP resets to $w_{\text{pre}}$ and trains the forget samples to soft targets with the reinforced model's extra confidence subtracted; a reset is a causal map of the history, so the same forward pass applies (\texttt{whp\_tv.py}). The task vector raises the cosine steadily with $\lambda$ ($0.70\to0.81$ at $\lambda=3$, $k=1$; $0.61\to0.72$ at $k=10^{-2}$) for one point of test accuracy. WHP raises it less ($0.76$ / $0.68$) and leaves forget accuracy at $0.99$: with the subtraction coefficient $1$ it does not forget.
 
 \begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_hard_distance.png}
 \caption{Stage 2 on hard labels against the retrained model. Lines: theory ($\pm1$ s.e.). Markers: simulation.}\label{figdist}\end{figure}
 
-Still missing: a closed-form end point (there is none at finite time), and a scan over sample ratios and deletion fractions.
+There is no closed-form end point: none exists at finite time.
+
+\begin{figure}[h]\centering\includegraphics[width=\linewidth]{fig_final.png}
+\caption{Lines: theory ($\pm1$ s.e.). Markers: simulation. SGD (two panels), stage-2 budget, task vector.}\label{figfinal}\end{figure}
 
 \section{Checks}
 \begin{center}\small\begin{tabular}{@{}p{6.1cm}p{9.2cm}@{}}\toprule
@@ -170,6 +201,10 @@ hard labels, penalty kept on ($R=|\beta|$, $\beta^2$; sign and sampled labels) &
 hard labels, no penalty, pretraining dynamics & $k=1,10^{-2}$, 64 runs each: overlap, loss, accuracy within $1\%$ (1 s.e.); norm $1.5$--$3\%$ high (1.7 s.e.), gap shrinking with $d$ ($1.6,1.5,1.0\%$ at $d=1000,3000,8000$)\\
 hard labels, stage 2 (ascent, NPO, flipped labels) & 16 runs each: within 2 s.e.\ while the norm is bounded; once ascent blows up the means are dominated by a few runs and agreement is not established\\
 distance and cosine to the retrained model, five stage-2 losses, $k=1,10^{-2}$ & 16 runs each: all within 1.5 s.e.\ before blow-up; distance $3\%$ high at the start of stage 2 (the norm offset above)\\
+several trainings on the same data (Section~\ref{multi}) & 26 distances, forget-only and R/Sh/F blocks with anchor and $\kappa=0.3$, $k=1,10^{-2}$: all within 1.8 s.e.\ except one at $d=1500$ (3.6), which is within 0.2 s.e.\ at $d=3000$\\
+SGD, large $d$ & $k=1$ (batch fraction $0.1$ and $1$), $k=10^{-2}$ ($0.1$), 8 runs: norm, error, loss, $\log\kappa$ within 1.8 s.e.\\
+early stopping, non-zero targets and anchor & 5 losses, 6 budgets, $k=10^{-2}$: within 1.6 s.e.\\
+hard labels at $\alpha=1.5$; task vector; WHP & 12 runs each: within 1.7 s.e.\ (cosine consistently $1\%$ low, the finite-size offset)\\
 early-stopping dynamics & norm, overlap, unlearning distance at three scales; untraining distance at $k=10^{-6}$ to $4\%$ after averaging 7 runs\\\bottomrule
 \end{tabular}\end{center}
 Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest $2.2$ (Figure~\ref{fig}).
@@ -179,11 +214,10 @@ Across the three regulariser checks: 132 numbers, $98\%$ within 2 s.e., largest 
 
 \section*{Limits}
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item \textbf{Hard labels without a penalty have no closed form.} The trajectory is exact but numerical, noisy (average many runs), and tested at one pair of sample ratios. It is a cavity argument, not a proof.
-\item \textbf{Ascent losses:} the trajectory is verified only before the weights blow up. Its conclusions on the cosine differ from the earlier forget-coordinates simulation and the two settings have not been reconciled.
-\item \textbf{The large-$d$ curves for stage 2 from a pretrained model exist only for forget coordinates.} With retain and shared blocks, the identities are checked by gradient descent and the regulariser-kept-on curves by simulation, but there are no stage-2 curves.
-\item \textbf{SGD:} one common $\kappa$ is approximate; the batch-size formula is first order in the step size; no large-$d$ curves.
-\item \textbf{Early stopping:} a cavity derivation, numerically noisy at small scale; tested for zero targets only.
+\item \textbf{Everything dynamic is numerical.} Early stopping, hard labels without a penalty, SGD at large $d$, task vector and WHP are exact equations solved by a noisy forward pass (average many runs), derived by a cavity argument, not proved. Norms come out $1$--$3\%$ above simulation at $d=3000$; the gap shrinks with $d$ but its vanishing is not shown.
+\item \textbf{Ascent after blow-up} is not verified, and probably cannot be: the means are dominated by a few runs.
+\item \textbf{SGD:} no closed form in the step size beyond first order; the large-$d$ curves are tested for pretraining only.
+\item \textbf{Hard labels:} two sample ratios; WHP at one coefficient; forget coordinates only.
 \item \textbf{Non-convex regularisers and deeper networks:} no static formula; the end point depends on the path.
 \item All checks use Gaussian inputs, $\rho=0.2$, and (unless stated) $\alpha=0.3$ with two thirds of the forget samples deleted.
 \end{itemize}
