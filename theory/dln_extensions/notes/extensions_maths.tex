@@ -18,7 +18,7 @@ $f(x)=x^\top\beta$ with $\beta=u^2-v^2$. Inputs $x_i\sim\mathcal N(0,I_d/d)$ are
 \end{equation}
 Small $c$ is the rich regime, large $c$ the lazy one ($c=\sqrt k/2$). Since $\nabla_\beta L\in\operatorname{span}X$, so is $\theta(t)-\theta(0)$.
 
-\textbf{Two kinds of result.} If training converges, the \emph{end point} is a static problem (Section 2). If it is stopped early, or never converges, we need the \emph{trajectory} (Section 3). Section 4 lists what the theory says about unlearning, Section 5 the checks, Section 6 what is proved.
+\textbf{Two kinds of result.} If training converges, the \emph{end point} is a static problem (Section 2). If it is stopped early, or never converges, we need the \emph{trajectory} (Section 3). Section 4 lists what the theory says about unlearning, Section 5 the checks, Section 6 the derivation.
 
 \section{End points}
 \subsection{One training}
@@ -187,14 +187,72 @@ The trajectory solver is as noisy as a simulation of its size and is averaged ov
 \caption{Hard labels. Top: penalty kept on, against $\lambda$. Middle: pretraining without a penalty. Bottom: pretraining, then stage 2 on half the samples.}\label{fighard}\end{figure}
 
 \clearpage
-\section{What is proved}\label{proof}
-Every formula, curve and simulation in Sections 1--5 is for the network as defined in Section 1. This section is only about which of those statements have a rigorous proof. For the trajectory equations a proof exists only for a variant in which each weight is capped at a large level; no proof is known for the network itself, including in the published single-stage case.
+\section{Derivation}\label{proof}
+All large-$d$ formulas come from one argument, the cavity method: add one coordinate, then add one sample, and treat each as a small perturbation of the rest. It is a derivation, not a proof; it assumes that (i) one row or column of $X$ perturbs the others to first order only, and (ii) sums over many independent entries equal their means. Entries of $X$ have variance $1/d$.
 
-\textbf{Exact by elementary arguments:} \eqref{T1}, \eqref{T2}, everything in Section 2.2, and Section 3.1.
+\subsection{End point with a penalty: \eqref{hp}, \eqref{reg}, \eqref{T3}}
+Minimise $\sum_i\ell(x_i^\top\beta)+\lambda\sum_jR(\beta_j)$. Write $p_i=x_i^\top\beta$ and $g_i=\ell'(p_i)$. Stationarity in $\beta_j$:
+\begin{equation}\label{st}
+\sum_iX_{ji}\,g_i+\lambda R'(\beta_j)=0 .
+\end{equation}
+\textbf{Add a coordinate $j$.} Without it, the system has gradients $g_i^{\setminus j}$, independent of the row $X_j$. With it, sample $i$'s prediction shifts by $X_{ji}\beta_j$ and its label input by $X_{ji}\bs_j$, both of order $d^{-1/2}$, so
+\[
+g_i=g_i^{\setminus j}+\frac{\partial g_i}{\partial\zeta_i}X_{ji}\beta_j+\frac{\partial g_i}{\partial\zeta_{0,i}}X_{ji}\bs_j ,
+\]
+where $\zeta_i$ is the prediction and $\zeta_{0,i}$ the teacher's logit before the shift. Insert into \eqref{st}. The first term gives $\eta_j=\sum_iX_{ji}g_i^{\setminus j}$, Gaussian with variance $C=\alpha\,\E g^2$. In the others $\sum_iX_{ji}^2(\cdot)\to\alpha\,\E(\cdot)$:
+\begin{equation}\label{cav1}
+\eta+A\beta-B\bs+\lambda R'(\beta)=0,\qquad A=\alpha\,\E\frac{\partial g}{\partial\zeta},\quad B=-\alpha\,\E\frac{\partial g}{\partial\zeta_0}.
+\end{equation}
+This is $\beta=\prox_{\lambda R/A}((B\bs+\sqrt C\,h)/A)$.
 
-\textbf{Derived by the cavity method and checked numerically:} \eqref{T3}, \eqref{reg}, \eqref{ms}--\eqref{mc}, \eqref{hp}, \eqref{nl}.
+\textbf{Add a sample $i$.} Without it, the weights $\beta^{\setminus i}$ are independent of $x_i$, so $\zeta_i=x_i^\top\beta^{\setminus i}$ and $\zeta_{0,i}=x_i^\top\bs$ are jointly Gaussian with the covariance stated under \eqref{hp}. With it, the field $\eta_j$ of every coordinate shifts by $X_{ji}g_i$, so $\beta_j=\beta_j^{\setminus i}+\frac{\partial\beta_j}{\partial\eta_j}X_{ji}g_i$ and
+\begin{equation}\label{cav2}
+p_i=\zeta_i+\Big(\sum_jX_{ji}^2\frac{\partial\beta_j}{\partial\eta_j}\Big)g_i=\zeta_i-V\,\ell'(p_i),\qquad V=-\E\frac{\partial\beta}{\partial\eta}=\frac{\E[\prox{}']}{A}.
+\end{equation}
+Differentiating \eqref{cav2} gives $\partial g/\partial\zeta=\ell''/(1+V\ell'')$. Equations \eqref{cav1}--\eqref{cav2} are \eqref{hp}.
 
-\textbf{Proved for the capped variant only:} \eqref{nl}, as follows. Capped (``truncated'') means $\beta=w_M(\theta)=c\sinh(\tau_M(\theta))$, with $\tau_M$ smooth, nondecreasing, the identity on $[-M,M]$ and constant beyond $M+1$. The truncated flow is the true one while $\max_j|\theta_j|\le M$. Assume $X$ has independent sub-Gaussian entries of variance $1/d$, so that $\|X\|\le C_X$ for large $d$.
+\emph{Squared loss.} $g=p-\zeta_0$, so \eqref{cav2} gives $g=(\zeta-\zeta_0)/(1+V)$, $A=B=\alpha/(1+V)$, and \eqref{cav1} becomes $\beta=\prox_{\tau R}(\bs+\sigma h)$ with $\tau=\lambda/A$, $\sigma^2=C/A^2=\E(\beta-\bs)^2/\alpha$. Then $V=\tau\E[\prox{}']/\lambda$ and $A=\alpha/(1+V)$ give $\E[\prox{}']=\alpha-\lambda/\tau$: this is \eqref{reg}.
+
+\emph{No penalty, interpolation.} Replace the penalty by the constraint $p=\zeta_0$ and stationarity by $\asinh(\beta_j/c)=-\sum_iX_{ji}g_i$, with $g$ now the multiplier. \eqref{cav2} reads $\zeta_0=\zeta+V'g$ with $V'=\E\,\partial\beta/\partial\eta<0$, so $g=(\zeta_0-\zeta)/V'$, and the coordinate equation is $\asinh(\beta/c)+\frac{\alpha}{|V'|}(\beta-\bs)+\eta=0$: $\beta=\prox_{\tau\psi_c}(\bs+\sigma h)$ with $\tau=|V'|/\alpha$. Then $|V'|=\tau\E[\prox{}']$ gives $\E[\prox{}']=\alpha$: this is \eqref{T3}.
+
+\subsection{Several trainings: \eqref{ms}--\eqref{mc}}
+The same two steps, with one multiplier $g_{s,i}$ per model $s$ and sample $i$. Stationarity is $\theta_s-\theta_{\text{parent}(s)}=-Xg_s$.
+
+\textbf{Add a coordinate.} Sample $i$'s inputs to every model shift, $\zeta_{m,i}\to\zeta_{m,i}+X_{ji}\beta_{m,j}$ (with $m=0$ the teacher), so $\sum_iX_{ji}g_{s,i}=\eta_{s}+\sum_mA[s,m]\beta_m$ with $A[s,m]=\sum_a\alpha_a\E_a\,\partial g_s/\partial\zeta_m$ and $\operatorname{Cov}(\eta_s,\eta_m)=\sum_a\alpha_a\E_a\,g_sg_m$. This is \eqref{mc}.
+
+\textbf{Add a sample.} The fields of all models shift by $X_{ji}g_{m,i}$, and model $s$ feels the field of $m$ only if $m$ is $s$ or an ancestor: $p_s=\zeta_s+\sum_{m\preceq s}V[s,m]g_m$, $V[s,m]=\E\,\partial\beta_s/\partial\eta_m$. This is \eqref{ms}. The constraints make it linear in $g$, which is why $g=L\zeta$.
+
+With blocks and groups, $\sum_iX_{ji}^2$ runs over the groups whose inputs touch block $B$ and $\sum_jX_{ji}^2$ over the blocks that group $a$ touches; this gives the weights $\alpha_a$ and $q_B$.
+
+\subsection{Trajectories: \eqref{nl}}
+The same two steps, with time in place of the model index. The flow is $\dot\theta_j=-4\sum_iX_{ji}\,\ell_t'(p_i(t))$.
+
+\textbf{Add a coordinate.} Sample $i$'s prediction path shifts by $X_{ji}\beta_j(s)$, $s\le t$, so
+\[
+\sum_iX_{ji}\,\ell_t'(p_i(t))=\eta_j(t)+\int_0^t\Big(\sum_iX_{ji}^2\frac{\delta\ell_t'(p_i(t))}{\delta\zeta_i(s)}\Big)\beta_j(s)\,ds+\Big(\sum_iX_{ji}^2\frac{\partial\ell_t'(p_i(t))}{\partial\zeta_{0,i}}\Big)\bs_j ,
+\]
+which is the second equation of \eqref{nl} with $R_\ell$ and $\mu$ as defined there; $\eta_j(t)=\sum_iX_{ji}\ell_t'(p_i^{\setminus j}(t))$ is a Gaussian process with covariance $\alpha\,\E\,\ell'(p(t))\ell'(p(s))$.
+
+\textbf{Add a sample.} Its gradient shifts the field of coordinate $j$ at every earlier time $s$ by $X_{ji}\ell_s'(p_i(s))$, so
+\[
+p_i(t)=\zeta_i(t)+\int_0^t\Big(\sum_jX_{ji}^2\frac{\delta\beta_j(t)}{\delta\eta_j(s)}\Big)\ell_s'(p_i(s))\,ds ,
+\]
+the first equation of \eqref{nl}; $\zeta_i(t)=x_i^\top\beta^{\setminus i}(t)$ is Gaussian with the covariance of $\beta$.
+
+$\mu$ is computed without differentiating through the label: by Gaussian integration by parts, $\E[\zeta_0\,\ell_t'(p(t))]=\E\,\partial_{\zeta_0}\ell_t'+\int_0^t\E\frac{\delta\ell_t'}{\delta\zeta(s)}\,\E[\beta(s)\bs]\,ds$.
+
+SGD: replace the flow by the steps \eqref{sgd} and multiply $\ell'$ by the batch mask; nothing else changes. Task vector and WHP: a reset of $\theta$ to its value at $T_1$ is a function of the fields before $T_1$, so the response functions are those of the restored state.
+
+\subsection{What supports the two assumptions}
+(i) For pretraining with squared loss, removing one coordinate provably moves the multipliers by $O(1)$ in norm, against a total of order $\sqrt d$ (Appendix, under ``Removing the truncation''). (ii) is a law of large numbers. For end points of convex problems, formulas of this type are proved in the literature by Gordon's comparison inequality; for trajectories, a proof exists for a capped variant of the network (Appendix). Otherwise the support is Section 5.
+
+\section*{Scope}
+Gaussian inputs, $\rho=0.2$. Hard-label trajectories: three pairs of sample ratios, forget coordinates only. Penalties: convex only.
+
+\normalsize
+\appendix
+\section{Rigorous statements}
+The trajectory equations \eqref{nl} can be proved for a variant of the network in which each weight is capped at a large level. No proof is known for the network itself, including in the published single-stage case. Capped (``truncated'') means $\beta=w_M(\theta)=c\sinh(\tau_M(\theta))$, with $\tau_M$ smooth, nondecreasing, the identity on $[-M,M]$ and constant beyond $M+1$. The truncated flow is the true one while $\max_j|\theta_j|\le M$. Assume $X$ has independent sub-Gaussian entries of variance $1/d$, so that $\|X\|\le C_X$ for large $d$.
 
 \textbf{Published theorem} (Nishiyama \& Imaizumi 2025, Thm.\ 4, extending Celentano, Cheng \& Montanari 2021). For $\dot\Theta=p_t(g,\Theta)$, $g=\frac1\alpha X\ell_t(f;z)$, $f=X^\top w_t(\Theta)$, with $p_t,w_t,\ell_t$ and their Jacobians Lipschitz in the state and in $t$, and $\Theta(0)$, $z$ independent of $X$: the empirical law of the paths $\Theta_j(\cdot)$ converges almost surely in $W_2$ to the solution of the dynamical equations.
 
@@ -236,12 +294,9 @@ So it suffices that $\beta_j^2$ is uniformly integrable along the true flow, uni
 with $S_j$ sub-Gaussian. Hence the truncation touches a vanishing fraction of coordinates, but $\beta_j^2$ is bounded only by a double exponential of a Gaussian. The missing step is that the feedback of the other coordinates on coordinate $j$ is restoring at every time, not only on average.
 \item \emph{That $P^0$ solves the equations with a sharp switch or hard labels.} It is defined as the limit of the smoothed solutions.
 \item \emph{SGD.} By \eqref{sgd} the weights are a function of the gradient history, so SGD is a general first-order method (Celentano, Montanari \& Wu 2020), whose reduction to message passing gives a limit for a truncated iteration with clipped gradients. The identification of that limit with \eqref{nl} is not written out.
-\item \emph{The static formulas} \eqref{T3}, \eqref{reg}, \eqref{ms}--\eqref{mc}, \eqref{hp}. For one convex training, formulas of this type are proved in the literature by Gordon's comparison inequality; for coupled trainings no proof is attempted.
 \end{itemize}
 The hypotheses of the published theorem were checked against Proposition 1 by querying its appendix, not by reading it in full. Its own application writes the update as a product of weight and gradient, which is not jointly Lipschitz; the mirror form above avoids this.
 
-\section*{Scope}
-Gaussian inputs, $\rho=0.2$. Hard-label trajectories: three pairs of sample ratios, forget coordinates only. Penalties: convex only.
 
 \small\textbf{References.} Woodworth et al., COLT 2020. Even, Pesme, Gunasekar, Flammarion, NeurIPS 2023. Jacobs, Zhou, Burkholz, ICML 2025. Nishiyama, Imaizumi, arXiv:2510.01930. Celentano, Cheng, Montanari, arXiv:2112.07572. Celentano, Montanari, Wu, COLT 2020.
 \end{document}
