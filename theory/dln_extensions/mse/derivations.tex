@@ -1,0 +1,212 @@
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=2.1cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,enumitem}
+\usepackage[T1]{fontenc}\usepackage{lmodern}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
+\newcommand{\bs}{\beta^\star}\newcommand{\E}{\mathbb E}\newcommand{\asinh}{\operatorname{arcsinh}}
+\newcommand{\step}[1]{\par\smallskip\textbf{Step #1.}\ }
+\title{Derivations: squared-loss unlearning in the diagonal network}
+\author{}\date{25 November 2026}
+\begin{document}\maketitle
+
+Sections 1--6 are exact (finite $d$, any data). Sections 7--9 are the large-$d$ theory, derived by the cavity method: a derivation, not a proof. Each numbered result is followed by its derivation.
+
+\section{Setting}
+Network: $f(x)=x^\top\beta$, $\beta=u^2-v^2$ entrywise, $u,v\in\mathbb R^d$, positive. The samples $x_i$ are the columns of $X$. A training stage minimises
+\[
+L=\tfrac12\sum_i w_i\,(x_i^\top\beta-t_i)^2
+\]
+by gradient flow on $(u,v)$, with weights $w_i$ and targets $t_i$ (pretraining: $w_i=1$, $t_i=y_i$). Write $G=\nabla_\beta L=\sum_iw_i(x_i^\top\beta-t_i)\,x_i\in\mathbb R^d$.
+
+\section{The flow in one variable}
+\textbf{Result 1.} Along gradient flow, $c=2uv$ is constant in time (entrywise), and
+\begin{equation}\label{mf}
+\beta=c\sinh\theta,\qquad\dot\theta=-4G,\qquad\theta=\log(u/v).
+\end{equation}
+\step1 Chain rule. $\partial\beta_j/\partial u_j=2u_j$ and $\partial\beta_j/\partial v_j=-2v_j$, so
+\[
+\dot u=-\frac{\partial L}{\partial u}=-2u\,G,\qquad\dot v=-\frac{\partial L}{\partial v}=+2v\,G\quad\text{(entrywise).}
+\]
+\step2 The product is conserved: $\frac{d}{dt}(uv)=\dot uv+u\dot v=-2uvG+2uvG=0$.
+\step3 The ratio moves linearly in $G$: $\frac{d}{dt}\log u=-2G$, $\frac{d}{dt}\log v=+2G$, so $\dot\theta=-4G$.
+\step4 Express $\beta$. From $uv=c/2$ and $u/v=e^\theta$: $u^2=\frac c2e^{\theta}$, $v^2=\frac c2e^{-\theta}$, so $\beta=\frac c2(e^\theta-e^{-\theta})=c\sinh\theta$.
+
+\textbf{Consequence.} $G$ is a combination of the $x_i$, so $\theta(t)-\theta(0)\in\operatorname{span}X$ at all times. Also $u^2+v^2=c\cosh\theta=\sqrt{\beta^2+c^2}$, hence
+\begin{equation}\label{metric}
+\dot\beta=c\cosh\theta\,\dot\theta=-4\,(u^2+v^2)\,G .
+\end{equation}
+The squared weight norm $u_j^2+v_j^2$ of coordinate $j$ is the rate at which it moves.
+
+\section{Where a stage ends}
+Define the convex function $\psi_c$ by $\psi_c'(\beta)=\asinh(\beta/c)$, $\psi_c(0)=0$:
+\[
+\psi_c(\beta)=\int_0^\beta\asinh(s/c)\,ds=\beta\,\asinh(\beta/c)-\sqrt{\beta^2+c^2}+c ,
+\]
+and its Bregman divergence $D_c(\beta,\beta_0)=\psi_c(\beta)-\psi_c(\beta_0)-\psi_c'(\beta_0)(\beta-\beta_0)$, summed over coordinates.
+
+\textbf{Result 2.} If a stage starts at $\beta_0$ with scale $c$ and converges to zero loss on its samples, it ends at
+\begin{equation}\label{proj}
+\beta_{\rm end}=\arg\min_\beta D_c(\beta,\beta_0)\quad\text{s.t.}\quad x_i^\top\beta=t_i\ \ \forall i .
+\end{equation}
+\step1 Write the optimality conditions of \eqref{proj}. With one multiplier $a_i$ per constraint, stationarity in $\beta$ reads $\psi_c'(\beta)-\psi_c'(\beta_0)=-Xa$, i.e.\ $\asinh(\beta/c)-\asinh(\beta_0/c)\in\operatorname{span}X$, together with the constraints.
+\step2 The flow satisfies them. By Result 1, $\asinh(\beta/c)=\theta$ and $\theta_{\rm end}-\theta_0=-4\int_0^\infty G\,dt=-Xa$ with $a_i=4\int_0^\infty w_i(x_i^\top\beta-t_i)dt$. Zero loss gives the constraints.
+\step3 $\psi_c$ is strictly convex, so the point satisfying these conditions is unique.
+
+\textbf{Result 3 (two regimes).} Per coordinate:
+\begin{align*}
+|\beta|,|\beta_0|\gg c,\ \text{same sign:}&\quad D_c\approx|\beta|\log\frac{|\beta|}{|\beta_0|}-|\beta|+|\beta_0| &&\text{(does not depend on $c$)},\\
+\beta_0=0,\ |\beta|\gg c:&\quad D_c\approx|\beta|\Big(\log\frac{2|\beta|}{c}-1\Big) &&\text{(a new coordinate costs }\propto\log\tfrac1c),\\
+|\beta|,|\beta_0|\ll c:&\quad D_c\approx\frac{(\beta-\beta_0)^2}{2c} &&\text{(squared distance)}.
+\end{align*}
+\step1 For $|s|\gg c$, $\asinh(s/c)\approx\operatorname{sign}(s)\log(2|s|/c)$ and $\sqrt{s^2+c^2}\approx|s|$, so $\psi_c(s)\approx|s|(\log\frac{2|s|}c-1)$. This is the second line.
+\step2 Insert into $D_c$ for $\beta,\beta_0>0$: $\beta(\log\frac{2\beta}c-1)-\beta_0(\log\frac{2\beta_0}c-1)-\log\frac{2\beta_0}c(\beta-\beta_0)=\beta\log\frac\beta{\beta_0}-\beta+\beta_0$.
+\step3 For $|s|\ll c$, $\asinh(s/c)\approx s/c$, so $\psi_c(s)\approx s^2/2c$ and $D_c$ is its quadratic Bregman divergence.
+
+The first two lines are the \emph{rich} regime (changing existing weights is cheap, creating new ones is expensive); the third is the \emph{lazy} regime.
+
+\section{What each operation does}
+\textbf{Result 4 (rescaling).} Multiplying $u,v$ by $\sqrt S$ gives $\beta\to S\beta$ and $c\to Sc$. Finetuning after it ends at
+\begin{equation}\label{resc}
+\beta_{\rm end}=S\cdot\arg\min_{\beta'}D_c(\beta',\beta_{\rm pre})\quad\text{s.t.}\quad x_i^\top\beta'=t_i/S .
+\end{equation}
+In words: rescaling by $S$ is the same as finetuning the unrescaled model to targets divided by $S$, then multiplying the result by $S$.
+\step1 $\beta=u^2-v^2\to S\beta$ and $c=2uv\to Sc$.
+\step2 By Result 2 the end point minimises $D_{Sc}(\beta,S\beta_{\rm pre})$ subject to $x_i^\top\beta=t_i$.
+\step3 $\psi_c(\beta)=c\,\phi(\beta/c)$ with $\phi(x)=x\asinh x-\sqrt{x^2+1}+1$, so $\psi_{Sc}(S\beta')=S\psi_c(\beta')$ and $\psi_{Sc}'(S\beta')=\psi_c'(\beta')$. Hence $D_{Sc}(S\beta',S\beta_{\rm pre})=S\,D_c(\beta',\beta_{\rm pre})$. Substitute $\beta=S\beta'$.
+
+\textbf{Corollary (no shared block, forget-to-zero).} The forget block ends at $S$ times where it ends for $S=1$.
+\step1 With no shared block the retain samples have no entries on the forget block, so the constraints, and therefore \eqref{resc}, separate into a retain problem and a forget problem.
+\step2 The forget problem has targets $0/S=0$: its solution $\beta'_f$ does not depend on $S$, and $\beta_{f,\rm end}=S\beta'_f$.
+
+Consequences, with $\delta_k=x_k^\top\beta'_f-y_k$ the change forget-to-zero makes on a left-over sample at $S=1$: its error after rescaling is $((S-1)y_k+S\delta_k)^2$, and the distance to the retain-only model (whose forget block is zero, Result 8) is $S^2\|\beta'_f\|^2/d$. $S\to0$ erases the class; $S>1$ re-amplifies what forgetting removed, on every direction except $F$ itself, which stays pinned at zero. Simulation, blocks $(1,0,1)$: distance $0.002,0.002,0.012,0.096$ at $S=0.1,0.3,1,3$; $S^2\times0.012$ gives $0.0001,0.001,0.012,0.108$.
+
+\textbf{Result 5 (weight decay).} With the penalty $\frac\lambda2(\|u\|^2+\|v\|^2)$ added to $L$: $c(t)=c(0)e^{-2\lambda t}$ and $\dot\theta=-4G$ as before. If it stays on until convergence, the end point solves
+\[
+\min_\beta\ L(\beta)+\tfrac\lambda2\|\beta\|_1 .
+\]
+\step1 The penalty adds $-\lambda u$ and $-\lambda v$: $\dot u=-2uG-\lambda u$, $\dot v=2vG-\lambda v$.
+\step2 $\frac d{dt}(uv)=-2\lambda uv$, so $c$ decays; $\frac d{dt}\log(u/v)=-4G$, unchanged.
+\step3 Stationary points: for each coordinate, $u(2G+\lambda)=0$ and $v(2G-\lambda)=0$. Since $c\to0$, at most one of $u,v$ survives. If $\beta>0$ ($u>0$): $G=-\lambda/2$. If $\beta<0$: $G=+\lambda/2$. If $\beta=0$: $|G|\le\lambda/2$ (otherwise one of $u,v$ grows). These are the optimality conditions of the lasso problem above.
+
+\textbf{Result 6 (SGD).} One step of size $\gamma$ with mini-batch gradient $G$ is exactly
+\[
+\theta\leftarrow\theta-2\operatorname{artanh}(2\gamma G),\qquad c\leftarrow c\,(1-4\gamma^2G^2).
+\]
+\step1 The step is $u\leftarrow u(1-2\gamma G)$, $v\leftarrow v(1+2\gamma G)$.
+\step2 $uv\leftarrow uv(1-4\gamma^2G^2)$; $\log\frac uv\leftarrow\log\frac uv+\log\frac{1-2\gamma G}{1+2\gamma G}=\log\frac uv-2\operatorname{artanh}(2\gamma G)$.
+
+So weight decay and SGD can only shrink $c$.
+
+\section{How forgetting spreads: the local rule}
+\textbf{Result 7.} To first order, finetuning from $\beta_0$ to targets $t$ on samples $X$ changes $\beta$ by
+\begin{equation}\label{lin}
+\Delta\beta=M\,X\,(X^\top MX)^{-1}(t-X^\top\beta_0),\qquad M=\operatorname{diag}(u_j^2+v_j^2)\ \text{at }\beta_0 .
+\end{equation}
+\step1 By \eqref{metric}, $\dot\beta=-4MG$ with $G\in\operatorname{span}X$. Freezing $M$ at its initial value, $\Delta\beta=MX\lambda$ for some $\lambda$.
+\step2 Impose the constraints $X^\top(\beta_0+\Delta\beta)=t$ and solve for $\lambda$.
+
+\textbf{Spread to an input not in the loss.} Take forget-to-zero on $n_F$ samples and ignore the retain term. Let $x$ be a forget-class input independent of $\Delta\beta$, and $m_F$ the mean squared change on $F$. Then
+\begin{equation}\label{spread}
+\frac{\E(x^\top\Delta\beta)^2}{m_F}\approx\frac{n_F}{d_{\rm eff}},\qquad d_{\rm eff}=\frac{(\sum_jM_j)^2}{\sum_jM_j^2}\quad\text{(sums over the coordinates the forget class sees).}
+\end{equation}
+\step1 $x$ has independent entries of variance $1/d$ on those coordinates, so $\E(x^\top\Delta\beta)^2=\|\Delta\beta\|^2/d$.
+\step2 With $r=t-X^\top\beta_0$: $\|\Delta\beta\|^2=r^\top K^{-1}(X^\top M^2X)K^{-1}r$, $K=X^\top MX$.
+\step3 For $n_F\ll d_{\rm eff}$ the samples are nearly orthogonal in these metrics: $K\approx\frac1d\sum_jM_j\,I$ and $X^\top M^2X\approx\frac1d\sum_jM_j^2\,I$. Insert, and use $\|r\|^2=n_Fm_F$.
+
+Flat metric ($M=I$): $d_{\rm eff}$ is the number of coordinates the class sees. After small-$k$ pretraining $M_j=\sqrt{\beta_j^2+c^2}$ is concentrated on the learned coordinates and $d_{\rm eff}$ is their effective number. Baseline: $d_{\rm eff}=0.28$ of the class coordinates. Error on left-over samples relative to error on $F$, at $|F|/|F_{\rm full}|=0.1,0.5,0.9$: \eqref{spread} gives $0.11,0.53,0.96$; \eqref{lin} with the retain term $0.13,0.55,0.77$; simulation $0.12,0.40,0.72$; flat metric $0.03,0.16,0.33$. (For a left-over sample $x$ is not independent of $M$; this is neglected.) Combined with Result 4 for the rescaling: $0.85,0.77,0.55,0.43$ at $S=0.1,0.3,1,3$ against $0.67,0.56,0.40,0.35$ in simulation.
+
+\section{Facts about losses and references}
+\textbf{Result 8.} The retain-only model is zero on the forget block. \emph{Derivation:} it starts at $\theta=0$ and $\theta$ stays in the span of the retain samples (Result 1), which are zero on the forget block; $\beta=c\sinh0=0$ there.
+
+\textbf{Result 9.} With no shared block a forget term cannot change the retain block. \emph{Derivation:} its gradient is a combination of forget samples, zero on the retain block; by \eqref{mf} $\theta$ does not move there.
+
+\textbf{Result 10.} From a model that fits $F$, the signed loss and pure ascent do not move. \emph{Derivation:} their forget gradient is $-\mu_f\sum_F(x_i^\top\beta-y_i)x_i=0$, and the retain gradient is zero as well.
+
+\textbf{Result 11.} A target $b\,y_i$ fitted on $F$ leaves error $(1-b)^2\,\overline{y^2}$ on $F$. \emph{Derivation:} $x_i^\top\beta-y_i=(b-1)y_i$. (Simulation: $1.311$, $2.341$ for $b=-0.5,-1$; formula $1.31$, $2.33$.)
+
+\section{Untied layers (Azulay et al.\ 2021)}
+Network per coordinate: $w=u_+v_+-u_-v_-$. Let $g=\nabla_wL$ and $R=\frac12(u_+^2+v_+^2+u_-^2+v_-^2)$.
+
+\textbf{Result 12.} $\dot w=-2R\,g$; $c^2=R^2-w^2$ is conserved; $w=c\sinh\theta$ with $\dot\theta=-2g$. Results 2--4 and 7 hold with this $c$ and $M=2R$.
+\step1 $\dot u_+=-gv_+$, $\dot v_+=-gu_+$, $\dot u_-=+gv_-$, $\dot v_-=+gu_-$.
+\step2 $\dot w=\dot u_+v_++u_+\dot v_+-\dot u_-v_--u_-\dot v_-=-g(u_+^2+v_+^2+u_-^2+v_-^2)=-2Rg$.
+\step3 $\dot R=u_+\dot u_++v_+\dot v_++u_-\dot u_-+v_-\dot v_-=-2g\,u_+v_++2g\,u_-v_-=-2g\,w$.
+\step4 $\frac d{dt}(R^2-w^2)=2R(-2gw)-2w(-2Rg)=0$.
+\step5 With $c$ constant and $R=\sqrt{w^2+c^2}$: $\dot w=-2g\sqrt{w^2+c^2}$, i.e.\ $\frac d{dt}\asinh(w/c)=-2g$.
+
+Special cases. $u_+=u_-=u_0$, $v_+=v_-=v_0$ at the start: $w=0$, $c=u_0^2+v_0^2$, which is their Theorem 4.1 ($\sqrt k=2c$). $u_\pm=v_\pm$: our network, $c=2u_+u_-$. Steps 1--5 are my derivation for a general start, checked numerically; their general statement (Appendix B) was not in the copy I read.
+
+\textbf{Layer rescaling.} $u_\pm\to au_\pm$, $v_\pm\to v_\pm/a$ keeps $w$. On a trained coordinate of our network ($u_+=v_+=\sqrt w$, $u_-=v_-\approx0$): $R=\frac w2(a^2+a^{-2})$, so $c=\sqrt{R^2-w^2}=\frac w2|a^2-a^{-2}|$. It does not exist for $\beta=u^2-v^2$.
+
+\section{Large $d$: the pretrained model and the references}
+Now $x_i\sim\mathcal N(0,1/d)$ on the coordinates its class sees, and $n,d\to\infty$. Take first one class seeing all coordinates, $n=\alpha d$ samples, labels $y_i=x_i^\top\bs$, training from zero to interpolation. By Result 2 (Step 2) the end point satisfies
+\begin{equation}\label{kkt}
+\theta_j=-\sum_iX_{ji}a_i,\qquad\beta_j=c\sinh\theta_j,\qquad\sum_jX_{ji}\beta_j=y_i ,
+\end{equation}
+with $a_i$ the accumulated gradient of sample $i$. The cavity method asks what one coordinate, and one sample, see of the rest. Two assumptions: removing one row or column of $X$ changes the others to first order only; sums of many independent terms equal their means.
+
+\textbf{Result 13.} One coordinate and one sample obey
+\begin{equation}\label{st}
+\theta+A(\beta-\bs)=-\eta,\quad\beta=c\sinh\theta;\qquad\zeta+Va=y;\qquad A=-\frac\alpha V,\quad V=\E\frac{\partial\beta}{\partial\eta}=-\E\frac{\sqrt{\beta^2+c^2}}{1+A\sqrt{\beta^2+c^2}} ,
+\end{equation}
+where $\eta\sim\mathcal N(0,\alpha\,\E a^2)$ and $(z,\zeta)$, with $y=z$, is Gaussian with the covariance of $(\bs,\beta)$ over coordinates.
+
+\step1 \emph{Add a sample} (index $0$) to a system solved without it. Its inputs are independent of that solution $\beta^{\setminus0}$, so $\zeta=x_0^\top\beta^{\setminus0}$ and $z=x_0^\top\bs$ are Gaussian with variances $\E\beta^2$, $\E(\bs)^2$ and covariance $\E\beta\bs$. Once added, the sample gets some $a_0$, which by \eqref{kkt} shifts every $\theta_j$ by $-X_{j0}a_0$. Call $\eta_j$ the quantity with $\theta_j=-\eta_j+\dots$; it shifts by $X_{j0}a_0$, so $\beta_j=\beta_j^{\setminus0}+\frac{\partial\beta_j}{\partial\eta_j}X_{j0}a_0$. The sample's prediction is
+\[
+\sum_jX_{j0}\beta_j=\zeta+\Big(\sum_jX_{j0}^2\frac{\partial\beta_j}{\partial\eta_j}\Big)a_0=\zeta+Va_0,
+\]
+using $\sum_jX_{j0}^2(\cdot)\to\E(\cdot)$. Interpolation gives $\zeta+Va_0=y$, so $a_0=(y-\zeta)/V$.
+\step2 \emph{Add a coordinate} (index $0$). Without it the samples have $a_i^{\setminus0}$, independent of the row $X_{0\cdot}$. With it, sample $i$'s prediction gains $X_{0i}\beta_0$ and its label gains $X_{0i}\bs_0$: the rest of the model must now fit $y_i-X_{0i}(\beta_0-\bs_0)$. By Step 1, $a_i$ responds to its label with slope $1/V$: $a_i=a_i^{\setminus0}-\frac1VX_{0i}(\beta_0-\bs_0)$. Insert in \eqref{kkt}:
+\[
+\theta_0=-\sum_iX_{0i}a_i^{\setminus0}+\frac1V\Big(\sum_iX_{0i}^2\Big)(\beta_0-\bs_0)=-\eta_0-A(\beta_0-\bs_0),
+\]
+with $\sum_iX_{0i}^2\to\alpha$, $A=-\alpha/V$, and $\eta_0=\sum_iX_{0i}a_i^{\setminus0}$ Gaussian with variance $\frac1d\sum_ia_i^2=\alpha\,\E a^2$.
+\step3 \emph{Close.} Differentiate the coordinate equation in $\eta$: $d\theta\,(1+A\sqrt{\beta^2+c^2})=-d\eta$, and $d\beta=\sqrt{\beta^2+c^2}\,d\theta$. This gives $V$.
+
+\textbf{Equivalent form.} \eqref{st} is $\beta=\arg\min_b\{\tau\psi_c(b)+\frac12(b-\bs-\sigma h)^2\}$, $h\sim\mathcal N(0,1)$, with $\sigma^2=\E(\beta-\bs)^2/\alpha$ and $\tau$ fixed by $\E\,\partial\beta/\partial(\bs+\sigma h)=\alpha$. \emph{Derivation:} divide the coordinate equation by $A$: $\frac1A\psi_c'(\beta)+\beta-\bs+\eta/A=0$, so $\tau=1/A$ and $\sigma^2=\operatorname{Var}\eta/A^2$. Since $y-\zeta=x_0^\top(\bs-\beta^{\setminus0})$ has variance $\E(\beta-\bs)^2$, $\operatorname{Var}\eta=\alpha\E(\beta-\bs)^2/V^2$, and $A^2V^2=\alpha^2$. Finally $V=-\frac1A\E\,\partial\beta/\partial(\bs+\sigma h)$ and $A=-\alpha/V$ give the last condition.
+
+\textbf{Blocks and groups.} With several sample groups $a$ ($\alpha_ad$ samples each) and coordinate blocks $B$ (a fraction $q_B$ of the coordinates), the sums in Steps 1--2 run over what each touches: $V_a=\sum_{B\text{ seen by }a}q_B\,\E_B\frac{\partial\beta}{\partial\eta}$, $A_B=-\sum_{a\text{ seeing }B}\alpha_a/V_a$, $\operatorname{Var}\eta_B=\sum_{a\text{ seeing }B}\alpha_a\E_aa^2$. Label noise: $y=z+\varepsilon$ in the sample equation. The pretrained model uses all groups; the references use fewer. Solving them with the same Gaussian draws gives their overlaps.
+
+\textbf{With weight decay kept on.} By Result 5 the conditions are $\sum_iX_{ji}r_i+\frac\lambda2s_j=0$, $r_i=x_i^\top\beta-y_i$, $s_j\in\partial|\beta_j|$. The same two steps, with $r$ in place of $a$, give
+\[
+\zeta+Vr-y=r\ \Rightarrow\ r=\frac{\zeta-y}{1-V},\qquad\eta+A(\beta-\bs)+\tfrac\lambda2s=0\ \Rightarrow\ \beta=\operatorname{soft}\!\Big(\bs-\frac\eta A,\frac\lambda{2A}\Big),\qquad A=\frac{\alpha}{1-V} .
+\]
+(Step 1: the prediction is $\zeta+Vr$ and $r$ is prediction minus label. Step 2: $r_i$ responds to the shift $X_{0i}(\beta_0-\bs_0)$ of prediction minus label with slope $\partial r/\partial\zeta=1/(1-V)$.) After a time $T$ the scale is $c\,e^{-2\lambda T}$.
+
+\section{Large $d$: the finetuning trajectory}
+Finetuning is run in steps of size $\delta$: $u\leftarrow u(1-2\delta G_n-\delta\lambda)$, $v\leftarrow v(1+2\delta G_n-\delta\lambda)$, where $G_{n,j}=\sum_iX_{ji}g_{n,i}$ and $g_{n,i}=w_i(p_{n,i}-t_i)$ is the gradient of sample $i$ at step $n$, $p_{n,i}$ its prediction. The pretrained model is called step $0$: its ``gradient'' is $g_0=a$ and its field is $\eta_0$ of \eqref{st}.
+
+\textbf{Result 14.} One sample and one coordinate obey, for $n\ge1$,
+\begin{equation}\label{dyn}
+p_n=\zeta_n+\sum_{l<n}R_\beta(n,l)\,g_l,\qquad G_n=\eta_n+\sum_{l\le n}R_g(n,l)\,\beta_l+\mu_n\bs ,
+\end{equation}
+with $R_\beta(n,l)=\E\frac{\partial\beta_n}{\partial G_l}$, $R_g(n,l)=\sum_a\alpha_a\E_a\frac{\partial g_n}{\partial\zeta_l}$, $\mu_n=\sum_a\alpha_a\E_a\frac{\partial g_n}{\partial z}$; $(z,\zeta_0,\zeta_1,\dots)$ Gaussian with the covariances of $(\bs,\beta_0,\beta_1,\dots)$; $(\eta_0,\eta_1,\dots)$ Gaussian with covariances $\sum_a\alpha_a\E_a\,g_ng_m$.
+
+\step1 \emph{Add a sample.} Without it the weights at every step are independent of its inputs, so $\zeta_n=x_0^\top\beta_n^{\setminus0}$ are jointly Gaussian with the stated covariances. With it, the field of coordinate $j$ at each earlier step $l$ gains $X_{j0}g_{l,0}$, so $\beta_{n,j}=\beta_{n,j}^{\setminus0}+\sum_{l<n}\frac{\partial\beta_{n,j}}{\partial G_{l,j}}X_{j0}g_{l,0}$. Multiply by $X_{j0}$ and sum over $j$: the first equation of \eqref{dyn}.
+\step2 \emph{Add a coordinate.} Sample $i$'s predictions-without-it at all steps $l\le n$ gain $X_{0i}\beta_{l,0}$, and its label input gains $X_{0i}\bs_0$. To first order $g_{n,i}=g_{n,i}^{\setminus0}+\sum_{l\le n}\frac{\partial g_{n,i}}{\partial\zeta_{l,i}}X_{0i}\beta_{l,0}+\frac{\partial g_{n,i}}{\partial z_i}X_{0i}\bs_0$. Multiply by $X_{0i}$ and sum over $i$: the second equation, with $\eta_n=\sum_iX_{0i}g_{n,i}^{\setminus0}$.
+\step3 \emph{The responses} follow by differentiating the recursions. Samples: from \eqref{dyn} and $g_n=w(p_n-t)$, with $t$ containing $b$ times the label,
+\[
+\frac{\partial g_n}{\partial\zeta_m}=w\Big(\mathbf 1_{n=m}+\sum_{l<n}R_\beta(n,l)\frac{\partial g_l}{\partial\zeta_m}\Big),\qquad\frac{\partial g_n}{\partial z}=w\Big(\sum_{l<n}R_\beta(n,l)\frac{\partial g_l}{\partial z}-b\Big).
+\]
+Coordinates: differentiate the update, $du\leftarrow du\,(1-2\delta G_n-\delta\lambda)-2\delta u\,dG_n$ (and $v$ with the opposite sign of $G$), where $dG_n=\mathbf 1_{n=m}+\sum_{l\le n}R_g(n,l)\,d\beta_l$ for a perturbation of the field at step $m$, and $d\beta=2(u\,du-v\,dv)$.
+\step4 \emph{Step 0.} From \eqref{st}: $\partial g_0/\partial\zeta_0=-1/V$, $\partial g_0/\partial z=+1/V$, $\partial\beta_0/\partial\eta_0$ as in Result 13, and the starting $u,v$ are $\sqrt{c/2}\,e^{\pm\theta/2}$ times $\sqrt S$.
+
+The four metrics: errors on the two distributions are $\sum_Bq_B\E_B(\beta_n-\bs)^2$ over the blocks each class sees; errors on $F$ and on $F_{\rm full}\setminus F$ are $\E(p_n-y)^2$ over those groups (the left-over samples have $g_n=0$ for $n\ge1$, so $p_n=\zeta_n+R_\beta(n,0)g_0$).
+
+\section{How the equations are solved}
+\textbf{Idea.} Represent the Gaussians by two independent random matrices on $N$ sampled coordinates and $\alpha N$ sampled samples: $\zeta_n=G_1\beta_n$ and $\eta_n=G_2g_n$. They have the required covariances automatically. Because $G_1$ and $G_2$ are independent, no self-interaction arises; it is added explicitly by the $R$ terms of \eqref{dyn}. The expectations defining $R_\beta,R_g,\mu$ are averages over the sampled paths.
+
+\textbf{Starting from the pretrained model.} \eqref{st} is solved first, with fixed standard normal draws, giving vectors $\beta_0,a,\zeta_0,\eta_0,z$. The matrices must reproduce them: $G_1\beta_0=\zeta_0$, $G_1\bs=z$, $G_2a=\eta_0$.
+
+\textbf{Result 15.} If $\tilde G$ has independent Gaussian entries, then $G=\tilde G-(\tilde GB-Z)(B^\top B)^{-1}B^\top$ has the law of $\tilde G$ conditioned on $\tilde GB=Z$. \emph{Derivation:} $\tilde G(I-P)$ with $P=B(B^\top B)^{-1}B^\top$ is independent of $\tilde GB$ (Gaussian, zero covariance), and $G=\tilde G(I-P)+Z(B^\top B)^{-1}B^\top$ keeps the first and replaces $\tilde GP$ by its required value.
+
+Then \eqref{dyn} is run forward once. Cost grows as (steps)$^3$, which limits theory curves to $t\le6$.
+
+\section{What is and is not derived}
+\begin{center}\small\begin{tabular}{@{}p{7.5cm}p{7.5cm}@{}}\toprule
+exact & not derived\\\midrule
+Results 1--12 & why the distance to the retrained model never falls below about half\\
+Results 13--15, given the two cavity assumptions; agreement with simulation: $94\%$ of 2868 comparisons within 2 s.e. & a closed formula for the spread in the rich regime beyond the first-order rule \eqref{lin} (which is $\approx1.3\times$ too high at large $|F|$)\\
+& end points ($t\to\infty$) of finetuning at large $d$; finetuning after SGD pretraining\\\bottomrule
+\end{tabular}\end{center}
+\end{document}
