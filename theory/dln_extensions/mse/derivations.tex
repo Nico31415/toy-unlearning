@@ -1,70 +1,65 @@
 \documentclass[10pt]{article}
 \usepackage[a4paper,margin=2.1cm]{geometry}
-\usepackage{amsmath,amssymb,booktabs,enumitem}
+\usepackage{amsmath,amssymb,booktabs,enumitem,array}
 \usepackage[T1]{fontenc}\usepackage{lmodern}
 \setlength{\parindent}{0pt}\setlength{\parskip}{5pt}
 \newcommand{\bs}{\beta^\star}\newcommand{\E}{\mathbb E}\newcommand{\asinh}{\operatorname{arcsinh}}\newcommand{\sk}{\sqrt k}
+\newcommand{\Rf}{R_{\rm full}}\newcommand{\Ff}{F_{\rm full}}\newcommand{\dSh}{d_{\rm Sh}}
 \newcommand{\step}[1]{\par\smallskip\textbf{Step #1.}\ }
 \title{Derivations: squared-loss unlearning in the diagonal network}
 \author{}\date{25 November 2026}
 \begin{document}\maketitle
 
-Sections 2--8 are exact (finite $d$, any data). Sections 9--12 derive the large-$d$ end points with the replica method; Section 13 rederives them with the cavity method; Sections 14--15 give the trajectories and the solver. Replica and cavity are derivations, not proofs. Every result is followed by its derivation. The potential $q_k$ and the scale $k$ are those of Azulay et al.\ (2021).
+This document derives, step by step, the theory behind the setup document (\texttt{losses.pdf}), in its notation and with the potential $q_k$ of Azulay et al.\ (2021). Sections 2--7 are exact (finite $d$, any data). Sections 8--11 derive the large-$d$ end points with the replica method; Section 12 rederives them with the cavity method; Sections 13--14 give the trajectories and the solver; Section 15 maps every loss of \texttt{losses.pdf} to the result that covers it. Replica and cavity are derivations, not proofs.
 
 \section{Setting and notation}
-\textbf{Network.} $f(x)=x^\top\beta$ with $\beta=u^2-v^2$ entrywise; $u,v\in\mathbb R^d$ are the weights, positive, started at $u=v$.
+\textbf{Network.} $f(x)=x^\top\beta$ with $\beta_j=u_j^+v_j^+-u_j^-v_j^-$ and $u_j^\pm=v_j^\pm$ (balanced), i.e.\ $\beta=u^2-v^2$ entrywise with $u=u^+$, $v=u^-$, both positive and equal at the start.
 
-\textbf{Data.} The $d$ coordinates are split into blocks $B\in\{$retain, shared, forget$\}$; block $B$ is a fraction $p_B$ of them. A retain-class input has independent $\mathcal N(0,1/d)$ entries on the retain and shared blocks and zeros elsewhere; a forget-class input the same on the shared and forget blocks. The teacher $\bs\in\mathbb R^d$ has independent entries with $\E(\bs_j)^2=1$. Labels: $y_i=x_i^\top\bs+\sigma\xi_i$, $\xi_i\sim\mathcal N(0,1)$.
+\textbf{Data.} The $d$ coordinates are split into blocks $d_R$ (retain-only), $\dSh$ (shared), $d_F$ (forget-only); block $B$ is a fraction $p_B$ of the coordinates. $P_R$: $x\sim\mathcal N(0,\frac1dI)$ on $d_R\cup\dSh$, zero on $d_F$. $P_F$: the same on $\dSh\cup d_F$, zero on $d_R$. The teacher $\bs$ has independent entries, $\pm\rho^{-1/2}$ with probability $\rho/2$ each and $0$ otherwise. Labels: $y_i=x_i^\top\bs+\sigma\xi_i$, $\xi_i\sim\mathcal N(0,1)$ ($\sigma=0$ in \texttt{losses.pdf}).
 
-\textbf{Samples.} $R_{\rm full}$: the retain-class samples. $F_{\rm full}$: the forget-class samples. $F\subset F_{\rm full}$: the samples to forget. $F_{\rm full}\setminus F$: the \emph{left-over} forget samples. $R\subset R_{\rm full}$: the retain samples used in finetuning.
+\textbf{Samples.} $\Rf$: retain set, from $P_R$. $\Ff$: forget set, from $P_F$. $D=\Rf\cup\Ff$. $F\subseteq\Ff$: the deletion request. $\Ff\setminus F$: the kept forget samples. $R\subseteq\Rf$: the unlearner's retain set.
 
-\textbf{Pipeline.} A \emph{stage} is gradient flow on $(u,v)$ of
+\textbf{Training.} A \emph{stage} is gradient flow on $(u,v)$ of
 \[
-L=\tfrac12\sum_i\mu_i\,(x_i^\top\beta-\tau_i)^2 ,
+L=\sum_i\frac{c_i}2\,(f_i-t_i)^2,\qquad f_i=x_i^\top\beta ,
 \]
-with a weight $\mu_i$ and a target $\tau_i$ for each sample it uses. \emph{Pretraining}: all samples, $\mu_i=1$, $\tau_i=y_i$, from $\beta=0$. Then \emph{rescaling}: $u,v\to\sqrt S\,u,\sqrt S\,v$. Then \emph{finetuning}: $\mu_i=\mu_r$, $\tau_i=y_i$ on $R$, plus a forget term on $F$:
-\begin{center}\small\begin{tabular}{@{}lll@{}}\toprule
-forget term & $\tau_i$ on $F$ & $\mu_i$ on $F$\\\midrule
-none (retain only) & & $0$\\
-forget-to-zero & $0$ & $\mu_f$\\
-forget-to-noise & independent $\mathcal N(0,1)$ & $\mu_f$\\
-negated target & $b\,y_i$, $b<0$ & $\mu_f$\\
-signed loss / pure ascent ($\mu_r=0$) & $y_i$ & $-\mu_f$\\\bottomrule
-\end{tabular}\end{center}
-\textbf{References.} The \emph{retrained model}: pretraining on $R_{\rm full}\cup(F_{\rm full}\setminus F)$ (ideal untraining). The \emph{retain-only model}: pretraining on $R_{\rm full}$ (ideal unlearning).
+with a weight $c_i$ and a target $t_i$ per sample. Time is $\tau$. $A(T)$ is the model trained from $\beta=0$ on a dataset $T$ with $c_i=1$, $t_i=y_i$. \emph{Pretraining} gives $A=A(D)$. \emph{Rescaling}: all weights times $\sqrt\kappa$. \emph{Unlearning}: a stage from the rescaled model on $R\cup F$; its end point is $U$.
 
-\textbf{Metrics.} \emph{Retain error} and \emph{forget error}: $\E(x^\top\beta-x^\top\bs)^2$ over fresh inputs of that class. \emph{Error on $F$} and \emph{left-over error}: mean of $(x_i^\top\beta-y_i)^2$ over $F$ and over $F_{\rm full}\setminus F$. Distance to a reference: $\|\beta-\beta_{\rm ref}\|^2/d$.
+\textbf{References.} $A(D\setminus F)$ (untraining) and $A(D\setminus\Ff)=A(\Rf)$ (unlearning).
 
-\textbf{Symbols used throughout.}
+\textbf{Metrics.} Retain error and forget error: $\E(x^\top\beta-x^\top\bs)^2$ over fresh $x\sim P_R$ and $x\sim P_F$. Error on $F$ and on the kept forget samples: mean of $(f_i-y_i)^2$ over $F$ and over $\Ff\setminus F$. Distance to a reference: $\|\beta-\beta_{\rm ref}\|^2/d$.
+
+\textbf{Symbols.}
 \begin{center}\footnotesize\begin{tabular}{@{}ll@{\quad}ll@{}}\toprule
-$X$ & matrix whose columns are the $x_i$ & $G=\nabla_\beta L$ & gradient, $G=\sum_i\mu_i(x_i^\top\beta-\tau_i)x_i$\\
+$X$ & matrix whose columns are the $x_i$ & $G=\nabla_\beta L$ & gradient, $G=\sum_ic_i(f_i-t_i)x_i$\\
 $k=16u^2v^2$ & initialisation scale (Result 1) & $\theta=q_k'(\beta)$ & mirror variable (Result 1)\\
-$q_k$, $Q_k$, $D_k$ & potential and its divergence (Section 3) & $S$ & rescaling factor\\
+$q_k$, $Q_k$, $D_{Q_k}$ & potential and its divergence (Section 3) & $\kappa$ & rescaling factor\\
 $\lambda$ & weight-decay strength & $\gamma$ & step size\\
-$\alpha$ & samples per coordinate & $b$ & target as a multiple of the label\\
+$\alpha$ & samples per coordinate & $b$ & target as a multiple of $x^\top\bs$\\
 $g$ & a group of samples, $\alpha_gd$ of them & $g\ni B$ & group $g$ sees block $B$\\
 $e=\beta-b\bs$ & error of a coordinate & $q=\E e^2$ & its mean square\\
 $\eta$ & Gaussian field felt by a coordinate & $\chi=\E\,\partial\beta/\partial\eta$ & response to it\\
-$\nu_i$ & gradient accumulated by sample $i$ & $\zeta$ & prediction on a sample if it had not been used\\
-$\omega$ & reuse factor (Result 15) & $\E_B$, $\E_g$ & average over block $B$; over the blocks $g$ sees\\\bottomrule
+$a=\alpha/\chi$ & stiffness (Result 13) & $\omega$ & reuse factor (Result 15)\\
+$\nu_i$ & gradient accumulated by sample $i$ & $\zeta$ & prediction on a sample had it not been used\\
+$T$ & temperature in the replica calculation & $\E_B$, $\E_g$ & average over block $B$; over the blocks $g$ sees\\\bottomrule
 \end{tabular}\end{center}
 
 \section{The flow in one variable}
 \textbf{Result 1.} Along gradient flow, $k=16u^2v^2$ is constant in time (entrywise), and with $\theta=\frac12\log(u/v)$,
 \begin{equation}\label{mf}
-\beta=\frac{\sk}2\sinh2\theta,\qquad\dot\theta=-2G .
+\beta=\frac{\sk}2\sinh2\theta,\qquad\frac{d\theta}{d\tau}=-2G .
 \end{equation}
 \step1 Chain rule. $\partial\beta_j/\partial u_j=2u_j$ and $\partial\beta_j/\partial v_j=-2v_j$, so
 \[
-\dot u=-\frac{\partial L}{\partial u}=-2u\,G,\qquad\dot v=-\frac{\partial L}{\partial v}=+2v\,G\quad\text{(entrywise).}
+\frac{du}{d\tau}=-\frac{\partial L}{\partial u}=-2u\,G,\qquad\frac{dv}{d\tau}=-\frac{\partial L}{\partial v}=+2v\,G\quad\text{(entrywise).}
 \]
-\step2 The product is conserved: $\frac{d}{dt}(uv)=\dot uv+u\dot v=-2uvG+2uvG=0$. So $\sk=4uv$ is constant.
-\step3 The ratio moves linearly in $G$: $\frac{d}{dt}\log u=-2G$, $\frac{d}{dt}\log v=+2G$, so $\dot\theta=-2G$.
+\step2 The product is conserved: $\frac{d}{d\tau}(uv)=-2uvG+2uvG=0$. So $\sk=4uv$ is constant.
+\step3 The ratio moves linearly in $G$: $\frac{d}{d\tau}\log u=-2G$, $\frac{d}{d\tau}\log v=+2G$, so $\frac{d\theta}{d\tau}=-2G$.
 \step4 Express $\beta$. From $uv=\sk/4$ and $u/v=e^{2\theta}$: $u^2=\frac{\sk}4e^{2\theta}$, $v^2=\frac{\sk}4e^{-2\theta}$, so $\beta=\frac{\sk}4(e^{2\theta}-e^{-2\theta})=\frac{\sk}2\sinh2\theta$.
 
-\textbf{Consequences.} $G$ is a combination of the $x_i$, so $\theta(t)-\theta(0)\in\operatorname{span}X$ at all times. Also $u^2+v^2=\frac{\sk}2\cosh2\theta=\sqrt{\beta^2+k/4}$, hence
+\textbf{Consequences.} $G$ is a combination of the $x_i$, so $\theta(\tau)-\theta(0)\in\operatorname{span}X$ at all times. Also $u^2+v^2=\frac{\sk}2\cosh2\theta=\sqrt{\beta^2+k/4}$, hence
 \begin{equation}\label{metric}
-\dot\beta=\sk\cosh2\theta\,\dot\theta=-4\,(u^2+v^2)\,G .
+\frac{d\beta}{d\tau}=\sk\cosh2\theta\,\frac{d\theta}{d\tau}=-4\,(u^2+v^2)\,G .
 \end{equation}
 The squared weight norm $u_j^2+v_j^2$ of coordinate $j$ is the rate at which it moves. In the notation of Azulay et al., $\beta_+=u^2$, $\beta_-=v^2$ and $k=16\beta_+\beta_-$.
 
@@ -73,372 +68,412 @@ The potential of Azulay et al.:
 \[
 q_k(\beta)=\frac{\sk}4\Big[1-\sqrt{1+\frac{4\beta^2}k}+\frac{2\beta}{\sk}\asinh\frac{2\beta}{\sk}\Big],\qquad q_k'(\beta)=\frac12\asinh\frac{2\beta}{\sk},\qquad q_k''(\beta)=\frac1{\sqrt{4\beta^2+k}} ,
 \]
-$Q_k(\beta)=\sum_jq_k(\beta_j)$, and its Bregman divergence $D_k(\beta,\beta_0)=Q_k(\beta)-Q_k(\beta_0)-\nabla Q_k(\beta_0)^\top(\beta-\beta_0)$. By \eqref{mf}, $\theta=q_k'(\beta)$.
+$Q_k(\beta)=\sum_jq_k(\beta_j)$, and $D_{Q_k}(\beta,\beta_0)=Q_k(\beta)-Q_k(\beta_0)-\nabla Q_k(\beta_0)^\top(\beta-\beta_0)$. By \eqref{mf}, $\theta=q_k'(\beta)$. (\texttt{losses.pdf} writes $Q_k'$ for $q_k'$.)
 
 \textbf{Result 2.} If a stage starts at $\beta_0$ with scale $k$ and converges to zero loss on its samples, it ends at
 \begin{equation}\label{proj}
-\beta_{\rm end}=\arg\min_\beta D_k(\beta,\beta_0)\quad\text{s.t.}\quad x_i^\top\beta=\tau_i\ \ \forall i .
+\arg\min_\beta D_{Q_k}(\beta,\beta_0)\quad\text{s.t.}\quad X^\top\beta=t .
 \end{equation}
 From $\beta_0=0$ this is $\arg\min_\beta Q_k(\beta)$ under the same constraints, since $q_k'(0)=0$.
 \step1 Optimality conditions of \eqref{proj}. With one multiplier $\nu_i$ per constraint, stationarity in $\beta$ reads $\nabla Q_k(\beta)-\nabla Q_k(\beta_0)=-X\nu$, together with the constraints.
-\step2 The flow satisfies them. By Result 1, $q_k'(\beta)=\theta$ and $\theta_{\rm end}-\theta_0=-2\int_0^\infty G\,dt=-X\nu$ with
+\step2 The flow satisfies them. By Result 1, $q_k'(\beta)=\theta$ and $\theta(\infty)-\theta(0)=-2\int_0^\infty G\,d\tau=-X\nu$ with
 \[
-\nu_i=2\int_0^\infty\mu_i\,(x_i^\top\beta-\tau_i)\,dt\qquad\text{(the gradient accumulated by sample $i$).}
+\nu_i=2\int_0^\infty c_i\,(f_i-t_i)\,d\tau\qquad\text{(the gradient accumulated by sample $i$).}
 \]
 Zero loss gives the constraints.
-\step3 $q_k$ is strictly convex, so the point satisfying these conditions is unique.
+\step3 $q_k$ is strictly convex, so the point satisfying these conditions is unique. The weights $c_i$ do not appear in \eqref{proj}.
 
 \textbf{Result 3 (two regimes).} Per coordinate:
 \begin{align*}
-|\beta|,|\beta_0|\gg\sk,\ \text{same sign:}&\quad D_k\approx\tfrac12\Big[|\beta|\log\frac{|\beta|}{|\beta_0|}-|\beta|+|\beta_0|\Big] &&\text{(does not depend on $k$)},\\
-\beta_0=0,\ |\beta|\gg\sk:&\quad D_k\approx\tfrac12|\beta|\Big(\log\frac{4|\beta|}{\sk}-1\Big) &&\text{(a new coordinate costs }\propto\log\tfrac1k),\\
-|\beta|,|\beta_0|\ll\sk:&\quad D_k\approx\frac{(\beta-\beta_0)^2}{2\sk} &&\text{(squared distance)}.
+|\beta|,|\beta_0|\gg\sk,\ \text{same sign:}&\quad D_{Q_k}\approx\tfrac12\Big[|\beta|\log\frac{|\beta|}{|\beta_0|}-|\beta|+|\beta_0|\Big] &&\text{(does not depend on $k$)},\\
+\beta_0=0,\ |\beta|\gg\sk:&\quad D_{Q_k}\approx\tfrac12|\beta|\Big(\log\frac{4|\beta|}{\sk}-1\Big) &&\text{(a new coordinate costs }\propto\log\tfrac1k),\\
+|\beta|,|\beta_0|\ll\sk:&\quad D_{Q_k}\approx\frac{(\beta-\beta_0)^2}{2\sk} &&\text{(squared distance)}.
 \end{align*}
 \step1 For $|s|\gg\sk$, $q_k'(s)\approx\frac12\operatorname{sign}(s)\log(4|s|/\sk)$ and $\sqrt{1+4s^2/k}\approx2|s|/\sk$, so $q_k(s)\approx\frac12|s|(\log\frac{4|s|}{\sk}-1)$: the second line.
-\step2 Insert into $D_k$ for $\beta,\beta_0>0$: $\frac12\big[\beta(\log\frac{4\beta}{\sk}-1)-\beta_0(\log\frac{4\beta_0}{\sk}-1)-\log\frac{4\beta_0}{\sk}(\beta-\beta_0)\big]=\frac12\big[\beta\log\frac\beta{\beta_0}-\beta+\beta_0\big]$.
+\step2 Insert into $D_{Q_k}$ for $\beta,\beta_0>0$: $\frac12\big[\beta(\log\frac{4\beta}{\sk}-1)-\beta_0(\log\frac{4\beta_0}{\sk}-1)-\log\frac{4\beta_0}{\sk}(\beta-\beta_0)\big]=\frac12\big[\beta\log\frac\beta{\beta_0}-\beta+\beta_0\big]$.
 \step3 For $|s|\ll\sk$, $q_k'(s)\approx s/\sk$, so $q_k(s)\approx s^2/2\sk$.
 
 The first two lines are the \emph{rich} regime (changing existing weights is cheap, creating new ones is expensive); the third is the \emph{lazy} regime.
 
 \section{What each operation does}
-\textbf{Result 4 (rescaling).} Rescaling by $S$ gives $\beta\to S\beta$ and $k\to S^2k$. Finetuning after it ends at
+\textbf{Result 4 (rescaling).} Rescaling by $\kappa$ gives $\beta\to\kappa\beta$ and $k\to\kappa^2k$. Unlearning after it ends at
 \begin{equation}\label{resc}
-\beta_{\rm end}=S\cdot\arg\min_{\beta'}D_k(\beta',\beta_{\rm pre})\quad\text{s.t.}\quad x_i^\top\beta'=\tau_i/S ,
+U=\arg\min_\beta D_{Q_{\kappa^2k}}(\beta,\kappa A)\ \ \text{s.t.}\ X^\top\beta=t\qquad=\qquad\kappa\cdot\arg\min_{\beta'}D_{Q_k}(\beta',A)\ \ \text{s.t.}\ X^\top\beta'=t/\kappa .
 \end{equation}
-where $\beta_{\rm pre}$ is the pretrained model. In words: rescaling by $S$ is the same as finetuning the unrescaled model to targets divided by $S$, then multiplying the result by $S$.
-\step1 $\beta=u^2-v^2\to S\beta$ and $k=16u^2v^2\to S^2k$.
-\step2 By Result 2 the end point minimises $D_{S^2k}(\beta,S\beta_{\rm pre})$ subject to $x_i^\top\beta=\tau_i$.
-\step3 $q_k(\beta)=\sk\,\varphi(\beta/\sk)$ with $\varphi(s)=\frac14\big[1-\sqrt{1+4s^2}+2s\asinh2s\big]$, so $q_{S^2k}(S\beta')=S\,q_k(\beta')$ and $q_{S^2k}'(S\beta')=q_k'(\beta')$. Hence $D_{S^2k}(S\beta',S\beta_{\rm pre})=S\,D_k(\beta',\beta_{\rm pre})$. Substitute $\beta=S\beta'$.
+In words: rescaling by $\kappa$ is the same as unlearning the unrescaled model to targets divided by $\kappa$, then multiplying the result by $\kappa$.
+\step1 $\beta=u^2-v^2\to\kappa\beta$ and $k=16u^2v^2\to\kappa^2k$. With Result 2 this is the first form.
+\step2 $q_k(\beta)=\sk\,\varphi(\beta/\sk)$ with $\varphi(s)=\frac14\big[1-\sqrt{1+4s^2}+2s\asinh2s\big]$, so $q_{\kappa^2k}(\kappa\beta')=\kappa\,q_k(\beta')$ and $q_{\kappa^2k}'(\kappa\beta')=q_k'(\beta')$. Hence $D_{Q_{\kappa^2k}}(\kappa\beta',\kappa A)=\kappa\,D_{Q_k}(\beta',A)$.
+\step3 Substitute $\beta=\kappa\beta'$ in the first form: the objective is $\kappa D_{Q_k}(\beta',A)$ and the constraints are $X^\top\beta'=t/\kappa$.
 
-\textbf{Corollary (no shared block, forget-to-zero).} The forget block ends at $S$ times where it ends for $S=1$.
-\step1 With no shared block the retain samples are zero on the forget block, so the constraints, and therefore \eqref{resc}, separate into a retain problem and a forget problem.
-\step2 The forget problem has targets $0/S=0$: its solution $\beta'$ does not depend on $S$, and the forget block of $\beta_{\rm end}$ is $S\beta'$.
+\textbf{Corollary ($\dSh=\emptyset$, targets $0$ on $F$).} On $d_F$, $U$ is $\kappa$ times what it is for $\kappa=1$.
+\step1 With no shared block the retain samples are zero on $d_F$, so the constraints, and therefore \eqref{resc}, separate into a problem on $d_R$ and a problem on $d_F$.
+\step2 The problem on $d_F$ has targets $0/\kappa=0$: its solution $\beta'$ does not depend on $\kappa$, and $U=\kappa\beta'$ on $d_F$.
 
-Consequences. A left-over sample $x_k$ is predicted $S\,x_k^\top\beta'$, so its error is $(S\,x_k^\top\beta'-y_k)^2$; the distance to the retain-only model (zero on the forget block, Result 8) is $S^2\|\beta'\|^2/d$. $S\to0$ erases the class. $S>1$ multiplies back what forgetting removed, on every input except $F$ itself, which stays at zero. Simulation, blocks $\propto(1,0,1)$: distance $0.002,0.002,0.012,0.096$ at $S=0.1,0.3,1,3$; $S^2\times0.012$ gives $0.0001,0.001,0.012,0.108$.
+Consequences. A kept forget sample $x_i$ is predicted $\kappa\,x_i^\top\beta'$, so its error is $(\kappa\,x_i^\top\beta'-y_i)^2$; the distance to $A(\Rf)$ (zero on $d_F$, Result 8) is $\kappa^2\|\beta'\|^2/d$. $\kappa\to0$ erases the class. $\kappa>1$ multiplies back what forgetting removed, on every input except $F$ itself, which stays at zero. Simulation, blocks $\propto(1,0,1)$: distance $0.002,0.002,0.012,0.096$ at $\kappa=0.1,0.3,1,3$; $\kappa^2\times0.012$ gives $0.0001,0.001,0.012,0.108$.
 
-\textbf{Result 5 (weight decay).} With the penalty $\frac\lambda2(\|u\|^2+\|v\|^2)$ added to $L$: $k(t)=k(0)e^{-4\lambda t}$ and $\dot\theta=-2G$ as before. If it stays on until convergence, the end point solves
+\textbf{Result 5 (weight decay).} Add the penalty $\lambda\|w\|^2$ on the four weight vectors $w=(u^+,v^+,u^-,v^-)$, which is $2\lambda(\|u\|^2+\|v\|^2)$. Then $k(\tau)=k(0)e^{-16\lambda\tau}$ and $\frac{d\theta}{d\tau}=-2G$ as before. A stationary point with the penalty kept on satisfies the optimality conditions of
 \[
-\min_\beta\ L(\beta)+\tfrac\lambda2\|\beta\|_1 .
+\min_\beta\ L(\beta)+2\lambda\|\beta\|_1 .
 \]
-\step1 The penalty adds $-\lambda u$ and $-\lambda v$: $\dot u=-2uG-\lambda u$, $\dot v=2vG-\lambda v$.
-\step2 $\frac d{dt}(uv)=-2\lambda uv$, so $k=16u^2v^2$ decays at rate $4\lambda$; $\frac d{dt}\log(u/v)=-4G$, unchanged.
-\step3 Stationary points: for each coordinate, $u(2G+\lambda)=0$ and $v(2G-\lambda)=0$. Since $k\to0$, at most one of $u,v$ survives. If $\beta>0$ ($u>0$): $G=-\lambda/2$. If $\beta<0$: $G=+\lambda/2$. If $\beta=0$: $|G|\le\lambda/2$ (otherwise one of $u,v$ grows). These are the optimality conditions of the problem above.
+\step1 The penalty adds $-4\lambda u$ and $-4\lambda v$: $\frac{du}{d\tau}=-2uG-4\lambda u$, $\frac{dv}{d\tau}=2vG-4\lambda v$.
+\step2 $\frac d{d\tau}(uv)=-8\lambda uv$, so $k=16u^2v^2$ decays at rate $16\lambda$; $\frac d{d\tau}\log(u/v)=-4G$ is unchanged.
+\step3 Stationary points: for each coordinate, $u(G+2\lambda)=0$ and $v(G-2\lambda)=0$. Since $k\to0$, at most one of $u,v$ survives. If $\beta>0$ ($u>0$): $G=-2\lambda$. If $\beta<0$: $G=+2\lambda$. If $\beta=0$: neither may grow, so $|G|\le2\lambda$. These are the optimality conditions of the problem above ($G+2\lambda\,\partial|\beta|\ni0$), which is convex. That the flow reaches this point is assumed; simulations agree.
 
 \textbf{Result 6 (SGD).} One step of size $\gamma$ with mini-batch gradient $G$ is exactly
 \[
 \theta\leftarrow\theta-\operatorname{artanh}(2\gamma G),\qquad \sk\leftarrow\sk\,(1-4\gamma^2G^2).
 \]
 \step1 The step is $u\leftarrow u(1-2\gamma G)$, $v\leftarrow v(1+2\gamma G)$.
-\step2 $uv\leftarrow uv(1-4\gamma^2G^2)$; $\log\frac uv\leftarrow\log\frac uv+\log\frac{1-2\gamma G}{1+2\gamma G}=\log\frac uv-2\operatorname{artanh}(2\gamma G)$, and $\theta=\frac12\log\frac uv$.
+\step2 $uv\leftarrow uv(1-4\gamma^2G^2)$, and $\sk=4uv$.
+\step3 $\log\frac uv\leftarrow\log\frac uv+\log\frac{1-2\gamma G}{1+2\gamma G}=\log\frac uv-2\operatorname{artanh}(2\gamma G)$, and $\theta=\frac12\log\frac uv$.
 
 So weight decay and SGD can only shrink $k$.
 
 \section{How forgetting spreads: the local rule}
-\textbf{Result 7.} To first order, finetuning from $\beta_0$ to targets $\tau$ on samples $X$ changes $\beta$ by
+\textbf{Result 7.} To first order, a stage from $\beta_0$ to targets $t$ on samples $X$ changes $\beta$ by
 \begin{equation}\label{lin}
-\Delta\beta=M\,X\,(X^\top MX)^{-1}(\tau-X^\top\beta_0),\qquad M=\operatorname{diag}(u_j^2+v_j^2)\ \text{at }\beta_0 .
+\Delta\beta=M\,X\,(X^\top MX)^{-1}(t-X^\top\beta_0),\qquad M=\operatorname{diag}(u_j^2+v_j^2)\ \text{at }\beta_0 .
 \end{equation}
-\step1 By \eqref{metric}, $\dot\beta=-4MG$ with $G\in\operatorname{span}X$. Freezing $M$ at its initial value, $\Delta\beta=MXh$ for some vector $h$.
-\step2 Impose the constraints $X^\top(\beta_0+\Delta\beta)=\tau$ and solve for $h$.
+\step1 By \eqref{metric}, $\frac{d\beta}{d\tau}=-4MG$ with $G\in\operatorname{span}X$. Freezing $M$ at its initial value, $\Delta\beta=MXh$ for some vector $h$.
+\step2 Impose the constraints $X^\top(\beta_0+\Delta\beta)=t$: $X^\top MXh=t-X^\top\beta_0$. Solve for $h$.
 
-\textbf{Spread to an input not in the loss.} Take forget-to-zero on $F$ and ignore the retain term, so $X$ holds the $|F|$ forget samples. Let $x$ be a forget-class input independent of $\Delta\beta$. Then
+\textbf{Spread to an input not in the loss.} Take targets $0$ on $F$ and no retain term, so $X$ holds the $|F|$ samples of $F$. Let $x\sim P_F$ be independent of $\Delta\beta$. Then
 \begin{equation}\label{spread}
-\frac{\E(x^\top\Delta\beta)^2}{\text{mean squared change on }F}\approx\frac{|F|}{d_{\rm eff}},\qquad d_{\rm eff}=\frac{(\sum_jM_j)^2}{\sum_jM_j^2}\quad\text{(sums over the coordinates the forget class sees).}
+\frac{\E(x^\top\Delta\beta)^2}{\text{mean squared change on }F}\approx\frac{|F|}{d_{\rm eff}},\qquad d_{\rm eff}=\frac{(\sum_jM_j)^2}{\sum_jM_j^2}\quad\text{(sums over }j\in\dSh\cup d_F).
 \end{equation}
-\step1 $x$ has independent entries of variance $1/d$ on those coordinates, so $\E(x^\top\Delta\beta)^2=\|\Delta\beta\|^2/d$.
-\step2 From \eqref{lin}, $\|\Delta\beta\|^2=(\tau-X^\top\beta_0)^\top(X^\top MX)^{-1}(X^\top M^2X)(X^\top MX)^{-1}(\tau-X^\top\beta_0)$.
-\step3 For $|F|\ll d_{\rm eff}$ the samples are nearly orthogonal in these metrics: $X^\top MX\approx\frac1d\sum_jM_j\,I$ and $X^\top M^2X\approx\frac1d\sum_jM_j^2\,I$. Insert, and use $\|\tau-X^\top\beta_0\|^2=|F|\times$(mean squared change on $F$).
+\step1 $x$ has independent entries of variance $1/d$ on $\dSh\cup d_F$, so $\E(x^\top\Delta\beta)^2=\|\Delta\beta\|^2/d$.
+\step2 From \eqref{lin}, $\|\Delta\beta\|^2=(t-X^\top\beta_0)^\top(X^\top MX)^{-1}(X^\top M^2X)(X^\top MX)^{-1}(t-X^\top\beta_0)$.
+\step3 The entries of $X^\top MX$ are $\sum_jM_jX_{ji}X_{ji'}$: on the diagonal $\approx\frac1d\sum_jM_j$, off the diagonal zero on average. For $|F|\ll d_{\rm eff}$ the off-diagonal part is negligible: $X^\top MX\approx\frac1d\sum_jM_j\,I$, and likewise $X^\top M^2X\approx\frac1d\sum_jM_j^2\,I$.
+\step4 Insert: $\|\Delta\beta\|^2/d\approx\|t-X^\top\beta_0\|^2\sum_jM_j^2/(\sum_jM_j)^2$, and $\|t-X^\top\beta_0\|^2=|F|\times$(mean squared change on $F$).
 
-Flat metric ($M=I$): $d_{\rm eff}$ is the number of coordinates the class sees. After small-$k$ pretraining, $M_j=\sqrt{\smash[b]{\beta_j^2}+k/4}$ is concentrated on the learned coordinates and $d_{\rm eff}$ is their effective number. Baseline: $d_{\rm eff}=0.28$ of the class coordinates. Left-over error relative to error on $F$, at $|F|/|F_{\rm full}|=0.1,0.5,0.9$: \eqref{spread} gives $0.11,0.53,0.96$; \eqref{lin} with the retain term $0.13,0.55,0.77$; simulation $0.12,0.40,0.72$; flat metric $0.03,0.16,0.33$. (For a left-over sample $x$ is not independent of $M$; this is neglected.) Combined with Result 4: $0.85,0.77,0.55,0.43$ at $S=0.1,0.3,1,3$ against $0.67,0.56,0.40,0.35$ in simulation.
+Flat metric ($M=I$): $d_{\rm eff}=|\dSh|+|d_F|$. After small-$k$ pretraining, $M_j=\sqrt{\smash[b]{\beta_j^2}+k/4}$ is concentrated on the learned coordinates and $d_{\rm eff}$ is their effective number. Baseline of the simulations: $d_{\rm eff}=0.28\,(|\dSh|+|d_F|)$. Error on kept forget samples relative to error on $F$, at $|F|/|\Ff|=0.1,0.5,0.9$: \eqref{spread} gives $0.11,0.53,0.96$; \eqref{lin} with the retain term $0.13,0.55,0.77$; simulation $0.12,0.40,0.72$; flat metric $0.03,0.16,0.33$. (For a kept forget sample, $x$ is not independent of $M$; this is neglected.) Combined with Result 4: $0.85,0.77,0.55,0.43$ at $\kappa=0.1,0.3,1,3$ against $0.67,0.56,0.40,0.35$ in simulation.
 
 \section{Facts about losses and references}
-\textbf{Result 8.} The retain-only model is zero on the forget block. \emph{Derivation:} it starts at $\theta=0$ and $\theta$ stays in the span of the retain samples (Result 1), which are zero on the forget block; $\beta=\frac{\sk}2\sinh0=0$ there.
+\textbf{Result 8.} $A(\Rf)$ is zero on $d_F$. \emph{Derivation:} it starts at $\theta=0$ and $\theta$ stays in the span of the retain samples (Result 1), which are zero on $d_F$; $\beta=\frac{\sk}2\sinh0=0$ there.
 
-\textbf{Result 9.} With no shared block a forget term cannot change the retain block. \emph{Derivation:} its gradient is a combination of forget samples, zero on the retain block; by \eqref{mf} $\theta$ does not move there.
+\textbf{Result 9.} If $\dSh=\emptyset$, a loss on $F$ cannot change $\beta$ on $d_R$. \emph{Derivation:} its gradient is a combination of forget samples, zero on $d_R$; by \eqref{mf} $\theta$ does not move there.
 
-\textbf{Result 10.} From a model that fits $F$, the signed loss and pure ascent do not move. \emph{Derivation:} their forget gradient is $-\mu_f\sum_F(x_i^\top\beta-y_i)x_i=0$, and the retain gradient is zero as well.
+\textbf{Result 10.} From a model that fits $F$, gradient difference (a term $-\frac{\mu_a}2(f_i-y_i)^2$ on $F$) does not move. \emph{Derivation:} its gradient on $F$ is $-\mu_a\sum_F(f_i-y_i)x_i=0$, and the retain gradient is zero as well.
 
-\textbf{Result 11.} A target $b\,y_i$ fitted on $F$ leaves error $(1-b)^2\times$(mean of $y_i^2$) on $F$. \emph{Derivation:} $x_i^\top\beta-y_i=(b-1)y_i$. (Simulation: $1.311$, $2.341$ for $b=-0.5,-1$; formula $1.31$, $2.33$.)
+\textbf{Result 11.} A target $t_i=b\,y_i$ fitted on $F$ leaves error $(1-b)^2\times$(mean of $y_i^2$) on $F$. \emph{Derivation:} $f_i-y_i=(b-1)y_i$. (Simulation: $1.311$, $2.341$ for $b=-0.5,-1$; formula $1.31$, $2.33$.)
 
-\section{Untied layers (Azulay et al.\ 2021)}
-Their network, per coordinate: $\beta=u_+v_+-u_-v_-$, four weights. Let $W=\frac12(u_+^2+v_+^2+u_-^2+v_-^2)$.
+\section{Unbalanced layers (Azulay et al.\ 2021)}
+Their network, per coordinate: $\beta=u^+v^+-u^-v^-$ with four free weights. Let $W=\frac12\big((u^+)^2+(v^+)^2+(u^-)^2+(v^-)^2\big)$.
 
-\textbf{Result 12.} $\dot\beta=-2W\,G$; $k=4(W^2-\beta^2)$ is conserved; $\frac d{dt}q_k'(\beta)=-G$. Results 2--4 and 7 hold with this $k$ and $M=2W$.
-\step1 $\dot u_+=-Gv_+$, $\dot v_+=-Gu_+$, $\dot u_-=+Gv_-$, $\dot v_-=+Gu_-$.
-\step2 $\dot\beta=\dot u_+v_++u_+\dot v_+-\dot u_-v_--u_-\dot v_-=-G(u_+^2+v_+^2+u_-^2+v_-^2)=-2WG$.
-\step3 $\dot W=u_+\dot u_++v_+\dot v_++u_-\dot u_-+v_-\dot v_-=-2G\,u_+v_++2G\,u_-v_-=-2G\beta$.
-\step4 $\frac d{dt}(W^2-\beta^2)=2W(-2G\beta)-2\beta(-2WG)=0$.
-\step5 With $k$ constant and $2W=\sqrt{4\beta^2+k}$: $\dot\beta=-G\sqrt{4\beta^2+k}$, i.e.\ $\frac d{dt}\,\frac12\asinh\frac{2\beta}{\sk}=-G$.
+\textbf{Result 12.} $\frac{d\beta}{d\tau}=-2W\,G$; $k=4(W^2-\beta^2)$ is conserved; $\frac d{d\tau}q_k'(\beta)=-G$. Results 2--4 and 7 hold with this $k$ and $M=2W$.
+\step1 $\frac{du^+}{d\tau}=-Gv^+$, $\frac{dv^+}{d\tau}=-Gu^+$, $\frac{du^-}{d\tau}=+Gv^-$, $\frac{dv^-}{d\tau}=+Gu^-$.
+\step2 $\frac{d\beta}{d\tau}=-G\big((v^+)^2+(u^+)^2\big)-G\big((v^-)^2+(u^-)^2\big)=-2WG$.
+\step3 $\frac{dW}{d\tau}=u^+\frac{du^+}{d\tau}+v^+\frac{dv^+}{d\tau}+u^-\frac{du^-}{d\tau}+v^-\frac{dv^-}{d\tau}=-2G\,u^+v^++2G\,u^-v^-=-2G\beta$.
+\step4 $\frac d{d\tau}(W^2-\beta^2)=2W(-2G\beta)-2\beta(-2WG)=0$.
+\step5 With $k$ constant and $2W=\sqrt{4\beta^2+k}$: $\frac{d\beta}{d\tau}=-G\sqrt{4\beta^2+k}$, i.e.\ $\frac d{d\tau}\,\frac12\asinh\frac{2\beta}{\sk}=-G$.
 
-Special cases. $u_+=u_-$, $v_+=v_-$ at the start: $\beta=0$ and $\sk=2W=2(u_+^2+v_+^2)$, which is their Theorem 4.1. $u_+=v_+$, $u_-=v_-$: our network (with $u=u_+$, $v=u_-$), $\sk=4u_+u_-$. Steps 1--5 are my derivation for a general start, checked numerically; their general statement (Appendix B) was not in the copy I read.
+Special cases. $u^+=u^-$, $v^+=v^-$ at the start: $\beta=0$ and $\sk=2W=2\big((u^+)^2+(v^+)^2\big)$, which is their Theorem 4.1. $u^\pm=v^\pm$: our network, $\sk=4u^+u^-$. Steps 1--5 are my derivation for a general start, checked numerically; their general statement (Appendix B) was not in the copy I read.
 
-\textbf{Layer rescaling.} Multiplying $u_\pm$ by a factor $\ell$ and $v_\pm$ by $1/\ell$ keeps $\beta$. On a trained coordinate of our network ($u_+=v_+=\sqrt\beta$, $u_-=v_-\approx0$): $W=\frac\beta2(\ell^2+\ell^{-2})$, so $\sk=2\sqrt{W^2-\beta^2}=\beta\,|\ell^2-\ell^{-2}|$. This operation does not exist for $\beta=u^2-v^2$.
+\textbf{Layer rescaling.} Multiplying $u^\pm$ by a factor $\ell$ and $v^\pm$ by $1/\ell$ keeps $\beta$. On a trained coordinate of our network ($u^+=v^+=\sqrt\beta$, $u^-=v^-\approx0$): $W=\frac\beta2(\ell^2+\ell^{-2})$, so $\sk=2\sqrt{W^2-\beta^2}=\beta\,|\ell^2-\ell^{-2}|$. This is not the rescaling $\kappa$ and is not used in \texttt{losses.pdf}.
 
-\section{Large $d$: what is computed}
-From here on $d\to\infty$ with the numbers of samples proportional to $d$. A stage that converges is the minimisation \eqref{proj}. We want the distribution of the coordinates of its solution; every metric is an average over that distribution. Sections 9--12 take the targets of the form $\tau_i=b\,x_i^\top\bs+\sigma\xi_i$ (pretraining: $b=1$). The error of a coordinate is $e=\beta-b\bs$.
+\section{Large $d$, replica method: one stage}\label{rep1}
+From here on $d\to\infty$ with the numbers of samples proportional to $d$. A converged stage is the minimisation \eqref{proj}; we want the distribution of the coordinates of its solution, from which every metric follows. Targets are of the form $t_i=b\,x_i^\top\bs+\sigma\xi_i$. This section: one group of $\alpha d$ samples seeing all coordinates, and a start $\beta_0$ that does not depend on the data.
 
-\section{Replica method: one stage}\label{rep1}
-One group of $\alpha d$ samples that sees all coordinates. The start $\beta_0$ does not depend on the data (for pretraining, $\beta_0=0$).
-
-\textbf{Problem.} By Result 2, $\hat\beta=\arg\min_\beta D_k(\beta,\beta_0)$ subject to $x_i^\top\beta=\tau_i$. Dropping what does not depend on $\beta$, this is $\arg\min_\beta\sum_j\big[q_k(\beta_j)-\theta_{0,j}\beta_j\big]$ with $\theta_0=q_k'(\beta_0)$; for pretraining $\theta_0=0$ and $\hat\beta=\arg\min Q_k(\beta)$. In terms of $e$ the constraints are $x_i^\top e=\sigma\xi_i$.
+\textbf{Problem.} $\hat\beta=\arg\min_\beta D_{Q_k}(\beta,\beta_0)$ subject to $X^\top\beta=t$. Dropping what does not depend on $\beta$, the objective is $\sum_j\big[q_k(\beta_j)-\theta_{0,j}\beta_j\big]$ with $\theta_0=q_k'(\beta_0)$. For pretraining $\theta_0=0$, $b=1$, and $\hat\beta=\arg\min Q_k(\beta)=A$. With $e=\beta-b\bs$ the constraints are $x_i^\top e=\sigma\xi_i$.
 
 \textbf{Result 13.} Each coordinate of $\hat\beta$ is distributed as the solution of
 \begin{equation}\label{ch1}
-q_k'(\hat\beta)-\theta_0+A\,e=\eta,\qquad\eta\sim\mathcal N(0,r),
+q_k'(\hat\beta)-\theta_0+a\,e=\eta,\qquad\eta\sim\mathcal N(0,\operatorname{Var}\eta),
 \end{equation}
 \begin{equation}\label{fp1}
-A=\frac\alpha\chi,\qquad r=\frac{\alpha\,(q+\sigma^2)}{\chi^2},\qquad q=\E e^2,\qquad\chi=\E\frac{\partial\hat\beta}{\partial\eta}=\E\frac1{q_k''(\hat\beta)+A}.
+a=\frac\alpha\chi,\qquad\operatorname{Var}\eta=\frac{\alpha\,(q+\sigma^2)}{\chi^2},\qquad q=\E e^2,\qquad\chi=\E\frac{\partial\hat\beta}{\partial\eta}=\E\frac1{q_k''(\hat\beta)+a}.
 \end{equation}
-Two unknown numbers, $q$ and $\chi$. \emph{Reading:} $\eta$ is the field a coordinate feels from the fitted samples, $r$ its variance; $\chi$ is how much the coordinate gives way to it; $A$ is the stiffness with which the samples hold it at the target.
+Two unknown numbers, $q$ and $\chi$. \emph{Reading:} $\eta$ is the field a coordinate feels from the fitted samples; $\chi$ is how much the coordinate gives way to it; $a$ is the stiffness with which the samples hold it at the target.
 
-\step1 \emph{A partition function whose low-temperature limit is the minimiser.} For an inverse temperature $\kappa$,
+\step1 \emph{A partition function whose zero-temperature limit is the minimiser.} For a temperature $T$,
 \[
-Z=\int d\beta\ \exp\{-\kappa\sum_j[q_k(\beta_j)-\theta_{0,j}\beta_j]\}\prod_i\delta\big(x_i^\top e-\sigma\xi_i\big),
+Z=\int d\beta\ \exp\{-\tfrac1T\sum_j[q_k(\beta_j)-\theta_{0,j}\beta_j]\}\prod_i\delta\big(x_i^\top e-\sigma\xi_i\big),
 \]
-with $\delta$ the Dirac delta. As $\kappa\to\infty$ the weight concentrates on $\hat\beta$. Averages under it follow from $\E\log Z$ (expectation over $X,\xi,\beta_0,\bs$).
-\step2 \emph{Replica trick.} $\E\log Z=\lim_{m\to0}(\E Z^m-1)/m$. For integer $m$, $Z^m$ is an integral over $m$ copies $\beta^1,\dots,\beta^m$ (replicas), with errors $e^a=\beta^a-b\bs$.
-\step3 \emph{Average over the inputs.} For fixed replicas the numbers $x_i^\top e^a$, $a=1..m$, are jointly Gaussian with mean zero and covariance
+with $\delta$ the Dirac delta. As $T\to0$ the weight concentrates on $\hat\beta$. Averages under it follow from $\E\log Z$ (expectation over $X,\xi,\beta_0,\bs$).
+\step2 \emph{Replica trick.} $\E\log Z=\lim_{m\to0}(\E Z^m-1)/m$. For integer $m$, $Z^m$ is an integral over $m$ copies $\beta^1,\dots,\beta^m$ (replicas, indexed by $r,r'$), with errors $e^r=\beta^r-b\bs$.
+\step3 \emph{Average over the inputs.} For fixed replicas the numbers $x_i^\top e^r$, $r=1..m$, are jointly Gaussian with mean zero and covariance
 \[
-Q_{ab}=\frac1d\sum_je^a_je^b_j .
+\mathcal O_{rr'}=\frac1d\sum_je^r_je^{r'}_j\qquad\text{(the overlap matrix).}
 \]
-So $\E_{x_i}\prod_a\delta(x_i^\top e^a-\sigma\xi_i)=\mathcal N(\sigma\xi_i\mathbf 1;0,Q)$, the density of $\mathcal N(0,Q)$ at the point $\sigma\xi_i\mathbf 1$ ($\mathbf 1$ the all-ones vector). The samples are independent:
+So $\E_{x_i}\prod_r\delta(x_i^\top e^r-\sigma\xi_i)=\mathcal N(\sigma\xi_i\mathbf 1;0,\mathcal O)$, the density of $\mathcal N(0,\mathcal O)$ at the point $\sigma\xi_i\mathbf 1$ ($\mathbf 1$ the all-ones vector). The samples are independent:
 \[
-\E Z^m=\E\int\prod_ad\beta^a\ \exp\{-\kappa\sum_{a,j}[q_k(\beta^a_j)-\theta_{0,j}\beta^a_j]\}\ \Big[\E_\xi\,\mathcal N(\sigma\xi\mathbf 1;0,Q)\Big]^{\alpha d}.
+\E Z^m=\E\int\prod_rd\beta^r\ \exp\{-\tfrac1T\sum_{r,j}[q_k(\beta^r_j)-\theta_{0,j}\beta^r_j]\}\ \Big[\E_\xi\,\mathcal N(\sigma\xi\mathbf 1;0,\mathcal O)\Big]^{\alpha d}.
 \]
-\step4 \emph{Make $Q$ an integration variable.} Insert $1=\int\prod_{a\le b}dQ_{ab}\,\delta(dQ_{ab}-\sum_je^a_je^b_j)$ and write each $\delta$ as a Fourier integral with a conjugate variable $\hat Q_{ab}$. Up to constants,
+\step4 \emph{Make $\mathcal O$ an integration variable.} Insert $1=\int\prod_{r\le r'}d\mathcal O_{rr'}\,\delta(d\,\mathcal O_{rr'}-\sum_je^r_je^{r'}_j)$ and write each $\delta$ as $\int d\hat{\mathcal O}_{rr'}\exp\{\frac12\hat{\mathcal O}_{rr'}(d\,\mathcal O_{rr'}-\sum_je^r_je^{r'}_j)\}$ (integration along the imaginary axis; constants dropped). The integrand now factorises over coordinates:
 \[
-\begin{aligned}\E Z^m=\int dQ\,d\hat Q\ \exp\,d\Big\{&\tfrac12\sum_{ab}\hat Q_{ab}Q_{ab}+\log\E\!\int\prod_ad\beta^a\,\exp\{-\kappa\sum_a[q_k(\beta^a)-\theta_0\beta^a]-\tfrac12\sum_{ab}\hat Q_{ab}e^ae^b\}\\&+\alpha\log\E_\xi\mathcal N(\sigma\xi\mathbf 1;0,Q)\Big\}.\end{aligned}
+\begin{aligned}\E Z^m=\int d\mathcal O\,d\hat{\mathcal O}\ \exp\,d\Big\{&\tfrac12\sum_{rr'}\hat{\mathcal O}_{rr'}\mathcal O_{rr'}+\log\E\!\int\prod_rd\beta^r\,\exp\{-\tfrac1T\sum_r[q_k(\beta^r)-\theta_0\beta^r]-\tfrac12\sum_{rr'}\hat{\mathcal O}_{rr'}e^re^{r'}\}\\&+\alpha\log\E_\xi\mathcal N(\sigma\xi\mathbf 1;0,\mathcal O)\Big\}.\end{aligned}
 \]
-The coordinates have decoupled: the middle term is an integral over the $m$ replicas of \emph{one} coordinate, $\E$ over its $(\beta_0,\bs)$. For large $d$ the integral over $Q,\hat Q$ is given by the stationary point of the bracket.
+The middle term is an integral over the $m$ replicas of \emph{one} coordinate, with $\E$ over its $(\beta_0,\bs)$. For large $d$ the integral over $\mathcal O,\hat{\mathcal O}$ is given by the stationary point of the bracket (saddle point).
 \step5 \emph{Replica-symmetric ansatz.} All replicas are equivalent:
 \[
-Q_{aa}=q+\Delta,\quad Q_{ab}=q\ (a\neq b);\qquad\hat Q_{aa}=\hat A-\hat r,\quad\hat Q_{ab}=-\hat r\ (a\neq b).
+\mathcal O_{rr}=q+\Delta,\quad\mathcal O_{rr'}=q\ (r\neq r');\qquad\hat{\mathcal O}_{rr}=\hat a-\hat w,\quad\hat{\mathcal O}_{rr'}=-\hat w\ (r\neq r').
 \]
-$q$ is the overlap of two different replicas, $\Delta$ the extra self-overlap (thermal spread); $\hat A,\hat r$ are their conjugates. We evaluate the three terms to first order in $m$.
-\step6 \emph{First term.} $\frac12\sum_{ab}\hat Q_{ab}Q_{ab}=\frac m2(\hat A-\hat r)(q+\Delta)-\frac{m(m-1)}2\hat rq\approx\frac m2\big[\hat A(q+\Delta)-\hat r\Delta\big]$.
-\step7 \emph{Second term.} $-\frac12\sum_{ab}\hat Q_{ab}e^ae^b=-\frac{\hat A}2\sum_a(e^a)^2+\frac{\hat r}2\big(\sum_ae^a\big)^2$. Linearise the square with a Gaussian $z\sim\mathcal N(0,1)$: $\exp\{\frac{\hat r}2s^2\}=\E_ze^{\sqrt{\hat r}zs}$. The replicas become independent given $z$:
+$q$ is the overlap of two different replicas, $\Delta$ the extra self-overlap (thermal spread); $\hat a,\hat w$ are their conjugates. We evaluate the three terms to first order in $m$.
+\step6 \emph{First term.} $\frac12\sum_{rr'}\hat{\mathcal O}_{rr'}\mathcal O_{rr'}=\frac m2(\hat a-\hat w)(q+\Delta)-\frac{m(m-1)}2\hat wq\approx\frac m2\big[\hat a(q+\Delta)-\hat w\Delta\big]$.
+\step7 \emph{Second term.} $-\frac12\sum_{rr'}\hat{\mathcal O}_{rr'}e^re^{r'}=-\frac{\hat a}2\sum_r(e^r)^2+\frac{\hat w}2\big(\sum_re^r\big)^2$. Linearise the square with a Gaussian $z\sim\mathcal N(0,1)$, using $\exp\{\frac{\hat w}2s^2\}=\E_z\exp\{\sqrt{\hat w}\,zs\}$. Given $z$ the replicas are independent, and $\log\E[\,\cdot\,]^m\approx m\,\E\log[\,\cdot\,]$:
 \[
-\log\E\Big[\int d\beta\,\exp\{-\kappa[q_k(\beta)-\theta_0\beta]-\frac{\hat A}2e^2+\sqrt{\hat r}ze\}\Big]^m\approx m\,\E\log\int d\beta\,\exp\{-\kappa[q_k(\beta)-\theta_0\beta]-\frac{\hat A}2e^2+\sqrt{\hat r}ze\} .
+m\,\E\log\int d\beta\,\exp\{-\tfrac1T[q_k(\beta)-\theta_0\beta]-\tfrac{\hat a}2e^2+\sqrt{\hat w}\,ze\} .
 \]
-\step8 \emph{Third term.} $Q=\Delta I+q\mathbf 1\mathbf 1^\top$ has $\det Q=\Delta^{m-1}(\Delta+mq)$ and $\mathbf 1^\top Q^{-1}\mathbf 1=m/(\Delta+mq)$. Hence
+\step8 \emph{Third term.} $\mathcal O=\Delta I+q\mathbf 1\mathbf 1^\top$ has $\det\mathcal O=\Delta^{m-1}(\Delta+mq)$ and $\mathbf 1^\top\mathcal O^{-1}\mathbf 1=m/(\Delta+mq)$. Hence
 \[
-\log\mathcal N(\sigma\xi\mathbf 1;0,Q)=-\tfrac m2\log2\pi-\tfrac{m-1}2\log\Delta-\tfrac12\log(\Delta+mq)-\frac{\sigma^2\xi^2m}{2(\Delta+mq)}\approx-\frac m2\Big[\log(2\pi\Delta)+\frac{q+\sigma^2\xi^2}{\Delta}\Big],
+\log\mathcal N(\sigma\xi\mathbf 1;0,\mathcal O)=-\tfrac m2\log2\pi-\tfrac{m-1}2\log\Delta-\tfrac12\log(\Delta+mq)-\frac{\sigma^2\xi^2m}{2(\Delta+mq)}\approx-\frac m2\Big[\log(2\pi\Delta)+\frac{q+\sigma^2\xi^2}{\Delta}\Big],
 \]
-and $\E\xi^2=1$.
+using $\log(\Delta+mq)\approx\log\Delta+mq/\Delta$; then $\E\xi^2=1$.
 \step9 \emph{The function to make stationary} ($\frac1{md}\log\E Z^m$):
 \[
-\Phi=\tfrac12\big[\hat A(q+\Delta)-\hat r\Delta\big]+\E\log\!\int d\beta\,\exp\{-\kappa[q_k(\beta)-\theta_0\beta]-\frac{\hat A}2e^2+\sqrt{\hat r}ze\}-\frac\alpha2\Big[\log(2\pi\Delta)+\frac{q+\sigma^2}{\Delta}\Big].
+\Phi=\tfrac12\big[\hat a(q+\Delta)-\hat w\Delta\big]+\E\log\!\int d\beta\,\exp\{-\tfrac1T[q_k(\beta)-\theta_0\beta]-\tfrac{\hat a}2e^2+\sqrt{\hat w}\,ze\}-\frac\alpha2\Big[\log(2\pi\Delta)+\frac{q+\sigma^2}{\Delta}\Big].
 \]
 \step{10} \emph{Stationarity.} Let $\langle\cdot\rangle$ be the average over $\beta$ with the weight in the integral.
-\begin{align*}
-\partial_q:&\quad\hat A=\alpha/\Delta, &\partial_{\hat A}:&\quad q+\Delta=\E\langle e^2\rangle,\\
-\partial_\Delta:&\quad\hat r=\alpha(q+\sigma^2)/\Delta^2\ \ (\text{using }\hat A=\alpha/\Delta), &\partial_{\hat r}:&\quad\Delta=\E\big[\langle e^2\rangle-\langle e\rangle^2\big].
-\end{align*}
-(The last uses $\partial_{\hat r}\E h(\sqrt{\hat r}z)=\frac12\E h''$ for any function $h$ and Gaussian $z$.) So $q=\E\langle e\rangle^2$.
-\step{11} \emph{Zero temperature.} As $\kappa\to\infty$ the spread $\Delta$ vanishes like $1/\kappa$. Set $\Delta=\chi/\kappa$, $\hat A=\kappa A$, $\hat r=\kappa^2r$, $\eta=\sqrt rz$. The weight becomes $\exp\{-\kappa[q_k(\beta)-\theta_0\beta+\frac A2e^2-\eta e]\}$ and concentrates at the minimiser of the bracket: $q_k'(\hat\beta)-\theta_0+Ae=\eta$, which is \eqref{ch1}. Its spread is $1/\kappa(q_k''+A)$, so $\chi=\E\,1/(q_k''(\hat\beta)+A)$; differentiating \eqref{ch1} in $\eta$ shows this equals $\E\,\partial\hat\beta/\partial\eta$. The first three relations of Step 10 give \eqref{fp1}.
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item $\partial_q\Phi=\frac12\hat a-\frac\alpha{2\Delta}=0$, so $\hat a=\alpha/\Delta$.
+\item $\partial_\Delta\Phi=\frac12(\hat a-\hat w)-\frac\alpha{2\Delta}+\frac{\alpha(q+\sigma^2)}{2\Delta^2}=0$; with $\hat a=\alpha/\Delta$ this gives $\hat w=\alpha(q+\sigma^2)/\Delta^2$.
+\item $\partial_{\hat a}\Phi=\frac12(q+\Delta)-\frac12\E\langle e^2\rangle=0$, so $q+\Delta=\E\langle e^2\rangle$.
+\item $\partial_{\hat w}\Phi=-\frac12\Delta+\partial_{\hat w}\E\log\!\int\!\cdots$. For any function $h$ and Gaussian $z$, $\partial_{\hat w}\E h(\sqrt{\hat w}z)=\frac12\E h''$. Here $h$ is the log-integral as a function of the coefficient of $e$; its second derivative is the variance $\langle e^2\rangle-\langle e\rangle^2$. So $\Delta=\E[\langle e^2\rangle-\langle e\rangle^2]$, and with the previous line $q=\E\langle e\rangle^2$.
+\end{itemize}
+\step{11} \emph{Zero temperature.} As $T\to0$ the weight concentrates, so its variance $\Delta$ vanishes in proportion to $T$: set $\Delta=\chi T$. Then $\hat a=\alpha/\chi T$ and $\hat w=\alpha(q+\sigma^2)/\chi^2T^2$: write $\hat a=a/T$ and $\sqrt{\hat w}\,z=\eta/T$ with $\eta\sim\mathcal N(0,\alpha(q+\sigma^2)/\chi^2)$. The weight becomes $\exp\{-\frac1T[q_k(\beta)-\theta_0\beta+\frac a2e^2-\eta e]\}$ and concentrates at the minimiser of the bracket: $q_k'(\hat\beta)-\theta_0+ae=\eta$, which is \eqref{ch1}. Around the minimiser the bracket is quadratic with curvature $q_k''(\hat\beta)+a$, so the variance of $e$ is $T/(q_k''+a)$ and $\chi=\E\,1/(q_k''(\hat\beta)+a)$. Differentiating \eqref{ch1} in $\eta$ gives $(q_k''+a)\,\partial\hat\beta/\partial\eta=1$: the same quantity. Finally $q=\E\langle e\rangle^2=\E(\hat\beta-b\bs)^2$.
 
-\textbf{Pretraining} ($\beta_0=0$, $b=1$): $q_k'(\beta)+A(\beta-\bs)=\eta$.
+\textbf{Pretraining} ($\beta_0=0$, $b=1$): $q_k'(A)+a\,(A-\bs)=\eta$.
 
-\textbf{Weight decay kept on} (Result 5). The constraints are replaced by the factor $\exp\{-\frac\kappa2\sum_i(x_i^\top e-\sigma\xi_i)^2\}$ and $q_k(\beta)-\theta_0\beta$ by $\frac\lambda2|\beta|$. Step 8 becomes a Gaussian integral over $P\sim\mathcal N(0,Q)$: $\E_P\,\exp\{-\frac\kappa2\sum_a(P_a-\sigma\xi)^2\}$, which to first order in $m$ is $\exp-\frac m2\big[\log(1+\kappa\Delta)+\frac{\kappa(q+\sigma^2\xi^2)}{1+\kappa\Delta}\big]$. With $\Delta=\chi/\kappa$ the same steps give
+\textbf{Weight decay kept on} (Result 5: minimise $\frac12\sum_i(f_i-t_i)^2+2\lambda\|\beta\|_1$). The changes:
+\step{1'} $Z=\int d\beta\,\exp\{-\frac1T[\frac12\sum_i(x_i^\top e-\sigma\xi_i)^2+2\lambda\sum_j|\beta_j|]\}$: the constraints become a Gaussian factor and $q_k(\beta)-\theta_0\beta$ becomes $2\lambda|\beta|$.
+\step{8'} The third term is now $\alpha\log\E_\xi\E_P\exp\{-\frac1{2T}\sum_r(P_r-\sigma\xi)^2\}$ with $P\sim\mathcal N(0,\mathcal O)$. This Gaussian integral equals $\det(I+\mathcal O/T)^{-1/2}\exp\{-\frac{\sigma^2\xi^2}{2T}\mathbf 1^\top(I+\mathcal O/T)^{-1}\mathbf 1\}$, and to first order in $m$ its logarithm is $-\frac m2\big[\log(1+\frac\Delta T)+\frac{q+\sigma^2\xi^2}{T+\Delta}\big]$.
+\step{10'} $\partial_q$: $\hat a=\alpha/(T+\Delta)$. $\partial_\Delta$: $\hat w=\alpha(q+\sigma^2)/(T+\Delta)^2$.
+\step{11'} With $\Delta=\chi T$:
 \[
-A=\frac{\alpha}{1+\chi},\qquad r=\frac{\alpha(q+\sigma^2)}{(1+\chi)^2},\qquad\hat\beta=\operatorname{soft}\Big(b\bs+\frac\eta A,\ \frac\lambda{2A}\Big),
+a=\frac{\alpha}{1+\chi},\qquad\operatorname{Var}\eta=\frac{\alpha(q+\sigma^2)}{(1+\chi)^2},\qquad\hat\beta=\arg\min_\beta\big[2\lambda|\beta|+\tfrac a2e^2-\eta e\big]=\operatorname{soft}\Big(b\bs+\frac\eta a,\ \frac{2\lambda}a\Big),
 \]
-where $\operatorname{soft}(s,a)=\operatorname{sign}(s)\max(|s|-a,0)$.
+where $\operatorname{soft}(s,h)=\operatorname{sign}(s)\max(|s|-h,0)$, and $\chi=\E\,\partial\hat\beta/\partial\eta=\frac1a\Pr(\hat\beta\neq0)$.
 
 \section{Replica method: blocks and groups}
-Now several groups $g$ of samples, each seeing only some blocks, with its own target multiple $b_g$ and noise $\sigma_g$; $e_g=\beta-b_g\bs$.
+Now several groups $g$ of samples; group $g$ has $\alpha_gd$ samples, sees only some blocks, and has targets $t_i=b_g\,x_i^\top\bs+\sigma_g\xi_i$. Let $e_g=\beta-b_g\bs$ and $\E_g=\sum_{B\text{ seen by }g}p_B\,\E_B$. In our data the groups are parts of $\Rf$ (seeing $d_R,\dSh$) and of $\Ff$ (seeing $\dSh,d_F$).
 
 \textbf{Result 14.} A coordinate of block $B$ obeys
 \begin{equation}\label{chB}
-q_k'(\hat\beta)-\theta_0+\sum_{g\ni B}A_g\,e_g=\eta,\qquad\operatorname{Var}\eta=\sum_{g\ni B}r_g ,
+q_k'(\hat\beta)-\theta_0+\sum_{g\ni B}a_g\,e_g=\eta,\qquad\operatorname{Var}\eta=\sum_{g\ni B}\frac{\alpha_g(q_g+\sigma_g^2)}{\chi_g^2},\qquad
+a_g=\frac{\alpha_g}{\chi_g},\quad q_g=\E_g\,e_g^2,\quad\chi_g=\E_g\frac{\partial\hat\beta}{\partial\eta}.
 \end{equation}
+\step1 \emph{Average over the inputs} (Step 3 of Section~\ref{rep1}). A sample of group $g$ is zero outside the blocks $g$ sees, so $x_i^\top e_g^r$ has covariance $\mathcal O^g_{rr'}=\frac1d\sum_{j\in\text{blocks of }g}e^r_{g,j}e^{r'}_{g,j}$: one overlap matrix per group. The sample factor is $\prod_g[\E_\xi\mathcal N(\sigma_g\xi\mathbf 1;0,\mathcal O^g)]^{\alpha_gd}$.
+\step2 \emph{Conjugates} (Step 4). One $\hat{\mathcal O}^g$ per group. The first term becomes $\frac12\sum_g\sum_{rr'}\hat{\mathcal O}^g_{rr'}\mathcal O^g_{rr'}$. In the exponent, a coordinate of block $B$ appears in $\mathcal O^g$ for every $g\ni B$, so it carries $-\frac12\sum_{g\ni B}\sum_{rr'}\hat{\mathcal O}^g_{rr'}e_g^re_g^{r'}$; the second term is $\sum_Bp_B$ times the logarithm of the one-coordinate integral of block $B$.
+\step3 \emph{Ansatz and three terms} (Steps 5--8), for each group separately: $(q_g,\Delta_g,\hat a_g,\hat w_g)$, an independent Gaussian $z_g$ per group, and
 \[
-A_g=\frac{\alpha_g}{\chi_g},\qquad r_g=\frac{\alpha_g(q_g+\sigma_g^2)}{\chi_g^2},\qquad q_g=\E_g\,e_g^2,\qquad\chi_g=\E_g\frac{\partial\hat\beta}{\partial\eta},
+\begin{aligned}\Phi=&\sum_g\tfrac12\big[\hat a_g(q_g+\Delta_g)-\hat w_g\Delta_g\big]-\sum_g\frac{\alpha_g}2\Big[\log(2\pi\Delta_g)+\frac{q_g+\sigma_g^2}{\Delta_g}\Big]\\&+\sum_Bp_B\,\E_B\log\!\int\!d\beta\,\exp\{-\tfrac1T[q_k(\beta)-\theta_0\beta]-\!\sum_{g\ni B}\!\big(\tfrac{\hat a_g}2e_g^2-\sqrt{\hat w_g}\,z_ge_g\big)\}.\end{aligned}
 \]
-where $\E_g=\sum_{B\text{ seen by }g}p_B\,\E_B$.
+\step4 \emph{Stationarity} (Step 10). In $q_g,\Delta_g$: $\hat a_g=\alpha_g/\Delta_g$, $\hat w_g=\alpha_g(q_g+\sigma_g^2)/\Delta_g^2$, as before. In $\hat a_g$: $q_g+\Delta_g=\sum_{B\in g}p_B\E_B\langle e_g^2\rangle=\E_g\langle e_g^2\rangle$; in $\hat w_g$: $\Delta_g=\E_g[\langle e_g^2\rangle-\langle e_g\rangle^2]$. The block weights $p_B$ enter because block $B$ contributes $p_B$ of the coordinates.
+\step5 \emph{Zero temperature} (Step 11). $\Delta_g=\chi_gT$, $\hat a_g=a_g/T$, and the fields add: $\eta=T\sum_{g\ni B}\sqrt{\hat w_g}\,z_g$, a Gaussian whose variance is the sum over $g\ni B$. The weight of a coordinate of block $B$ concentrates at the minimiser of $q_k(\beta)-\theta_0\beta+\sum_{g\ni B}\frac{a_g}2e_g^2-\eta\beta$, which satisfies \eqref{chB}; its variance $T/(q_k''+\sum_{g\ni B}a_g)$ gives $\chi_g=\E_g\,\partial\hat\beta/\partial\eta$.
 
-\emph{Derivation: the changes to Section~\ref{rep1}.} Step 3: for a sample of group $g$, $x_i^\top e_g^a$ has covariance $Q^g_{ab}=\frac1d\sum_je^a_{g,j}e^b_{g,j}$ over the coordinates $g$ sees: one overlap matrix per group. Step 4: one conjugate $\hat Q^g$ per group; the third term is $\sum_g\alpha_g\log\mathcal N(\cdot;0,Q^g)$, and a coordinate of block $B$ carries $-\frac12\sum_{g\ni B}\sum_{ab}\hat Q^g_{ab}e_g^ae_g^b$, entering the second term with weight $p_B$. Steps 5--11 go through group by group: each group has its own $(q_g,\chi_g,A_g,r_g)$ and its own independent Gaussian; a coordinate of block $B$ sums the contributions of the groups that see it.
+If the targets are generated by a vector with block-dependent multiples (the workshop loss, Section 15), replace $b_g\bs$ by that vector; nothing else changes.
 
-\section{Replica method: finetuning on samples used in pretraining}\label{rep2}
-Now the start of the stage depends on the data, so Result 13 does not apply. Take first one block and: \emph{stage 1}, pretraining from zero on all $\alpha d$ samples with labels $x_i^\top\bs$; rescaling by $S$; \emph{stage 2}, finetuning on $\alpha_Fd$ \emph{of the same samples} to targets $b\,x_i^\top\bs$. Subscripts $1,2$ label the stages: $\beta_1$ is the pretrained model, $\beta_2$ the finetuned one, $e_1=\beta_1-\bs$, $e_2=\beta_2-b\bs$. By Results 2 and 4 stage 2 minimises $D_{S^2k}(\beta_2,S\beta_1)$; the part that depends on $\beta_2$ is, per coordinate, $q_{S^2k}(\beta_2)-\theta_1\beta_2$ with $\theta_1=q_k'(\beta_1)$.
+\section{Replica method: unlearning on samples used in pretraining}\label{rep2}
+Now the start depends on the data, so Result 13 does not apply. Take first one block and one group: pretraining on all $\alpha d$ samples with labels $x_i^\top\bs$, giving $A$; rescaling by $\kappa$; unlearning on $\alpha_Fd$ \emph{of the same samples} to targets $b\,x_i^\top\bs$, giving $U$. Errors: $e_A=A-\bs$, $e_U=U-b\bs$. By Results 2 and 4, $U$ minimises $D_{Q_{\kappa^2k}}(\beta,\kappa A)$; the part depending on $\beta$ is, per coordinate, $q_{\kappa^2k}(\beta)-\theta_A\beta$ with $\theta_A=q_k'(A)$.
 
 \textbf{Result 15.} One coordinate obeys
 \begin{align}
-\text{stage 1:}&\quad q_k'(\beta_1)+A_1e_1=\eta_1,\label{s1}\\
-\text{stage 2:}&\quad q_{S^2k}'(\beta_2)-q_k'(\beta_1)+A_2\,(e_2-\omega e_1)=\eta_2,\label{s2}
+\text{pretraining:}&\quad q_k'(A)+a_A\,e_A=\eta_A,\label{s1}\\
+\text{unlearning:}&\quad q_{\kappa^2k}'(U)-q_k'(A)+a_U\,(e_U-\omega e_A)=\eta_U,\label{s2}
 \end{align}
-with $(\eta_1,\eta_2)$ jointly Gaussian,
+with $(\eta_A,\eta_U)$ jointly Gaussian,
 \[
-A_1=\frac\alpha{\chi_1},\quad\operatorname{Var}\eta_1=\frac{\alpha\,\E e_1^2}{\chi_1^2},\qquad
-A_2=\frac{\alpha_F}{\chi_2},\quad\operatorname{Var}\eta_2=\frac{\alpha_F\,\E(e_2-\omega e_1)^2}{\chi_2^2},\quad\operatorname{Cov}(\eta_1,\eta_2)=\frac{\alpha_F\,\E[e_1(e_2-\omega e_1)]}{\chi_1\chi_2},
+a_A=\frac\alpha{\chi_A},\qquad\operatorname{Var}\eta_A=\frac{\alpha\,\E e_A^2}{\chi_A^2},\qquad a_U=\frac{\alpha_F}{\chi_U},
 \]
 \[
-\chi_1=\E\frac{\partial\beta_1}{\partial\eta_1},\qquad\chi_2=\E\frac{\partial\beta_2}{\partial\eta_2},\qquad\omega=\frac1{\chi_1}\E\frac{d\beta_2}{d\eta_1}\quad\text{(through $\beta_1$, at fixed $\eta_2$)}.
+\operatorname{Var}\eta_U=\frac{\alpha_F\,\E(e_U-\omega e_A)^2}{\chi_U^2},\qquad\operatorname{Cov}(\eta_A,\eta_U)=\frac{\alpha_F\,\E[e_A(e_U-\omega e_A)]}{\chi_A\chi_U},
 \]
-\emph{Reading.} A reused sample was already fitted in stage 1. Its stage-2 misfit is not $e_2$ but $e_2-\omega e_1$: the new error minus the part already absorbed. The \emph{reuse factor} $\omega$ is how much of a change of the pretrained model is still present after finetuning. For fresh samples $\omega$ is replaced by $0$ and $\operatorname{Cov}(\eta_1,\eta_2)=0$, which is Result 13.
+\[
+\chi_A=\E\frac{\partial A}{\partial\eta_A},\qquad\chi_U=\E\frac{\partial U}{\partial\eta_U},\qquad\omega=\frac1{\chi_A}\E\frac{dU}{d\eta_A},\qquad\frac{dU}{d\eta_A}=\frac{q_k''(A)+a_U\omega}{q_{\kappa^2k}''(U)+a_U}\cdot\frac1{q_k''(A)+a_A}.
+\]
+\emph{Reading.} A reused sample was already fitted in pretraining. Its misfit in unlearning is not $e_U$ but $e_U-\omega e_A$: the new error minus the part already absorbed. The \emph{reuse factor} $\omega$ is how much of a change of the pretrained model is still present after unlearning. For fresh samples $\omega$ is replaced by $0$ and $\operatorname{Cov}(\eta_A,\eta_U)=0$, which is Result 13 with $\theta_0=\theta_A$.
 
-\step1 \emph{What to average.} The pretrained model is a sample from the stage-1 weight
-\[\exp\{-\kappa_1Q_k(\beta_1)\}\prod_i\delta(x_i^\top e_1)\big/Z_1 ,\]
-and we need $\E\log Z_2$, with $Z_2$ the stage-2 partition function started at that $\beta_1$. Write $1/Z_1=\lim_{m_1\to0}Z_1^{m_1-1}$ and $\log Z_2=\lim_{m_2\to0}\partial_{m_2}Z_2^{m_2}$. This gives $m_1$ replicas of stage 1, $e_1^a$ ($a=1..m_1$), and $m_2$ replicas of stage 2, $e_2^{a'}$ ($a'=1..m_2$), all started from the \emph{first} stage-1 replica.
-\step2 \emph{Average over the inputs.} A sample used in both stages imposes $x^\top e_1^a=0$ for all $a$ and $x^\top e_2^{a'}=0$ for all $a'$. These $m_1+m_2$ numbers are jointly Gaussian with covariance
+\step1 \emph{What to average.} $A$ is a sample from the pretraining weight $\exp\{-\frac1{T_A}Q_k(\beta)\}\prod_i\delta(x_i^\top e_A)/Z_A$ at $T_A\to0$, and we need $\E\log Z_U$, with $Z_U$ the unlearning partition function (temperature $T_U$) started at that $A$. Write $1/Z_A=\lim_{m_A\to0}Z_A^{m_A-1}$ and $\log Z_U=\lim_{m_U\to0}\partial_{m_U}Z_U^{m_U}$. This gives $m_A$ pretraining replicas $e_A^r$ ($r=1..m_A$) and $m_U$ unlearning replicas $e_U^s$ ($s=1..m_U$), all started from the \emph{first} pretraining replica, $r=1$.
+\step2 \emph{Average over the inputs.} A sample used in both stages imposes $x^\top e_A^r=0$ for all $r$ and $x^\top e_U^s=0$ for all $s$. These $m_A+m_U$ numbers are jointly Gaussian with covariance
 \[
-\mathcal Q=\begin{pmatrix}Q_1&C\\ C^\top&Q_2\end{pmatrix},\qquad (Q_1)_{ab}=\tfrac1d\textstyle\sum_je_1^ae_1^b,\quad (Q_2)_{a'b'}=\tfrac1d\sum_je_2^{a'}e_2^{b'},\quad C_{aa'}=\tfrac1d\sum_je_1^ae_2^{a'} ,
+\mathcal O=\begin{pmatrix}\mathcal O_A&C\\ C^\top&\mathcal O_U\end{pmatrix},\qquad(\mathcal O_A)_{rr'}=\tfrac1d\textstyle\sum_je_A^re_A^{r'},\quad(\mathcal O_U)_{ss'}=\tfrac1d\sum_je_U^se_U^{s'},\quad C_{rs}=\tfrac1d\sum_je_A^re_U^s ,
 \]
-and the sample contributes the density $\mathcal N(0;0,\mathcal Q)\propto(\det\mathcal Q)^{-1/2}$. A sample used only in stage 1 contributes $\mathcal N(0;0,Q_1)$.
-\step3 \emph{Ansatz.} $Q_1$ and $Q_2$ replica symmetric with $(q_1,\Delta_1)$ and $(q_2,\Delta_2)$. Cross overlaps: $C_{aa'}=q_{12}$ for $a\neq1$ and $C_{1a'}=q_{12}+\Delta_{12}$: a stage-2 replica overlaps more with the replica it started from.
-\step4 \emph{The determinant.} $\det\mathcal Q=\det Q_1\cdot\det(Q_2-C^\top Q_1^{-1}C)$. Here every column of $C$ is the vector $\mathbf k=q_{12}\mathbf 1+\Delta_{12}\mathbf e_1$ ($\mathbf e_1$ the first unit vector), and $Q_1^{-1}=\frac1{\Delta_1}\big[I-\frac{q_1}{\Delta_1+m_1q_1}\mathbf 1\mathbf 1^\top\big]$. So $C^\top Q_1^{-1}C=K\,\mathbf 1\mathbf 1^\top$ with, as $m_1\to0$,
+and the sample contributes the density at zero, $\mathcal N(0;0,\mathcal O)\propto(\det\mathcal O)^{-1/2}$. A sample used only in pretraining contributes $\mathcal N(0;0,\mathcal O_A)$.
+\step3 \emph{Ansatz.} $\mathcal O_A$ and $\mathcal O_U$ replica symmetric with $(q_A,\Delta_A)$ and $(q_U,\Delta_U)$. Cross overlaps: $C_{rs}=q_{AU}$ for $r\neq1$ and $C_{1s}=q_{AU}+\Delta_{AU}$, because an unlearning replica overlaps more with the pretraining replica it started from.
+\step4 \emph{The determinant.} By the block formula, $\det\mathcal O=\det\mathcal O_A\cdot\det(\mathcal O_U-C^\top\mathcal O_A^{-1}C)$. Every column of $C$ is the vector $\mathbf k=q_{AU}\mathbf 1+\Delta_{AU}\mathbf e_1$ ($\mathbf e_1$ the first unit vector), so $C^\top\mathcal O_A^{-1}C=K\,\mathbf 1\mathbf 1^\top$ with $K=\mathbf k^\top\mathcal O_A^{-1}\mathbf k$. From $\mathcal O_A^{-1}=\frac1{\Delta_A}\big[I-\frac{q_A}{\Delta_A+m_Aq_A}\mathbf 1\mathbf 1^\top\big]$, $\mathbf k^\top\mathbf k=m_Aq_{AU}^2+2q_{AU}\Delta_{AU}+\Delta_{AU}^2$ and $\mathbf 1^\top\mathbf k=m_Aq_{AU}+\Delta_{AU}$, as $m_A\to0$:
 \[
-K=\mathbf k^\top Q_1^{-1}\mathbf k=\frac1{\Delta_1}\Big[2q_{12}\Delta_{12}+\Delta_{12}^2-\frac{q_1}{\Delta_1}\Delta_{12}^2\Big].
+K=\frac1{\Delta_A}\Big[2q_{AU}\Delta_{AU}+\Delta_{AU}^2-\frac{q_A}{\Delta_A}\Delta_{AU}^2\Big].
 \]
-Then $Q_2-K\mathbf 1\mathbf 1^\top$ is replica symmetric with $q_2$ replaced by $q_2-K$, and by Step 8 of Section~\ref{rep1} the part of $\log\mathcal N(0;0,\mathcal Q)$ proportional to $m_2$ is $-\frac{m_2}2\big[\log(2\pi\Delta_2)+\frac{q_2-K}{\Delta_2}\big]$. ($q_2-K$ is the variance of $x^\top e_2$ given that $x^\top e_1^a=0$ for all $a$.) The factor $\det Q_1$ does not involve stage 2: as $m_2\to0$ stage 1 is unaffected and obeys Result 13.
-\step5 \emph{Conjugate variables.} For $Q_2$: $\hat A_2,\hat r_2$ as in Section~\ref{rep1}. For the cross overlaps: $-\hat r_{12}$ for every pair $(a,a')$, plus $\hat A_{12}$ for the pairs $(1,a')$. The first term of the exponent, to order $m_2$ and as $m_1\to0$:
+Then $\mathcal O_U-K\mathbf 1\mathbf 1^\top$ is replica symmetric with $q_U$ replaced by $q_U-K$, and by Step 8 of Section~\ref{rep1} the part of $\log\mathcal N(0;0,\mathcal O)$ proportional to $m_U$ is $-\frac{m_U}2\big[\log(2\pi\Delta_U)+\frac{q_U-K}{\Delta_U}\big]$. ($q_U-K$ is the variance of $x^\top e_U$ given $x^\top e_A^r=0$ for all $r$.) The factor $\det\mathcal O_A$ does not involve unlearning: as $m_U\to0$ pretraining is unaffected and obeys Result 13.
+\step5 \emph{Conjugate variables.} As in Step 4 of Section~\ref{rep1}, each overlap is fixed by a delta function with a conjugate. For $\mathcal O_U$: $\hat a_U,\hat w_U$ as there. For the cross overlaps $C_{rs}$ (each pair once, so no factor $\frac12$): conjugate $-\hat w_{AU}$ for every pair, plus $\hat a_{AU}$ for the pairs with $r=1$. The first term of the exponent is then
 \[
-\tfrac12\big[\hat A_2(q_2+\Delta_2)-\hat r_2\Delta_2\big]+\hat A_{12}(q_{12}+\Delta_{12})-\hat r_{12}\Delta_{12}.
+\tfrac{m_U}2\big[\hat a_U(q_U+\Delta_U)-\hat w_U\Delta_U\big]+\sum_{r,s}\big(-\hat w_{AU}+\hat a_{AU}\mathbf 1_{r=1}\big)C_{rs},
 \]
-(The cross sum is $m_2[-\hat r_{12}(m_1q_{12}+\Delta_{12})+\hat A_{12}(q_{12}+\Delta_{12})]$.)
-\step6 \emph{One coordinate.} The exponent is
+and the sum equals $m_U\big[-\hat w_{AU}(m_Aq_{AU}+\Delta_{AU})+\hat a_{AU}(q_{AU}+\Delta_{AU})\big]\to m_U\big[\hat a_{AU}(q_{AU}+\Delta_{AU})-\hat w_{AU}\Delta_{AU}\big]$ as $m_A\to0$.
+\step6 \emph{One coordinate.} The conjugates multiply the products of errors in the exponent, which is
 \[
--\tfrac{\hat A_1}2\sum_a(e_1^a)^2-\tfrac{\hat A_2}2\sum_{a'}(e_2^{a'})^2-\hat A_{12}\,e_1^1\sum_{a'}e_2^{a'}+\tfrac{\hat r_1}2\Big(\sum_ae_1^a\Big)^2+\hat r_{12}\Big(\sum_ae_1^a\Big)\Big(\sum_{a'}e_2^{a'}\Big)+\tfrac{\hat r_2}2\Big(\sum_{a'}e_2^{a'}\Big)^2 .
+-\tfrac{\hat a_A}2\sum_r(e_A^r)^2-\tfrac{\hat a_U}2\sum_s(e_U^s)^2-\hat a_{AU}\,e_A^1\sum_se_U^s+\tfrac{\hat w_A}2\Big(\sum_re_A^r\Big)^2+\hat w_{AU}\Big(\sum_re_A^r\Big)\Big(\sum_se_U^s\Big)+\tfrac{\hat w_U}2\Big(\sum_se_U^s\Big)^2 .
 \]
-The last three terms are a quadratic form in the two sums; linearise it with a Gaussian pair $(z_1,z_2)$ of covariance $\begin{pmatrix}\hat r_1&\hat r_{12}\\\hat r_{12}&\hat r_2\end{pmatrix}$: it becomes $\E\,\exp\{z_1\sum_ae_1^a+z_2\sum_{a'}e_2^{a'}\}$. Given $(z_1,z_2)$ the replicas factorise:
+The last three terms are a quadratic form in the two sums. Linearise it with a Gaussian pair $(z_A,z_U)$ of covariance $\begin{pmatrix}\hat w_A&\hat w_{AU}\\\hat w_{AU}&\hat w_U\end{pmatrix}$: it equals $\E\exp\{z_A\sum_re_A^r+z_U\sum_se_U^s\}$. Given $(z_A,z_U)$ the replicas factorise:
 \[
 \begin{aligned}
-&\Big[\int\!d\beta_1\,\exp\{-\kappa_1q_k(\beta_1)-\frac{\hat A_1}2e_1^2+z_1e_1\}\Big]^{m_1-1}\!\int\!d\beta_1\,\exp\{-\kappa_1q_k(\beta_1)-\frac{\hat A_1}2e_1^2+z_1e_1\}\\
-&\qquad\times\Big[\int\!d\beta_2\,\exp\{-\kappa_2[q_{S^2k}(\beta_2)-\theta_1\beta_2]-\frac{\hat A_2}2e_2^2-\hat A_{12}e_1e_2+z_2e_2\}\Big]^{m_2} .
+&\Big[\int\!d\beta\,\exp\{-\tfrac1{T_A}q_k(\beta)-\tfrac{\hat a_A}2e_A^2+z_Ae_A\}\Big]^{m_A-1}\!\int\!dA\,\exp\{-\tfrac1{T_A}q_k(A)-\tfrac{\hat a_A}2e_A^2+z_Ae_A\}\\
+&\qquad\times\Big[\int\!dU\,\exp\{-\tfrac1{T_U}[q_{\kappa^2k}(U)-\theta_AU]-\tfrac{\hat a_U}2e_U^2-\hat a_{AU}e_Ae_U+z_Ue_U\}\Big]^{m_U} .
 \end{aligned}
 \]
-As $m_1\to0$ the first bracket becomes one over the stage-1 single-coordinate integral, which normalises the middle integral: $\beta_1$ is a sample from the stage-1 single-coordinate weight at field $z_1$. To order $m_2$ the term is $m_2\,\E\langle\log Z_2^{\rm coord}\rangle$, with $Z_2^{\rm coord}$ the last bracket and $\langle\cdot\rangle$ the average over that $\beta_1$.
-\step7 \emph{The function to make stationary} (order $m_2$):
+As $m_A\to0$ the first bracket becomes one over the pretraining one-coordinate integral, which normalises the integral over $A$: $A$ is a sample from the pretraining one-coordinate weight at field $z_A$. To order $m_U$ the term is $m_U\,\E\langle\log Z_U^{\rm coord}\rangle$, with $Z_U^{\rm coord}$ the last bracket and $\langle\cdot\rangle$ the average over that $A$.
+\step7 \emph{The function to make stationary} (order $m_U$):
 \[
-\Phi_2=\tfrac12\big[\hat A_2(q_2+\Delta_2)-\hat r_2\Delta_2\big]+\hat A_{12}(q_{12}+\Delta_{12})-\hat r_{12}\Delta_{12}+\E\big\langle\log Z_2^{\rm coord}\big\rangle-\frac{\alpha_F}2\Big[\log(2\pi\Delta_2)+\frac{q_2-K}{\Delta_2}\Big].
+\begin{aligned}\Phi_U=&\tfrac12\big[\hat a_U(q_U+\Delta_U)-\hat w_U\Delta_U\big]+\hat a_{AU}(q_{AU}+\Delta_{AU})-\hat w_{AU}\Delta_{AU}\\&+\E\big\langle\log Z_U^{\rm coord}\big\rangle-\frac{\alpha_F}2\Big[\log(2\pi\Delta_U)+\frac{q_U-K}{\Delta_U}\Big].\end{aligned}
 \]
-\step8 \emph{Stationarity in the overlaps.}
-\begin{align*}
-\partial_{q_2}:&\ \hat A_2=\frac{\alpha_F}{\Delta_2}, &\partial_{\Delta_2}:&\ \hat r_2=\frac{\alpha_F(q_2-K)}{\Delta_2^2},\\
-\partial_{q_{12}}:&\ \hat A_{12}=-\frac{\alpha_F}{2\Delta_2}\frac{\partial K}{\partial q_{12}}=-\frac{\alpha_F\Delta_{12}}{\Delta_1\Delta_2}, &\partial_{\Delta_{12}}:&\ \hat r_{12}=\hat A_{12}+\frac{\alpha_F}{2\Delta_2}\frac{\partial K}{\partial\Delta_{12}}=\frac{\alpha_F}{\Delta_1\Delta_2}\Big[q_{12}-\frac{q_1}{\Delta_1}\Delta_{12}\Big].
-\end{align*}
-Stationarity in the conjugates identifies the overlaps with averages: $q_2+\Delta_2=\E\langle e_2^2\rangle$, $\Delta_2=\E[\langle e_2^2\rangle-\langle e_2\rangle^2]$, $q_{12}+\Delta_{12}=\E\langle e_1e_2\rangle$, $\Delta_{12}=\E[\langle e_1e_2\rangle-\langle e_1\rangle\langle e_2\rangle]$.
-\step9 \emph{Zero temperature.} $\Delta_1=\chi_1/\kappa_1$, $\Delta_2=\chi_2/\kappa_2$. $\Delta_{12}$ is the joint thermal fluctuation of $\beta_1$ and $\beta_2$: $\beta_1$ fluctuates by $O(1/\kappa_1)$ and $\beta_2$ follows it, so $\Delta_{12}=\frac1{\kappa_1}\E\,d\beta_2/d\eta_1=\omega\chi_1/\kappa_1$. Then
+\step8 \emph{Stationarity in the overlaps.} Using $\partial K/\partial q_{AU}=2\Delta_{AU}/\Delta_A$ and $\partial K/\partial\Delta_{AU}=\frac2{\Delta_A}\big[q_{AU}+\Delta_{AU}-\frac{q_A}{\Delta_A}\Delta_{AU}\big]$:
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item $\partial_{q_U}$: $\frac12\hat a_U-\frac{\alpha_F}{2\Delta_U}=0$, so $\hat a_U=\alpha_F/\Delta_U$.
+\item $\partial_{\Delta_U}$: $\frac12(\hat a_U-\hat w_U)-\frac{\alpha_F}{2\Delta_U}+\frac{\alpha_F(q_U-K)}{2\Delta_U^2}=0$, so $\hat w_U=\alpha_F(q_U-K)/\Delta_U^2$.
+\item $\partial_{q_{AU}}$: $\hat a_{AU}+\frac{\alpha_F}{2\Delta_U}\frac{\partial K}{\partial q_{AU}}=0$, so $\hat a_{AU}=-\alpha_F\Delta_{AU}/\Delta_A\Delta_U$.
+\item $\partial_{\Delta_{AU}}$: $\hat a_{AU}-\hat w_{AU}+\frac{\alpha_F}{2\Delta_U}\frac{\partial K}{\partial\Delta_{AU}}=0$, so $\hat w_{AU}=\frac{\alpha_F}{\Delta_A\Delta_U}\big[q_{AU}-\frac{q_A}{\Delta_A}\Delta_{AU}\big]$.
+\end{itemize}
+Stationarity in the conjugates, as in Step 10 of Section~\ref{rep1}: $q_U+\Delta_U=\E\langle e_U^2\rangle$, $\Delta_U=\E[\langle e_U^2\rangle-\langle e_U\rangle^2]$, $q_{AU}+\Delta_{AU}=\E\langle e_Ae_U\rangle$, $\Delta_{AU}=\E[\langle e_Ae_U\rangle-\langle e_A\rangle\langle e_U\rangle]$ (the last from the mixed derivative in $z_A,z_U$).
+\step9 \emph{Zero temperature.} $\Delta_A=\chi_AT_A$, $\Delta_U=\chi_UT_U$. $\Delta_{AU}$ is the joint thermal fluctuation of $A$ and $U$: $A$ fluctuates with variance $T_A\,\partial A/\partial\eta_A$, and $U$ follows it with slope $\partial U/\partial A$, so $\Delta_{AU}=T_A\,\E\,dU/d\eta_A=\omega\chi_AT_A$. Insert in $K$ and let $T_A\to0$:
 \[
-K\to2\omega q_{12}-\omega^2q_1,\qquad q_2-K=\E(e_2-\omega e_1)^2,
+K=2\omega q_{AU}+\omega^2\chi_AT_A-\omega^2q_A\ \to\ 2\omega q_{AU}-\omega^2q_A,\qquad q_U-K=\E(e_U-\omega e_A)^2 .
 \]
+Then, from Step 8,
 \[
-\hat A_2=\kappa_2\frac{\alpha_F}{\chi_2},\qquad\hat A_{12}=-\kappa_2\frac{\alpha_F\,\omega}{\chi_2},\qquad\hat r_2=\kappa_2^2\frac{\alpha_F\E(e_2-\omega e_1)^2}{\chi_2^2},\qquad\hat r_{12}=\kappa_1\kappa_2\frac{\alpha_F\E[e_1(e_2-\omega e_1)]}{\chi_1\chi_2}.
+\hat a_U=\frac{\alpha_F}{\chi_UT_U},\qquad\hat a_{AU}=-\frac{\alpha_F\,\omega}{\chi_UT_U},\qquad\hat w_U=\frac{\alpha_F\E(e_U-\omega e_A)^2}{\chi_U^2T_U^2},\qquad\hat w_{AU}=\frac{\alpha_F\E[e_A(e_U-\omega e_A)]}{\chi_A\chi_UT_AT_U}.
 \]
-With $z_1=\kappa_1\eta_1$, $z_2=\kappa_2\eta_2$, the stage-2 weight is $\exp\{-\kappa_2[q_{S^2k}(\beta_2)-\theta_1\beta_2+\frac{A_2}2e_2^2-A_2\omega e_1e_2-\eta_2e_2]\}$; its minimiser satisfies \eqref{s2}, and the covariances of $(\eta_1,\eta_2)$ are $\hat r_2/\kappa_2^2$ and $\hat r_{12}/\kappa_1\kappa_2$.
+With $z_A=\eta_A/T_A$, $z_U=\eta_U/T_U$ and $a_U=\alpha_F/\chi_U$, the unlearning weight is $\exp\{-\frac1{T_U}[q_{\kappa^2k}(U)-\theta_AU+\frac{a_U}2e_U^2-a_U\omega e_Ae_U-\eta_Ue_U]\}$. Its minimiser satisfies \eqref{s2}; the covariances of $(\eta_A,\eta_U)$ are $T_U^2\hat w_U$ and $T_AT_U\hat w_{AU}$.
+\step{10} \emph{The slope $dU/d\eta_A$.} Differentiate \eqref{s2} at fixed $\eta_U$: $(q_{\kappa^2k}''(U)+a_U)\,dU=(q_k''(A)+a_U\omega)\,dA$, and \eqref{s1} gives $dA=d\eta_A/(q_k''(A)+a_A)$.
 
 \textbf{Check.} \eqref{s1}--\eqref{s2} solved directly, against the independently written cavity solver:
 \begin{center}\small\begin{tabular}{@{}lccc@{}}\toprule
-case & $\E\beta_2^2$ & $\E(\beta_2-\bs)^2$ & $\E(\beta_2-\beta_1)^2$\\\midrule
-$k=10^{-2}$, $\alpha=0.4$, $\alpha_F=0.2$, $b=0$, $S=1$ & $0.0721$ / $0.0721$ & $0.855$ / $0.852$ & $0.322$ / $0.323$\\
+case & $\E U^2$ & $\E(U-\bs)^2$ & $\E(U-A)^2$\\\midrule
+$k=10^{-2}$, $\alpha=0.4$, $\alpha_F=0.2$, $b=0$, $\kappa=1$ & $0.0721$ / $0.0721$ & $0.855$ / $0.852$ & $0.322$ / $0.323$\\
 same with $b=-0.5$ & $0.240$ / $0.247$ & $1.133$ / $1.134$ & $0.600$ / $0.603$\\
-same with $S=3$ & $0.649$ / $0.649$ & $0.993$ / $0.989$ & $0.455$ / $0.463$\\
-$k=10^{-5}$, $\alpha=0.3$, $\alpha_F=0.15$, $b=0$, $S=1$ & $0.0248$ / $0.0249$ & $0.936$ / $0.933$ & $0.372$ / $0.369$\\\bottomrule
+same with $\kappa=3$ & $0.649$ / $0.649$ & $0.993$ / $0.989$ & $0.455$ / $0.463$\\
+$k=10^{-5}$, $\alpha=0.3$, $\alpha_F=0.15$, $b=0$, $\kappa=1$ & $0.0248$ / $0.0249$ & $0.936$ / $0.933$ & $0.372$ / $0.369$\\\bottomrule
 \end{tabular}\end{center}
 
-\textbf{Several groups and blocks.} As in Result 14, each group $g$ used in stage 2 has its own $b_g$, $e_{2,g}=\beta_2-b_g\bs$, and reuse factor $\omega_g=\E_g[d\beta_2/d\eta_1]\big/\E_g[\partial\beta_1/\partial\eta_1]$ (zero for fresh samples). For a coordinate of block $B$:
+\textbf{Several groups and blocks.} Combine with Section 9: each group $g$ used in unlearning has its own $b_g$, $e_{U,g}=U-b_g\bs$, and reuse factor $\omega_g=\E_g[dU/d\eta_A]\big/\E_g[\partial A/\partial\eta_A]$ (zero for fresh samples). For a coordinate of block $B$:
 \begin{equation}\label{s2g}
-q_{S^2k}'(\beta_2)-q_k'(\beta_1)+\sum_{g\ni B}\frac{\alpha_g}{\chi_{2,g}}(e_{2,g}-\omega_ge_1)=\eta_2,\qquad
-\operatorname{Var}\eta_2=\sum_{g\ni B}\frac{\alpha_g\,\E_g(e_{2,g}-\omega_ge_1)^2}{\chi_{2,g}^2},
+q_{\kappa^2k}'(U)-q_k'(A)+\sum_{g\ni B}\frac{\alpha_g}{\chi_{U,g}}(e_{U,g}-\omega_ge_A)=\eta_U,\qquad
+\operatorname{Var}\eta_U=\sum_{g\ni B}\frac{\alpha_g\,\E_g(e_{U,g}-\omega_ge_A)^2}{\chi_{U,g}^2},
 \end{equation}
 \[
-\operatorname{Cov}(\eta_1,\eta_2)=\sum_{g\ni B}\frac{\alpha_g\,\E_g[e_1(e_{2,g}-\omega_ge_1)]}{\chi_{1,g}\chi_{2,g}},\qquad\chi_{s,g}=\E_g\frac{\partial\beta_s}{\partial\eta_s}\ (s=1,2).
+\operatorname{Cov}(\eta_A,\eta_U)=\sum_{g\ni B}\frac{\alpha_g\,\E_g[e_A(e_{U,g}-\omega_ge_A)]}{\chi_{A,g}\chi_{U,g}},\qquad\chi_{A,g}=\E_g\frac{\partial A}{\partial\eta_A},\quad\chi_{U,g}=\E_g\frac{\partial U}{\partial\eta_U}.
 \]
-The sums run over the groups used in stage 2. The retain term is a group with $b=1$; forget-to-zero has $b=0$; a negated target $b<0$.
+The sums run over the groups used in unlearning: $R$ with $b=1$, and $F$ with its target multiple.
 
 \section{Replica method: the references and the metrics}
-\textbf{References.} The retrained model and the retain-only model are each one stage from zero on fewer groups: Result 14 with $b=1$. Their distance to the finetuned model needs their overlap with it.
+\textbf{References.} $A(D\setminus F)$ and $A(\Rf)$ are each one stage from zero on fewer groups: Result 14 with $b=1$. Their distance to $U$ needs their overlap with it.
 
-\textbf{Result 16.} Two models trained on overlapping data have correlated fields. For models $s$ and $s'$ and a coordinate of block $B$,
+\textbf{Result 16.} Two models $M,M'$ trained on overlapping data have correlated fields. For a coordinate of block $B$,
 \[
-\operatorname{Cov}(\eta_s,\eta_{s'})=\sum_{g\ni B\text{ used by both}}\frac{\alpha_g\,\E_g[\epsilon_s\epsilon_{s'}]}{\chi_{s,g}\chi_{s',g}},
+\operatorname{Cov}(\eta_M,\eta_{M'})=\sum_{g\ni B\text{ used by both}}\frac{\alpha_g\,\E_g[\epsilon_M\epsilon_{M'}]}{\chi_{M,g}\chi_{M',g}},
 \]
-with $\epsilon_s$ the misfit of model $s$ on group $g$: $\beta_s-\bs$ for a stage from zero, $e_{2,g}-\omega_ge_1$ for stage 2. All overlaps follow by solving the coordinate equations with these jointly Gaussian fields.
-
-\emph{Derivation.} Replicate both models ($m$ and $m'$ replicas). A shared sample constrains both, so Step 4 of Section~\ref{rep2} applies with a cross block whose entries all equal the overlap $q_{ss'}$ (no distinguished replica). Then $K=q_{ss'}^2\,\mathbf 1^\top Q_s^{-1}\mathbf 1\approx m\,q_{ss'}^2/\Delta_s$, and the log-density gains $\frac{mm'}2\,q_{ss'}^2/\Delta_s\Delta_{s'}$ per shared sample. Stationarity in $q_{ss'}$ sets its conjugate, which is the covariance of the two linearising Gaussians (Step 6), to $\alpha_gq_{ss'}/\Delta_s\Delta_{s'}$; at zero temperature this is the formula. Result 15's $\operatorname{Cov}(\eta_1,\eta_2)$ is the case of the two stages.
+with $\epsilon_M$ the misfit of model $M$ on group $g$: $M-\bs$ for a stage from zero, $e_{U,g}-\omega_ge_A$ for $U$. All overlaps follow by solving the coordinate equations with these jointly Gaussian fields.
+\step1 Replicate both models, $m$ and $m'$ replicas, with overlap matrices $\mathcal O_M,\mathcal O_{M'}$ and cross overlap $q_{MM'}$ between any replica of one and any of the other (no distinguished replica).
+\step2 A sample used by both contributes $\mathcal N(0;0,\mathcal O)$ with the block matrix of Step 2, Section~\ref{rep2}. Now every entry of $C$ is $q_{MM'}$, so $K=q_{MM'}^2\,\mathbf 1^\top\mathcal O_M^{-1}\mathbf 1=m\,q_{MM'}^2/(\Delta_M+mq_M)\approx m\,q_{MM'}^2/\Delta_M$.
+\step3 The log-density is that of $\mathcal O_{M'}$ with $q_{M'}\to q_{M'}-K$: it gains $\frac{m'}2K/\Delta_{M'}=\frac{mm'}2\,q_{MM'}^2/\Delta_M\Delta_{M'}$ per shared sample.
+\step4 The conjugate of $q_{MM'}$ is, as in Step 6 of Section~\ref{rep2}, the covariance $\hat w_{MM'}$ of the two linearising Gaussians, and enters as $-mm'\hat w_{MM'}q_{MM'}$. Stationarity in $q_{MM'}$: $\hat w_{MM'}=\alpha_gq_{MM'}/\Delta_M\Delta_{M'}$.
+\step5 Zero temperature: $\Delta_M=\chi_MT_M$ and $\eta_M=T_Mz_M$ give $\operatorname{Cov}(\eta_M,\eta_{M'})=\alpha_gq_{MM'}/\chi_M\chi_{M'}$, with $q_{MM'}=\E[\epsilon_M\epsilon_{M'}]$. For $U$, Step 4 of Section~\ref{rep2} replaces $e_U$ by $e_U-\omega e_A$. With blocks, sum over the groups seeing $B$ as in Result 14.
 
 \textbf{Metrics.}
 \begin{itemize}[nosep,leftmargin=1.2em]
-\item retain error, forget error: $\sum_Bp_B\,\E_B(\beta_2-\bs)^2$ over the blocks that class sees;
-\item error on $F$ after convergence: $(1-b)^2$ times the mean of $y^2$ (Result 11);
-\item left-over error: $\sum_Bp_B\,\E_B\big[(\beta_2-\bs)-\omega(\beta_1-\bs)\big]^2$ over the blocks the forget class sees. \emph{Derivation:} a left-over sample was fitted in stage 1 and is unused in stage 2, so $x^\top(\beta_2-\bs)$ is to be taken given $x^\top e_1=0$, as in Step 4;
-\item distance to a reference: $\sum_Bp_B\,\E_B(\beta_2-\beta_{\rm ref})^2$.
+\item Retain error, forget error: $\sum_Bp_B\,\E_B(U-\bs)^2$ over the blocks that class sees. (A fresh $x$ is independent of $U$ with variance $1/d$ per coordinate.)
+\item Error on $F$ after convergence: $(1-b)^2$ times the mean of $y^2$ (Result 11).
+\item Error on the kept forget samples: $\sum_{B\in\{\dSh,d_F\}}p_B\,\E_B\big[(U-\bs)-\omega(A-\bs)\big]^2$. \emph{Derivation:} such a sample was fitted in pretraining, so $x^\top e_A=0$, and it is unused in unlearning. Given $x^\top e_A^r=0$ for all replicas, $x^\top(U-\bs)$ is Gaussian with the conditional variance computed in Step 4 of Section~\ref{rep2}, for the vector $U-\bs$ in place of $e_U$: $\E(U-\bs)^2-K$ with $K\to2\omega\E[e_A(U-\bs)]-\omega^2\E e_A^2$.
+\item Distance to a reference: $\sum_Bp_B\,\E_B(U-\beta_{\rm ref})^2$, from Result 16.
 \end{itemize}
 
-\textbf{Check against simulation} (end of finetuning at time $40$, $d=3000$, $k=10^{-5}$, baseline sample sizes; with a shared block the simulation is still drifting slowly upward). Distance to the retrained model, distance to the retain-only model:
+\textbf{Check against simulation} (end of unlearning at time $40$, $d=3000$, $k=10^{-5}$, $\rho=0.2$, $0.3$ samples per coordinate seen in each class, $|F|=\frac12|\Ff|$, $R=\Rf$; with a shared block the simulation is still drifting slowly upward). Distance to $A(D\setminus F)$, distance to $A(\Rf)$:
 \begin{center}\small\begin{tabular}{@{}llcccc@{}}\toprule
-blocks $\propto$ & & forget-to-zero & negated $b=-0.5$ & $S=0.3$ & $S=3$\\\midrule
-$(1,0,1)$ & equations & $0.109,\ 0.012$ & & $0.132,\ 0.002$ & $0.113,\ 0.109$\\
+$|d_R|:|\dSh|:|d_F|$ & & targets $0$ on $F$ & targets $-0.5y$ & $\kappa=0.3$ & $\kappa=3$\\\midrule
+$1:0:1$ & equations & $0.109,\ 0.012$ & & $0.132,\ 0.002$ & $0.113,\ 0.109$\\
 & simulation & $0.113,\ 0.012$ & & $0.135,\ 0.002$ & $0.107,\ 0.096$\\
-$(1,0.4,1)$ & equations & $0.149,\ 0.110$ & $0.281,\ 0.271$ & $0.168,\ 0.083$ & $0.170,\ 0.220$\\
+$1:0.4:1$ & equations & $0.149,\ 0.110$ & $0.281,\ 0.271$ & $0.168,\ 0.083$ & $0.170,\ 0.220$\\
 & simulation & $0.140,\ 0.096$ & $0.260,\ 0.249$ & $0.159,\ 0.071$ & $0.152,\ 0.193$\\\bottomrule
 \end{tabular}\end{center}
 
 \section{The same equations by the cavity method}
 A second derivation, with different assumptions: removing one row or column of $X$ changes the rest to first order only; sums of many independent terms equal their means. Take pretraining with one group and one block. By Result 2 (Step 2), with $\nu_i$ the gradient accumulated by sample $i$,
 \begin{equation}\label{kkt}
-q_k'(\beta_j)=-\sum_iX_{ji}\nu_i,\qquad\sum_jX_{ji}\beta_j=y_i .
+q_k'(A_j)=-\sum_iX_{ji}\nu_i,\qquad\sum_jX_{ji}A_j=y_i .
 \end{equation}
 \textbf{Result 17 (Result 13 again).} One sample and one coordinate obey
 \[
-\zeta-\chi\,\nu=y;\qquad q_k'(\beta)+A\,e=\eta,\quad A=\frac\alpha\chi,\quad\operatorname{Var}\eta=\alpha\,\E\nu^2=\frac{\alpha(q+\sigma^2)}{\chi^2},
+\zeta-\chi\,\nu=y;\qquad q_k'(A)+a\,e=\eta,\quad a=\frac\alpha\chi,\quad\operatorname{Var}\eta=\alpha\,\E\nu^2=\frac{\alpha(q+\sigma^2)}{\chi^2},
 \]
-where $\zeta$ is the prediction on the sample by the model trained without it.
-\step1 \emph{Add a sample} (index $0$) to a system solved without it. Its input is independent of that solution $\beta^{\setminus0}$, so $\zeta=x_0^\top\beta^{\setminus0}$ is Gaussian and $\zeta-y$ has variance $q+\sigma^2$. Once added, the sample gets some $\nu_0$, which by \eqref{kkt} shifts $q_k'(\beta_j)$ by $-X_{j0}\nu_0$, that is, the field $\eta_j$ of every coordinate (defined in Step 2) by $-X_{j0}\nu_0$, so $\beta_j=\beta_j^{\setminus0}-\frac{\partial\beta_j}{\partial\eta_j}X_{j0}\nu_0$. The sample's prediction becomes
+where $\zeta$ is the prediction on the sample by the model trained without it, and $e=A-\bs$.
+\step1 \emph{Add a coordinate} (index $0$) to a system solved without it, in which the samples have $\nu_i^{\setminus0}$, independent of the row $X_{0\cdot}$. With it, sample $i$'s prediction gains $X_{0i}A_0$ and its label gains $X_{0i}\bs_0$: the other coordinates must fit $y_i-X_{0i}e_0$ in place of $y_i$. Let $-1/\chi$ be the slope with which $\nu_i$ responds to its own label (found in Step 2): $\nu_i=\nu_i^{\setminus0}+X_{0i}e_0/\chi$. Insert in \eqref{kkt}:
 \[
-\sum_jX_{j0}\beta_j=\zeta-\Big(\sum_jX_{j0}^2\frac{\partial\beta_j}{\partial\eta_j}\Big)\nu_0=\zeta-\chi\,\nu_0,
+q_k'(A_0)=-\sum_iX_{0i}\nu_i^{\setminus0}-\frac1\chi\Big(\sum_iX_{0i}^2\Big)e_0=\eta_0-a\,e_0,
 \]
-using $\sum_jX_{j0}^2(\cdot)\to\E(\cdot)$ and $\chi=\E\,\partial\beta/\partial\eta$. Interpolation gives $\nu_0=(\zeta-y)/\chi$.
-\step2 \emph{Add a coordinate} (index $0$). Without it the samples have $\nu_i^{\setminus0}$, independent of the row $X_{0\cdot}$. With it, sample $i$'s prediction gains $X_{0i}\beta_0$ and its label gains $X_{0i}\bs_0$: the rest of the model must fit $y_i-X_{0i}e_0$ instead of $y_i$. By Step 1, $\nu_i$ changes by $+X_{0i}e_0/\chi$. Insert in \eqref{kkt}:
+with $\sum_iX_{0i}^2\to\alpha$, $a=\alpha/\chi$, and $\eta_0=-\sum_iX_{0i}\nu_i^{\setminus0}$ Gaussian with variance $\frac1d\sum_i\nu_i^2=\alpha\,\E\nu^2$.
+\step2 \emph{Add a sample} (index $0$) to a system solved without it. Its input is independent of that solution $A^{\setminus0}$, so $\zeta=x_0^\top A^{\setminus0}$ is Gaussian and $\zeta-y$ has variance $q+\sigma^2$. Once added, the sample gets some $\nu_0$, which by \eqref{kkt} shifts $q_k'(A_j)$ by $-X_{j0}\nu_0$ for every $j$: by Step 1 this is a shift of the field $\eta_j$, so $A_j=A_j^{\setminus0}-\frac{\partial A_j}{\partial\eta_j}X_{j0}\nu_0$. The sample's prediction becomes
 \[
-q_k'(\beta_0)=-\sum_iX_{0i}\nu_i^{\setminus0}-\frac1\chi\Big(\sum_iX_{0i}^2\Big)e_0=\eta_0-A\,e_0,
+\sum_jX_{j0}A_j=\zeta-\Big(\sum_jX_{j0}^2\frac{\partial A_j}{\partial\eta_j}\Big)\nu_0=\zeta-\chi\,\nu_0,\qquad\chi=\E\frac{\partial A}{\partial\eta},
 \]
-with $\sum_iX_{0i}^2\to\alpha$, $A=\alpha/\chi$, and $\eta_0=-\sum_iX_{0i}\nu_i^{\setminus0}$ Gaussian with variance $\frac1d\sum_i\nu_i^2=\alpha\,\E\nu^2$.
-\step3 \emph{Close.} Differentiating $q_k'(\beta)+Ae=\eta$ in $\eta$ gives $\partial\beta/\partial\eta=1/(q_k''+A)$, so $\chi=\E\,1/(q_k''+A)$. This is Result 13.
+using $\sum_jX_{j0}^2(\cdot)\to\E(\cdot)$. Interpolation gives $\nu_0=(\zeta-y)/\chi$: its slope in $y$ is $-1/\chi$, as used in Step 1, and $\E\nu^2=(q+\sigma^2)/\chi^2$.
+\step3 \emph{Close.} Differentiating $q_k'(A)+ae=\eta$ in $\eta$ gives $\partial A/\partial\eta=1/(q_k''+a)$. This is Result 13.
 
-\textbf{Two stages.} A reused sample has, at the end of stage 2, prediction $\zeta_2-\chi_2\nu_2-\omega\chi_1\nu_1=b\,y$, the last term being the effect of its stage-1 gradient $\nu_1=(\zeta_1-y)/\chi_1$ on $\beta_2$. Hence $\nu_2=\big[(\zeta_2-by)-\omega(\zeta_1-y)\big]/\chi_2$: the misfit $e_2-\omega e_1$ of Result 15.
-
-\section{Large $d$: the finetuning trajectory}
-The replica method gives end points only. For trajectories the cavity steps are applied at every time step. Finetuning is run in steps $s=1,2,\dots$ of size $\gamma$:
+\textbf{Result 15 again.} For unlearning, by Result 2, $q_{\kappa^2k}'(U_j)-q_k'(A_j)=-\sum_iX_{ji}\nu_{U,i}$ with $\nu_{U,i}$ the gradient accumulated in unlearning, and $\nu_{A,i}$ that of pretraining.
+\step1 \emph{Add a sample} used in both stages. Its two accumulated gradients shift the fields of each coordinate: $\eta_A$ by $-X_{j0}\nu_{A,0}$ and $\eta_U$ by $-X_{j0}\nu_{U,0}$. $U_j$ depends on both ($dU/d\eta_A$ through $A$, and $\partial U/\partial\eta_U$), so its prediction at the end of unlearning is $\zeta_U-\omega\chi_A\nu_{A,0}-\chi_U\nu_{U,0}=b\,y$. With $\nu_{A,0}=(\zeta_A-y)/\chi_A$ from Result 17:
 \[
-u\leftarrow u\,(1-2\gamma G_s-\gamma\lambda),\qquad v\leftarrow v\,(1+2\gamma G_s-\gamma\lambda),\qquad G_{s,j}=\sum_iX_{ji}\nu_{s,i},\qquad\nu_{s,i}=\mu_i\,(f_{s,i}-\tau_i),
+\nu_{U,0}=\frac{(\zeta_U-by)-\omega(\zeta_A-y)}{\chi_U}.
 \]
-with $f_{s,i}=x_i^\top\beta_s$ the prediction and $\nu_{s,i}$ the gradient of sample $i$ at step $s$. The pretrained model is step $0$: $\nu_0$ is its accumulated gradient and $G_0=\sum_iX_{ji}\nu_{0,i}=-q_k'(\beta_0)$.
+The numerator has variance $\E(e_U-\omega e_A)^2$.
+\step2 \emph{Add a coordinate.} Sample $i$'s inputs shift by $X_{0i}U_0$ (for $\zeta_U$), $X_{0i}A_0$ (for $\zeta_A$) and $X_{0i}\bs_0$ (label), so $\nu_{U,i}$ shifts by $X_{0i}(e_{U,0}-\omega e_{A,0})/\chi_U$. Summing $-X_{0i}\nu_{U,i}$ over the $\alpha_Fd$ reused samples gives $\eta_U-a_U(e_U-\omega e_A)$ with $a_U=\alpha_F/\chi_U$: equation \eqref{s2}. The fields $\eta_A=-\sum_iX_{0i}\nu_{A,i}^{\setminus0}$ and $\eta_U=-\sum_iX_{0i}\nu_{U,i}^{\setminus0}$ have covariance $\alpha_F\E[\nu_A\nu_U]$, the formula of Result 15.
 
-\textbf{Result 18.} One sample and one coordinate obey, for $s\ge1$,
+\section{Large $d$: the unlearning trajectory}
+The replica method gives end points only. For trajectories the cavity steps are applied at every time step. Unlearning is run in steps $n=1,2,\dots$ of size $\gamma$ (so $\tau=\gamma n$), with weight decay $\lambda$ as in Result 5:
+\[
+u\leftarrow u\,(1-2\gamma G_n-4\gamma\lambda),\qquad v\leftarrow v\,(1+2\gamma G_n-4\gamma\lambda),\qquad G_{n,j}=\sum_iX_{ji}\nu_{n,i},\qquad\nu_{n,i}=c_i\,(f_{n,i}-t_i),
+\]
+with $\beta_n$ the model, $f_{n,i}=x_i^\top\beta_n$ and $\nu_{n,i}$ the gradient of sample $i$ at step $n$. The pretrained model is step $0$: $\beta_0=A$, $\nu_0$ is its accumulated gradient, and $G_0=\sum_iX_{ji}\nu_{0,i}=-q_k'(A)$.
+
+\textbf{Result 18.} One sample and one coordinate obey, for $n\ge1$,
 \begin{equation}\label{dyn}
-f_s=\zeta_s+\sum_{s'<s}R_\beta(s,s')\,\nu_{s'},\qquad G_s=-\eta_s+\sum_{s'\le s}R_\nu(s,s')\,\beta_{s'}+\pi_s\,\bs ,
+f_n=\zeta_n+\sum_{n'<n}R_\beta(n,n')\,\nu_{n'},\qquad G_n=-\eta_n+\sum_{n'\le n}R_\nu(n,n')\,\beta_{n'}+\pi_n\,\bs ,
 \end{equation}
 \[
-R_\beta(s,s')=\E\frac{\partial\beta_s}{\partial G_{s'}},\qquad R_\nu(s,s')=\sum_g\alpha_g\E\frac{\partial\nu_s}{\partial\zeta_{s'}},\qquad\pi_s=\sum_g\alpha_g\E\frac{\partial\nu_s}{\partial(x^\top\bs)} ,
+R_\beta(n,n')=\E\frac{\partial\beta_n}{\partial G_{n'}},\qquad R_\nu(n,n')=\sum_g\alpha_g\E\frac{\partial\nu_n}{\partial\zeta_{n'}},\qquad\pi_n=\sum_g\alpha_g\E\frac{\partial\nu_n}{\partial(x^\top\bs)} ,
 \]
-where $(x^\top\bs,\zeta_0,\zeta_1,\dots)$ are Gaussian with the covariances of $(\bs,\beta_0,\beta_1,\dots)$ over the coordinates the sample sees, $(\eta_0,\eta_1,\dots)$ are Gaussian with covariances $\sum_g\alpha_g\E\,\nu_s\nu_{s'}$, and the sums run over the groups that see the coordinate.
-
-\step1 \emph{Add a sample.} Without it the weights at every step are independent of its input, so $\zeta_s=x_0^\top\beta_s^{\setminus0}$ are jointly Gaussian as stated. With it, the gradient $G_{s',j}$ of coordinate $j$ at each earlier step gains $X_{j0}\nu_{s',0}$, so $\beta_{s,j}=\beta_{s,j}^{\setminus0}+\sum_{s'<s}\frac{\partial\beta_{s,j}}{\partial G_{s',j}}X_{j0}\nu_{s',0}$. Multiply by $X_{j0}$ and sum over $j$: the first equation.
-\step2 \emph{Add a coordinate.} For sample $i$, the predictions-without-it at all steps $s'\le s$ gain $X_{0i}\beta_{s',0}$, and $x_i^\top\bs$ gains $X_{0i}\bs_0$. To first order $\nu_{s,i}=\nu_{s,i}^{\setminus0}+\sum_{s'\le s}\frac{\partial\nu_{s,i}}{\partial\zeta_{s',i}}X_{0i}\beta_{s',0}+\frac{\partial\nu_{s,i}}{\partial(x_i^\top\bs)}X_{0i}\bs_0$. Multiply by $X_{0i}$ and sum over $i$: the second equation, with $-\eta_s=\sum_iX_{0i}\nu_{s,i}^{\setminus0}$.
-\step3 \emph{The responses} follow by differentiating the recursions. Samples, with target $\tau=b\,y+{}$(independent part):
+where $(x^\top\bs,\zeta_0,\zeta_1,\dots)$ are Gaussian with the covariances of $(\bs,\beta_0,\beta_1,\dots)$ over the coordinates the sample sees, $(\eta_0,\eta_1,\dots)$ are Gaussian with covariances $\sum_g\alpha_g\E\,\nu_n\nu_{n'}$, and the sums run over the groups that see the coordinate.
+\step1 \emph{Add a sample.} Without it the weights at every step are independent of its input, so $\zeta_n=x_0^\top\beta_n^{\setminus0}$ are jointly Gaussian as stated. With it, the gradient $G_{n',j}$ of coordinate $j$ at each earlier step gains $X_{j0}\nu_{n',0}$, so $\beta_{n,j}=\beta_{n,j}^{\setminus0}+\sum_{n'<n}\frac{\partial\beta_{n,j}}{\partial G_{n',j}}X_{j0}\nu_{n',0}$. Multiply by $X_{j0}$ and sum over $j$, with $\sum_jX_{j0}^2(\cdot)\to\E(\cdot)$: the first equation.
+\step2 \emph{Add a coordinate.} For sample $i$, the predictions-without-it at all steps $n'\le n$ gain $X_{0i}\beta_{n',0}$, and $x_i^\top\bs$ gains $X_{0i}\bs_0$. To first order $\nu_{n,i}=\nu_{n,i}^{\setminus0}+\sum_{n'\le n}\frac{\partial\nu_{n,i}}{\partial\zeta_{n',i}}X_{0i}\beta_{n',0}+\frac{\partial\nu_{n,i}}{\partial(x_i^\top\bs)}X_{0i}\bs_0$. Multiply by $X_{0i}$ and sum over $i$, with $\sum_iX_{0i}^2(\cdot)\to\sum_g\alpha_g\E(\cdot)$: the second equation, with $-\eta_n=\sum_iX_{0i}\nu_{n,i}^{\setminus0}$.
+\step3 \emph{The responses of a sample.} Differentiate $\nu_n=c\,(f_n-t)$ with $f_n$ from \eqref{dyn} and $t=b\,(x^\top\bs+\sigma\xi)+{}$(independent part):
 \[
-\frac{\partial\nu_s}{\partial\zeta_{s''}}=\mu\Big(\mathbf 1_{s=s''}+\sum_{s'<s}R_\beta(s,s')\frac{\partial\nu_{s'}}{\partial\zeta_{s''}}\Big),\qquad\frac{\partial\nu_s}{\partial(x^\top\bs)}=\mu\Big(\sum_{s'<s}R_\beta(s,s')\frac{\partial\nu_{s'}}{\partial(x^\top\bs)}-b\Big).
+\frac{\partial\nu_n}{\partial\zeta_{n''}}=c\Big(\mathbf 1_{n=n''}+\sum_{n'<n}R_\beta(n,n')\frac{\partial\nu_{n'}}{\partial\zeta_{n''}}\Big),\qquad\frac{\partial\nu_n}{\partial(x^\top\bs)}=c\Big(\sum_{n'<n}R_\beta(n,n')\frac{\partial\nu_{n'}}{\partial(x^\top\bs)}-b\Big).
 \]
-Coordinates: for a perturbation of the gradient at step $s''$, differentiate the update: $du\leftarrow du\,(1-2\gamma G_s-\gamma\lambda)-2\gamma u\,dG_s$ (and $v$ with the opposite sign of $G$), where $dG_s=\mathbf 1_{s=s''}+\sum_{s'\le s}R_\nu(s,s')\,d\beta_{s'}$ and $d\beta=2(u\,du-v\,dv)$.
-\step4 \emph{Step 0.} From Result 17: $\nu_0=(\zeta_0-y)/\chi$, so $\partial\nu_0/\partial\zeta_0=1/\chi$ and $\partial\nu_0/\partial(x^\top\bs)=-1/\chi$; $\partial\beta_0/\partial G_0=-\partial\beta/\partial\eta$; and finetuning starts at $u,v=\frac12(S^2k)^{1/4}e^{\pm\theta}$ with $\theta=q_k'(\beta_0)$.
+\step4 \emph{The responses of a coordinate.} Perturb the gradient at step $n''$ and differentiate the update: $du\leftarrow du\,(1-2\gamma G_n-4\gamma\lambda)-2\gamma u\,dG_n$, $dv\leftarrow dv\,(1+2\gamma G_n-4\gamma\lambda)+2\gamma v\,dG_n$, where by \eqref{dyn} $dG_n=\mathbf 1_{n=n''}+\sum_{n'\le n}R_\nu(n,n')\,d\beta_{n'}$ and $d\beta=2(u\,du-v\,dv)$.
+\step5 \emph{Step 0.} From Result 17: $\nu_0=(\zeta_0-y)/\chi$, so $\partial\nu_0/\partial\zeta_0=1/\chi$ and $\partial\nu_0/\partial(x^\top\bs)=-1/\chi$; $\partial\beta_0/\partial G_0=-\partial A/\partial\eta$; and unlearning starts at $u,v=\frac12(\kappa^2k)^{1/4}e^{\pm\theta}$ with $\theta=q_k'(A)$.
 
-The metrics along the trajectory: retain and forget error are $\sum_Bp_B\E_B(\beta_s-\bs)^2$; the error on $F$ and the left-over error are $\E(f_s-y)^2$ over those groups. A left-over sample has $\nu_s=0$ for $s\ge1$, so $f_s=\zeta_s+R_\beta(s,0)\nu_0$.
+The metrics along the trajectory: retain and forget error are $\sum_Bp_B\E_B(\beta_n-\bs)^2$; the errors on $F$ and on $\Ff\setminus F$ are $\E(f_n-y)^2$ over those groups. A kept forget sample has $\nu_n=0$ for $n\ge1$, so $f_n=\zeta_n+R_\beta(n,0)\nu_0$.
 
 \section{How the trajectory equations are solved}
-\textbf{Idea.} Sample $N$ coordinates and $\alpha N$ samples, and represent the Gaussians by two independent random matrices $\Gamma_1$ (samples $\times$ coordinates) and $\Gamma_2$ (coordinates $\times$ samples) with $\mathcal N(0,1/N)$ entries: $\zeta_s=\Gamma_1\beta_s$ and $-\eta_s=\Gamma_2\nu_s$. These have the required covariances automatically. Because $\Gamma_1$ and $\Gamma_2$ are independent, no self-interaction arises; it is added explicitly by the $R$ terms of \eqref{dyn}. The expectations defining $R_\beta,R_\nu,\pi$ are averages over the sampled paths.
+\textbf{Idea.} Sample $N$ coordinates and $\alpha N$ samples, and represent the Gaussians by two independent random matrices $\Gamma_1$ (samples $\times$ coordinates) and $\Gamma_2$ (coordinates $\times$ samples) with $\mathcal N(0,1/N)$ entries: $\zeta_n=\Gamma_1\beta_n$ and $-\eta_n=\Gamma_2\nu_n$. These have the required covariances automatically. Because $\Gamma_1$ and $\Gamma_2$ are independent, no self-interaction arises; it is added explicitly by the $R$ terms of \eqref{dyn}. The expectations defining $R_\beta,R_\nu,\pi$ are averages over the sampled paths.
 
-\textbf{Starting from the pretrained model.} Result 13 is solved first with fixed standard normal draws, giving vectors $\beta_0,\nu_0,\zeta_0,\eta_0$ and $x^\top\bs$. The matrices must reproduce them: $\Gamma_1\beta_0=\zeta_0$, $\Gamma_1\bs=x^\top\bs$, $\Gamma_2\nu_0=-\eta_0$.
+\textbf{Starting from the pretrained model.} Result 13 is solved first with fixed standard normal draws, giving vectors $A$, $\nu_0$, $\zeta_0$, $\eta_0$ and $x^\top\bs$. The matrices must reproduce them: $\Gamma_1A=\zeta_0$, $\Gamma_1\bs=x^\top\bs$, $\Gamma_2\nu_0=-\eta_0$.
 
-\textbf{Result 19.} If $\tilde\Gamma$ has independent Gaussian entries and $Y$ is a matrix whose columns are given vectors, then $\Gamma=\tilde\Gamma-(\tilde\Gamma Y-Z)(Y^\top Y)^{-1}Y^\top$ has the law of $\tilde\Gamma$ conditioned on $\tilde\Gamma Y=Z$. \emph{Derivation:} with $P=Y(Y^\top Y)^{-1}Y^\top$, $\tilde\Gamma(I-P)$ is independent of $\tilde\Gamma Y$ (jointly Gaussian, zero covariance), and $\Gamma=\tilde\Gamma(I-P)+Z(Y^\top Y)^{-1}Y^\top$ keeps the first and sets $\Gamma Y=Z$.
+\textbf{Result 19.} If $\tilde\Gamma$ has independent Gaussian entries and $Y$ is a matrix whose columns are given vectors, then $\Gamma=\tilde\Gamma-(\tilde\Gamma Y-Z)(Y^\top Y)^{-1}Y^\top$ has the law of $\tilde\Gamma$ conditioned on $\tilde\Gamma Y=Z$. \emph{Derivation:} with $P=Y(Y^\top Y)^{-1}Y^\top$, the two parts $\tilde\Gamma(I-P)$ and $\tilde\Gamma P$ are jointly Gaussian with zero covariance, hence independent; $\tilde\Gamma Y$ is a function of the second only. So conditioning on $\tilde\Gamma Y=Z$ leaves $\tilde\Gamma(I-P)$ unchanged and sets $\tilde\Gamma P=Z(Y^\top Y)^{-1}Y^\top$; their sum is $\Gamma$.
 
 Then \eqref{dyn} is run forward once. The cost grows as (number of steps)$^3$, which limits theory curves to times up to $6$.
+
+\section{Relation to \texttt{losses.pdf}}
+\begin{center}\small\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.6cm}>{\raggedright\arraybackslash}p{10.6cm}@{}}\toprule
+In \texttt{losses.pdf} & Here\\\midrule
+Implicit bias (Model) & Results 1--2. Rescaling: Result 4.\\
+Key fact: every loss is $\frac{c_i}2(f_i-t_i)^2$; weights do not move $U$ & Result 2, Step 3.\\
+Relabel, $\beta_g=0$ & targets $0$ on $F$: $b=0$ in Results 13--16.\\
+Relabel, oracle $\beta_g=A(\Rf)$ & exact end point by Result 2; the targets $x_i^\top A(\Rf)$ are not of the form $b\,x_i^\top\bs$, so Results 13--16 do not cover it. Not derived.\\
+Anchored ascent & targets from $\frac{\mu_d\beta_g-\mu_a\bs}{\mu_d-\mu_a}$; with $\beta_g=0$ this is $b=-\frac{\mu_a}{\mu_d-\mu_a}$ ($b=-0.5$: $\mu_a/\mu_d=\frac13$; $b=-1$: $\frac12$). Results 11, 13--16.\\
+Workshop paper & targets from $\frac{\mu_r\beta_r-\mu_a\beta_f}{\mu_r-\mu_a}$ on every sample: multiples $\frac{\mu_r}{\mu_r-\mu_a}$ on $d_R\cup\dSh$ and $-\frac{\mu_a}{\mu_r-\mu_a}$ on $d_F$. Result 14 with a block-dependent target vector.\\
+Gradient difference & no end point; Result 10 (no motion from a fit); otherwise the trajectory, Result 18, until it diverges.\\
+Weight decay $\lambda\|w\|^2$ & Result 5; large $d$: Result 13, ``weight decay kept on''.\\
+Early stopping, $U(\tau)$ & Result 18. The readiness of \texttt{losses.pdf} is $\theta=q_k'(\beta)$ of Result 1 divided by $\frac12\log\frac2{\kappa\sk}$; its lazy and rich limits are not rederived here.\\
+$\mathrm{mem}(F)$, $\mathrm{xinf}_C(F)$ & $\mathrm{mem}(F)=\sum_{B\in\{\dSh,d_F\}}p_B\E_B(A(D\setminus F)-\bs)^2$, since $A$ fits $F$ and $F$ is fresh for $A(D\setminus F)$; $\mathrm{xinf}_C=\sum_Bp_B\E_B(A-A(D\setminus F))^2$ over the blocks of class $C$, from Result 16.\\
+Question 1 (distances to the two references) & Results 15--16 and the metrics of Section 11.\\
+Question 2 (the attacker's stage) & a third stage started from $U$: Section 10 applied again, with $U$ in the role of $A$. Implemented in the cavity solver, not written out here.\\
+Exact curves (``Gordon's comparison conditioned on stage 1'') & the same problem as Result 15. Both agree with simulation; I have not matched the two sets of equations term by term.\\\bottomrule
+\end{tabular}\end{center}
+Differences of convention: \texttt{losses.pdf} normalises distances by $\|\bs\|^2$ and errors by the error of $\beta=0$; with $\E(\bs_j)^2=1$ the first equals $\|\cdot\|^2/d$. Label noise $\sigma$ and the unbalanced layers of Section 7 are not in \texttt{losses.pdf}.
 
 \section{What is and is not derived}
 \begin{center}\small\begin{tabular}{@{}p{7.5cm}p{7.5cm}@{}}\toprule
 derived & not derived\\\midrule
-Results 1--12: exact & why the distance to the retrained model never falls below about half its starting value\\
-Results 13--16: replica, assuming replica symmetry; end points agree with simulation (table in Section 12) & a closed formula for the spread in the rich regime beyond the first-order rule \eqref{lin} (about $1.3\times$ too high at large $|F|$)\\
-Results 17--19: cavity; trajectories agree with simulation ($94\%$ of 2868 comparisons within 2 standard errors) & finetuning after SGD pretraining; end points when the targets cannot all be fitted\\\bottomrule
+Results 1--12: exact (Result 5 assumes the flow reaches the stationary point) & why the distance to $A(D\setminus F)$ never falls below about half its starting value\\
+Results 13--16: replica, assuming replica symmetry and the saddle point; end points agree with simulation (tables in Sections 10--11) & a closed formula for the spread in the rich regime beyond the first-order rule \eqref{lin} (about $1.3\times$ too high at large $|F|$)\\
+Results 17--19: cavity; trajectories agree with simulation ($94\%$ of 2868 comparisons within 2 standard errors) & oracle targets; the attacker's stage; unlearning after SGD pretraining; end points when the targets cannot all be fitted\\\bottomrule
 \end{tabular}\end{center}
 \end{document}
