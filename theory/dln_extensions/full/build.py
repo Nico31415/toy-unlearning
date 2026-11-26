@@ -38,10 +38,10 @@ Db=Db.replace(r"\section{Replica method: the references and the metrics}",r"\sec
 Db=R(Db,r"Combine with Section 9:",r"Combine with Section~\ref{sec:blocks}:"); Db=R(Db,r"(the workshop loss, Section 15)",r"(the workshop loss, Section~\ref{sec:losses})")
 Db=R(Db,r"(\texttt{losses.pdf} writes $Q_k'$ for $q_k'$.)",""); Db=R(Db,r"This is not the rescaling $\kappa$ and is not used in \texttt{losses.pdf}.",r"This is not the rescaling $\kappa$ and is not used in this project.")
 assert "losses.pdf" not in Db, Db[Db.index("losses.pdf")-80:Db.index("losses.pdf")+40]
-setup=setup.replace(r"\section{Unlearning losses}",r"\section{Unlearning losses}\label{sec:losses}").replace(r"\section{Data}",r"\section{Data}\label{sec:data}",1)
-mapping=r"""\section{Where each item of Part I is derived}
+setup=setup.replace(r"\section{Finite budget: early stopping}",r"\section{Finite budget: early stopping}\label{sec:budget}").replace(r"\section{Unlearning losses}",r"\section{Unlearning losses}\label{sec:losses}").replace(r"\section{Data}",r"\section{Data}\label{sec:data}",1)
+mapping=r"""\section{Where each item of this part is derived}
 \begin{center}\small\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.6cm}>{\raggedright\arraybackslash}p{10.6cm}@{}}\toprule
-Part I & Part II\\\midrule
+Item & Derived in\\\midrule
 Implicit bias; rescaling & Results 1--2; Result 4.\\
 Key fact: every loss is $\frac{c_i}2(f_i-t_i)^2$ and the weights do not move $U$ & Result 2, Step 3.\\
 Relabel, $\tilde\beta=0$ & targets $0$ on $F$: $b=0$ in Results 13--16.\\
@@ -50,13 +50,13 @@ Anchored ascent & targets from $\frac{\mu_d\tilde\beta-\mu_a\beta^\star}{\mu_d-\
 Workshop paper & multiples $\frac{\mu_r}{\mu_r-\mu_a}$ on $d_R\cup\dSh$ and $-\frac{\mu_a}{\mu_r-\mu_a}$ on $d_F$, on every sample. Result 14 with a block-dependent target vector.\\
 Gradient difference & no end point; Result 10 (no motion from a fit); otherwise the trajectory, Result 18, until it diverges.\\
 Weight decay $\lambda\|w\|^2$ & Result 5; large $d$: Result 13, ``weight decay kept on''.\\
-Early stopping, $U(\tau)$ & Result 18. The lazy and rich limits stated in Part I are not rederived.\\
+Early stopping, $U(\tau)$ & Result 18. The lazy and rich limits stated in Section~\ref{sec:budget} are not rederived.\\
 $\mathrm{mem}(F)$, $\mathrm{xinf}_C(F)$ & $\mathrm{mem}(F)=\sum_{B\in\{\dSh,d_F\}}p_B\E_B(A(D\setminus F)-\beta^\star)^2$, since $A$ fits $F$ and $F$ is fresh for $A(D\setminus F)$; $\mathrm{xinf}_C=\sum_Bp_B\E_B(A-A(D\setminus F))^2$ over the blocks of class $C$, from Result 16.\\
 Question 1 (distances to the two references) & Results 15--16 and the metrics of Section~\ref{sec:refs}.\\
 Question 2 (the attacker's stage) & a third stage started from $U$: Section~\ref{rep2} applied again with $U$ in the role of $A$. Implemented in the solver, not written out.\\
 Exact curves of Section~\ref{sec:curves} (Gordon's comparison conditioned on stage 1) & the same problem as Result 15. Both agree with simulation; the two sets of equations have not been matched term by term.\\\bottomrule
 \end{tabular}\end{center}
-The industry losses with hard labels (Section~\ref{sec:industry}) are outside Part II; see \texttt{extensions\_maths.pdf}.
+The industry losses with hard labels (Section~\ref{sec:industry}) are not derived here; see \texttt{extensions\_maths.pdf}.
 
 """
 runs=r"""\section{Trajectory runs with squared loss (25 November)}\label{sec:runs}
@@ -123,14 +123,22 @@ We use a model in which the end point of every training run is known exactly, an
 \textbf{(1)} Does it remove only the given samples (\emph{untraining}) or the whole distribution they came from (\emph{unlearning})?
 \textbf{(2)} Is the forgotten behaviour deleted, or only hidden so that an attacker can recover it cheaply (\emph{tamper resistance})?
 
-\textbf{How to read this.} Part I states the model, the data, the losses and the two questions. Part II derives the theory step by step: Sections~\ref{sec:flow}--\ref{sec:unbal} are exact; the replica sections give the large-$d$ end points; the cavity sections rederive them and give trajectories. Part III has the results. One notation is used throughout; the table of symbols is in Section~\ref{sec:data}.
+\textbf{How to read this.} Part I is the model and the data. Part II is the mechanism: how training moves the weights and where it stops, derived exactly (Sections~\ref{sec:flow}--\ref{sec:facts}; Section~\ref{sec:unbal} is optional). Part III states the unlearning losses and the two questions in terms of Part II. Part IV computes everything at large $d$ (replica and cavity). Part V has the results. Parts I--II are the core. One notation is used throughout; the table of symbols is in Section~\ref{sec:data}.
 \tableofcontents
 
-\Part{I}{Setup and questions}
+\Part{I}{Model and data}
 """
 Db=Db.replace(r"\section{The flow in one variable}",r"\section{The flow in one variable}\label{sec:flow}")
-part2=r"\Part{II}{Derivations}"+"\nEvery result is followed by its derivation. Replica and cavity are derivations, not proofs.\n\n"+mapping+Db
-part3=r"\Part{III}{Results}"+"\n"+curves+r"\FloatBarrier"+"\n"+runs+r"\FloatBarrier"+"\n"+ext+status.replace(r"\end{document}","").replace("tables in Sections 10--11",r"tables in Sections~\ref{rep2}--\ref{sec:refs}")+plan
+Db=Db.replace(r"\section{Facts about losses and references}",r"\section{Facts about losses and references}\label{sec:facts}")
+k=Db.index(r"\section{Large $d$, replica method: one stage}")
+exact,large=Db[:k],Db[k:]
+js=setup.index(r"\section{Unlearning losses}")
+modeldata,losses=setup[:js],setup[js:]
+setup=modeldata
+part2=r"\Part{II}{The mechanism: implicit bias}"+"\nEvery result is followed by its derivation.\n\n"+exact
+part2+=r"\Part{III}{Unlearning: losses and questions}"+"\n"+losses+mapping
+part2+=r"\Part{IV}{Large $d$: replica and cavity}"+"\nThese sections compute the metrics exactly as $d\\to\\infty$. Replica and cavity are derivations, not proofs.\n\n"+large
+part3=r"\Part{V}{Results}"+"\n"+curves+r"\FloatBarrier"+"\n"+runs+r"\FloatBarrier"+"\n"+ext+status.replace(r"\end{document}","").replace("tables in Sections 10--11",r"tables in Sections~\ref{rep2}--\ref{sec:refs}")+plan
 out=pre+setup+part2+part3+"\n\\end{document}\n"
 # hard-coded section numbers left?
 for m in re.finditer(r"Sections? \d",out): print("HARD", out[m.start()-40:m.start()+40].replace("\n"," "))
